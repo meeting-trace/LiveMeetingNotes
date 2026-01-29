@@ -7,7 +7,7 @@ interface Props {
   item: TranscriptionResult;
   index: number;
   onEditTranscription: (id: string, newText: string, newSpeaker: string, newStartTime?: string, newAudioTimeMs?: number) => void;
-  onSeekToTime: (timeMs: number) => void;
+  onSeekToTime: (timeMs: number, shouldPlay?: boolean) => void;
   formatTime: (isoTime: string) => string;
   formatDateTimeForEdit: (isoTime: string) => string;
   parseDateTimeFromEdit: (dateTimeStr: string) => string;
@@ -103,7 +103,7 @@ const TranscriptionItemComponent: React.FC<Props> = ({
             </Tag>
           </Tooltip>
 
-          {/* Audio Time - Clickable */}
+          {/* Audio Time - Clickable (single click to seek, double click to seek+play) */}
           {item.audioTimeMs !== undefined && (
             <Tooltip title="Click để nhảy đến vị trí này trong audio">
               <Tag 
@@ -115,7 +115,11 @@ const TranscriptionItemComponent: React.FC<Props> = ({
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onSeekToTime(item.audioTimeMs!);
+                  onSeekToTime(item.audioTimeMs!, false);
+                }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  onSeekToTime(item.audioTimeMs!, true);
                 }}
               >
                 🎵 {formatAudioTime(item.audioTimeMs)}

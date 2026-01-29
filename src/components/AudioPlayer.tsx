@@ -18,6 +18,7 @@ interface Props {
 
 export interface AudioPlayerRef {
   seekTo: (timeMs: number) => void;
+  play: () => Promise<void>;
   getDuration: () => number;
 }
 
@@ -40,6 +41,12 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(({ audioBlob, trans
         const timeSeconds = timeMs / 1000;
         wavesurferRef.current.seekTo(timeSeconds / duration);
         // console.log(`🎵 Seeked to ${timeSeconds.toFixed(2)}s`);
+      }
+    },
+    play: async () => {
+      if (wavesurferRef.current) {
+        await wavesurferRef.current.play();
+        setIsPlaying(true);
       }
     },
     getDuration: () => duration * 1000

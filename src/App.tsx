@@ -1310,10 +1310,13 @@ export const App: React.FC = () => {
   };
 
   // Handle seek to audio time
-  const handleSeekToAudio = useCallback((timeMs: number) => {
+  const handleSeekToAudio = useCallback((timeMs: number, shouldPlay: boolean = false) => {
     if (audioPlayerRef.current) {
       audioPlayerRef.current.seekTo(timeMs);
-      // console.log(`⏭️ Seeking to ${(timeMs / 1000).toFixed(2)}s`);
+      if (shouldPlay) {
+        audioPlayerRef.current.play();
+      }
+      // console.log(`⏭️ Seeking to ${(timeMs / 1000).toFixed(2)}s${shouldPlay ? ' + playing' : ''}`);
     }
   }, []); // No dependencies - audioPlayerRef is stable
 
