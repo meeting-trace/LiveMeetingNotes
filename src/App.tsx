@@ -401,6 +401,11 @@ export const App: React.FC = () => {
       // Start transcription with progress callback and config values
       // Calculate meeting start time from meetingInfo
       const meetingStartTime = new Date(`${meetingInfo.date}T${meetingInfo.time}:00`);
+      console.log('📅 Meeting info:', meetingInfo);
+      console.log('📅 Meeting date:', meetingInfo.date);
+      console.log('📅 Meeting time:', meetingInfo.time);
+      console.log('📅 Meeting start time:', meetingStartTime);
+      console.log('📅 Is valid date?', !isNaN(meetingStartTime.getTime()));
       
       const results = await AIRefinementService.transcribeEntireAudioWithGemini(
         config.geminiApiKey,
@@ -966,6 +971,7 @@ export const App: React.FC = () => {
   }
   
   // Auto-save to localStorage with debounce (every 3 seconds after changes)
+  // Optimized: Only trigger on hasUnsavedChanges, reducing unnecessary dependencies
   useEffect(() => {
     // Auto-save whenever there are unsaved changes (including after first save)
     // Backup will be cleared only when user explicitly saves
@@ -1005,7 +1011,7 @@ export const App: React.FC = () => {
         clearTimeout(autoSaveTimeoutRef.current);
       }
     };
-  }, [meetingInfo, notes, timestampMap, recordingStartTime, audioBlob, transcriptions, rawTranscripts, hasUnsavedChanges, isSaved]);
+  }, [hasUnsavedChanges]); // Optimized: Only depend on hasUnsavedChanges flag
 
   // Switch to live mode when starting a new recording
   useEffect(() => {

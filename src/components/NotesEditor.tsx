@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useCallback } from 'react';
 import { Input } from 'antd';
 import type { TextAreaRef } from 'antd/es/input/TextArea';
 
@@ -34,6 +34,7 @@ export const NotesEditor: React.FC<Props> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const speakerRefs = useRef<Map<number, TextAreaRef>>(new Map());
   const textRefs = useRef<Map<number, TextAreaRef>>(new Map());
+  const syncDebounceRef = useRef<NodeJS.Timeout | null>(null);
   
   // Multi-line selection states
   const [selectedLines, setSelectedLines] = useState<Set<number>>(new Set());
@@ -549,13 +550,13 @@ export const NotesEditor: React.FC<Props> = ({
       const oldLineEmpty = oldLine.trim().length === 0;
       const newLineHasContent = value.trim().length > 0;
       
-      console.log('⏰ Auto-timestamp check:', { 
-        index, 
-        oldLineEmpty, 
-        newLineHasContent, 
-        hasTimestamp: lineTimestamps.has(index),
-        isLiveMode 
-      });
+      // console.log('⏰ Auto-timestamp check:', { 
+      //   index, 
+      //   oldLineEmpty, 
+      //   newLineHasContent, 
+      //   hasTimestamp: lineTimestamps.has(index),
+      //   isLiveMode 
+      // });
       
       if (oldLineEmpty && newLineHasContent && !lineTimestamps.has(index)) {
         // Save datetime with delay offset (người gõ note thường chậm hơn người nói)
@@ -567,15 +568,15 @@ export const NotesEditor: React.FC<Props> = ({
         setLineTimestamps(newLineTimestamps);
         
         onNotesChange(lines.join(BLOCK_SEPARATOR));
-        syncToParentTimestampMap(lines, newLineTimestamps);
+        syncToParentTimestampMap(lines, newLineTimestamps); // Immediate sync for timestamp creation
         return;
       }
     }
     // In Loaded Mode: Never auto-create timestamp, user must use right-click on waveform
     
-    // Always sync timestamps when text changes (to update positions)
+    // Use debounced sync for regular text edits to improve performance
     onNotesChange(lines.join(BLOCK_SEPARATOR));
-    syncToParentTimestampMap(lines, lineTimestamps);
+    debouncedSyncToParent(lines, lineTimestamps); // Debounced sync for better performance
     debouncedSaveToHistory(); // Auto-save after typing
   };
   
@@ -628,7 +629,7 @@ export const NotesEditor: React.FC<Props> = ({
   };
   
   // Convert line-based timestamps to position-based for parent state
-  const syncToParentTimestampMap = (lines: string[], lineTimestamps: Map<number, number>) => {
+  const syncToParentTimestampMap = useCallback((lines: string[], lineTimestamps: Map<number, number>) => {
     const BLOCK_SEPARATOR = '§§§';
     const newMap = new Map<number, number>();
     
@@ -645,7 +646,18 @@ export const NotesEditor: React.FC<Props> = ({
     });
     
     onTimestampMapChange(newMap);
-  };
+  }, [onTimestampMapChange]);
+  
+  // Debounced version to reduce parent updates during typing
+  const debouncedSyncToParent = useCallback((lines: string[], lineTimestamps: Map<number, number>) => {
+    if (syncDebounceRef.current) {
+      clearTimeout(syncDebounceRef.current);
+    }
+    
+    syncDebounceRef.current = setTimeout(() => {
+      syncToParentTimestampMap(lines, lineTimestamps);
+    }, 300); // 300ms debounce - reduces updates while typing
+  }, [syncToParentTimestampMap]);
   
   // Save current state to history
   const saveToHistory = () => {

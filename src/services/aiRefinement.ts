@@ -1373,13 +1373,24 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
         let startTime: string;
         let endTime: string;
         
-        if (meetingStartTime) {
+        if (meetingStartTime && !isNaN(meetingStartTime.getTime())) {
           // Use meeting start time as base + audio offset
           const actualTime = new Date(meetingStartTime.getTime() + audioTimeMs);
           startTime = actualTime.toISOString();
           endTime = actualTime.toISOString(); // Same as start since we don't have duration
+          
+          // Debug log for first segment
+          if (index === 0) {
+            console.log('🕐 Meeting start time:', meetingStartTime.toISOString());
+            console.log('🕐 Audio offset:', audioTimeMs, 'ms');
+            console.log('🕐 Calculated time:', actualTime.toISOString());
+          }
         } else {
-          // Fallback: use current time if meeting start time not provided
+          // Fallback: use current time if meeting start time not provided or invalid
+          if (index === 0) {
+            console.warn('⚠️ Invalid or missing meeting start time, using current time as fallback');
+            console.log('meetingStartTime:', meetingStartTime);
+          }
           const now = new Date();
           startTime = now.toISOString();
           endTime = now.toISOString();

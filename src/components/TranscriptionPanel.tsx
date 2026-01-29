@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Collapse, Empty, Tag, Space, Tooltip, Input, Button } from 'antd';
 import { AudioOutlined, ClockCircleOutlined, UserOutlined, CheckCircleOutlined, EditOutlined, SaveOutlined, CloseOutlined, RobotOutlined } from '@ant-design/icons';
 import type { TranscriptionResult } from '../types/types';
@@ -202,17 +202,18 @@ export const TranscriptionPanel: React.FC<Props> = ({
     }
   };
 
-  const getConfidenceColor = (confidence: number): string => {
+  // Memoize these helper functions to prevent unnecessary re-renders
+  const getConfidenceColor = useCallback((confidence: number): string => {
     if (confidence >= 0.9) return '#52c41a'; // green
     if (confidence >= 0.7) return '#faad14'; // orange
     return '#ff4d4f'; // red
-  };
+  }, []);
 
-  const getConfidenceLabel = (confidence: number): string => {
+  const getConfidenceLabel = useCallback((confidence: number): string => {
     if (confidence >= 0.9) return 'Cao';
     if (confidence >= 0.7) return 'Trung bình';
     return 'Thấp';
-  };
+  }, []);
 
   const handleCollapseChange = (keys: string | string[]) => {
     const activeKeys = Array.isArray(keys) ? keys : [keys];
