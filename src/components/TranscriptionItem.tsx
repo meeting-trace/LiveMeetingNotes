@@ -189,8 +189,8 @@ const TranscriptionItemComponent: React.FC<Props> = ({
           {/* AI refined indicator */}
           {item.isAIRefined && (
             <Tooltip title="Đã chuẩn hóa bằng AI ✨">
-              <Tag color="purple" style={{ fontSize: '10px', margin: 0 }}>
-                🤖 AI
+              <Tag color="green" style={{ fontSize: '10px', margin: 0 }}>
+                ✨ AI
               </Tag>
             </Tooltip>
           )}
