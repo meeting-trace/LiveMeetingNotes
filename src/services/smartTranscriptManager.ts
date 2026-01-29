@@ -308,21 +308,29 @@ export class SmartTranscriptManager {
     
     const lastSegment = this.confirmedSegments[this.confirmedSegments.length - 1];
     
-    // Check if last segment can accept more text (under 250 chars)
+    // Check conditions for merging or creating new segment
     if (lastSegment && !lastSegment.isLocked) {
-      const combinedLength = lastSegment.text.length + finalText.length + 1;
+      const lastSegmentChars = lastSegment.text.length;
       const timeSinceLastSegment = audioTimeMs - lastSegment.audioTimeMs;
       const isSameSpeaker = lastSegment.speaker === speaker;
       
-      // Merge if under 250 chars, within time window, same speaker
-      if (combinedLength <= 250 && 
-          timeSinceLastSegment < this.browserBehavior.mergeTimeWindow && 
-          isSameSpeaker) {
+      // **ĐIỀU KIỆN 1: Segment hiện tại đã >=250 ký tự → tạo segment mới**
+      if (lastSegmentChars >= this.browserBehavior.maxCharsPerSegment) {
+        console.log(`📄 NEW SEGMENT: Last segment full (${lastSegmentChars} >= 250 chars)`);
+        // Create new segment below
+      }
+      // **ĐIỀU KIỆN 2: Silence >=2.5s → tạo segment mới**
+      else if (timeSinceLastSegment >= this.browserBehavior.minTimeGapForNewSegment) {
+        console.log(`⏱️ NEW SEGMENT: Silence (${timeSinceLastSegment}ms >= 2500ms)`);
+        // Create new segment below
+      }
+      // **MERGE: Cùng speaker, trong time window, chưa đầy 250 chars**
+      else if (isSameSpeaker && timeSinceLastSegment < this.browserBehavior.mergeTimeWindow) {
         lastSegment.text = lastSegment.text.trim() + ' ' + finalText;
         lastSegment.endTime = timestamp;
         lastSegment.confidence = (lastSegment.confidence + confidence) / 2;
         this.sendConfirmedSegment(lastSegment);
-        console.log(`🔗 MERGE: "${finalText.substring(0, 30)}..." → segment #${lastSegment.id}`);
+        console.log(`🔗 MERGE: "${finalText.substring(0, 30)}..." → segment #${lastSegment.id} (${lastSegment.text.length} chars)`);
         return;
       }
     }
