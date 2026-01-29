@@ -722,12 +722,8 @@ export const RecordingControls: React.FC<Props> = ({
 
   const handleSaveChanges = async () => {
     try {
-      if (!lastProjectName) {
-        message.error('Không có dự án để cập nhật');
-        return;
-      }
-
       // Generate new folder and file names with new timestamp
+      // If lastProjectName is empty (e.g., after page reload), create new project name from meeting info
       const now = new Date();
       const year = now.getFullYear();
       const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -738,6 +734,11 @@ export const RecordingControls: React.FC<Props> = ({
       
       const sanitizedTitle = sanitizeMeetingTitle(meetingInfo.title || 'Meeting');
       const newProjectName = `${timePrefix}_${sanitizedTitle}`;
+      
+      // If no lastProjectName (e.g., after reload), notify user we're creating new version
+      if (!lastProjectName) {
+        message.info('Đang lưu dữ liệu đã khôi phục...');
+      }
 
       // Build updated metadata with current notes
       // Check if this is a notes-only project or recording project

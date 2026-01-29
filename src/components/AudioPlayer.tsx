@@ -212,7 +212,7 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(({ audioBlob, trans
           }
         },
         {
-          label: '🤖 Chuyển đổi giọng nói sang văn bản bằng Gemini AI',
+          label: '✨ Chuyển đổi giọng nói sang văn bản bằng Gemini AI',
           action: () => {
             // Get current config from settings
             const config = (window as any).speechToTextConfig;

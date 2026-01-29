@@ -96,14 +96,12 @@ const TranscriptionItemComponent: React.FC<Props> = ({
         }}
       >
         <Space size="small">
-          {/* Time */}
-          {!item.isAIRefined && (
-            <Tooltip title="Thời gian">
-              <Tag icon={<ClockCircleOutlined />} color="blue" style={{ fontSize: '11px' }}>
-                {formatTime(item.startTime)}
-              </Tag>
-            </Tooltip>
-          )}
+          {/* Time - Now showing for all transcriptions including Gemini AI */}
+          <Tooltip title="Thời gian">
+            <Tag icon={<ClockCircleOutlined />} color="blue" style={{ fontSize: '11px' }}>
+              {formatTime(item.startTime)}
+            </Tag>
+          </Tooltip>
 
           {/* Audio Time - Clickable */}
           {item.audioTimeMs !== undefined && (
