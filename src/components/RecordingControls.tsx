@@ -7,7 +7,9 @@ import {
   SaveOutlined,
   FolderAddOutlined,
   SettingOutlined,
-  SoundOutlined
+  SoundOutlined,
+  PauseCircleOutlined,
+  PlayCircleOutlined
 } from '@ant-design/icons';
 import { AudioRecorderService } from '../services/audioRecorder';
 import { FileManagerService, FileDownloadService } from '../services/fileManager';
@@ -85,6 +87,8 @@ export const RecordingControls: React.FC<Props> = ({
   const [lastRecordingDuration, setLastRecordingDuration] = useState<number>(0);
   const [autoTranscribe, setAutoTranscribe] = useState<boolean>(true);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
+  const [isPaused, setIsPaused] = useState<boolean>(false);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false); // Track merge/save operations
   
   // Recording segments tracking for multi-part recording
   const [recordingSegments, setRecordingSegments] = useState<Array<{
@@ -152,6 +156,7 @@ export const RecordingControls: React.FC<Props> = ({
       onRecordingChange(true);
       setDuration(0);
       setRecordingSegments([]); // Clear segments for new recording
+      setIsPaused(false);
       message.success('Bắt đầu ghi âm');
     } catch (error: any) {
       message.error(error.message);
@@ -175,6 +180,122 @@ export const RecordingControls: React.FC<Props> = ({
     }
   };
 
+  const handlePauseRecording = async () => {
+    try {
+      // Set paused state immediately for instant UI feedback
+      setIsPaused(true);
+      
+      // Stop current recording segment
+      const audioBlob = await recorder.stopRecording();
+      const recordingDuration = recorder.getCurrentDuration();
+      const segmentEndTime = Date.now();
+      
+      // Wait for transcription to complete if active
+      if (autoTranscribe && speechToTextService.isProcessing()) {
+        await speechToTextService.waitForCompletion(3000);
+      }
+      
+      // Stop audio stream and transcription
+      setAudioStream(null);
+      speechToTextService.stopTranscription();
+      
+      // Save current segment
+      const currentSegment: AudioSegment = {
+        blob: audioBlob,
+        startTime: recordingStartTime,
+        endTime: segmentEndTime,
+        duration: recordingDuration
+      };
+      
+      setRecordingSegments(prev => [...prev, currentSegment]);
+      
+      message.info('⏸️ Đã tạm dừng ghi âm');
+    } catch (error: any) {
+      message.error(error.message);
+    }
+  };
+
+  const handleResumeRecording = async () => {
+    try {
+      // Start new recording segment
+      await recorder.startRecording();
+      const newSegmentStartTime = Date.now();
+      onRecordingStartTimeChange(newSegmentStartTime);
+      
+      // Get audio stream for transcription
+      const stream = recorder.getStream();
+      if (stream) {
+        setAudioStream(stream);
+      }
+      
+      setIsPaused(false);
+      
+      message.success('▶️ Tiếp tục ghi âm');
+    } catch (error: any) {
+      message.error(error.message);
+    }
+  };
+
+  const handleStopFromPause = async () => {
+    try {
+      // When paused, recorder is already stopped, so we just process segments
+      setIsProcessing(true);
+      onRecordingChange(false);
+      setIsPaused(false);
+      
+      // All segments are already in recordingSegments array
+      const allSegments = recordingSegments;
+      
+      if (allSegments.length === 0) {
+        message.error('Không có segment nào để xử lý');
+        setIsProcessing(false);
+        return;
+      }
+
+      // Check if we need to merge multiple segments
+      let finalAudioBlob: Blob;
+      let finalDuration = 0;
+      let totalRecordingStartTime = allSegments[0].startTime;
+
+      if (allSegments.length > 1) {
+        message.loading({ content: '🔀 Đang ghép các đoạn ghi âm...', key: 'mergeAudio' });
+        
+        try {
+          // Merge all segments
+          const mergeResult = await AudioMerger.mergeSegments(allSegments);
+          finalAudioBlob = mergeResult.mergedBlob;
+          finalDuration = mergeResult.totalDuration;
+          totalRecordingStartTime = allSegments[0].startTime; // Use first segment's start time
+          
+          message.success({ content: `✅ Đã ghép ${allSegments.length} đoạn ghi âm`, key: 'mergeAudio', duration: 2 });
+        } catch (error) {
+          message.error({ content: '❌ Lỗi khi ghép audio segments', key: 'mergeAudio', duration: 3 });
+          // Continue with last segment only if merge fails
+          console.error('Merge error:', error);
+          const lastSegment = allSegments[allSegments.length - 1];
+          finalAudioBlob = lastSegment.blob;
+          finalDuration = allSegments.reduce((sum, seg) => sum + seg.duration, 0);
+        }
+      } else {
+        // Single segment, use directly
+        finalAudioBlob = allSegments[0].blob;
+        finalDuration = allSegments[0].duration;
+      }
+
+      // Continue with save process (same as handleStopRecording)
+      await processSaveRecording(finalAudioBlob, finalDuration, totalRecordingStartTime, allSegments);
+      
+      // Clear segments and reset states
+      setRecordingSegments([]);
+      setIsProcessing(false);
+    } catch (error: any) {
+      message.error(`Lỗi khi dừng: ${error.message}`);
+      setIsProcessing(false);
+      setIsPaused(false);
+      onRecordingChange(false);
+    }
+  };
+
   const sanitizeMeetingTitle = (title: string): string => {
     // Remove invalid characters for file/folder names: < > : " / \ | ? *
     let sanitized = title.replace(/[<>:"/\\|?*]/g, '_');
@@ -192,6 +313,7 @@ export const RecordingControls: React.FC<Props> = ({
 
   const handleStopRecording = async () => {
     try {
+      setIsProcessing(true);
       const audioBlob = await recorder.stopRecording();
       const recordingDuration = recorder.getCurrentDuration();
       const segmentEndTime = Date.now();
@@ -238,13 +360,6 @@ export const RecordingControls: React.FC<Props> = ({
             key: 'mergeAudio',
             duration: 3
           });
-
-          // console.log('📊 Merge info:', {
-          //   segments: allSegments.length,
-          //   totalDuration: `${(finalDuration / 1000).toFixed(2)}s`,
-          //   gaps: mergeResult.gapInfo.length,
-          //   gapDetails: mergeResult.gapInfo.map(g => `${(g.durationMs / 1000).toFixed(2)}s`)
-          // });
         } catch (error: any) {
           message.error({ content: `Failed to merge: ${error.message}`, key: 'mergeAudio' });
           // Continue with last segment only if merge fails
@@ -252,214 +367,219 @@ export const RecordingControls: React.FC<Props> = ({
         }
       }
 
-      // Generate folder and file names with timestamp prefix and meeting title
-      const now = new Date(totalRecordingStartTime);
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      const hours = String(now.getHours()).padStart(2, '0');
-      const minutes = String(now.getMinutes()).padStart(2, '0');
-      const timePrefix = `${year}${month}${day}_${hours}${minutes}`;
+      // Process save recording (save files, metadata, transcription, Word doc)
+      await processSaveRecording(finalAudioBlob, finalDuration, totalRecordingStartTime, allSegments);
       
-      const sanitizedTitle = sanitizeMeetingTitle(meetingInfo.title || 'Meeting');
-      const projectName = `${timePrefix}_${sanitizedTitle}`;
-      const audioFileName = `${projectName}.webm`;
-
-      // Save files
-      if (FileManagerService.isSupported() && folderPath) {
-        // Create project subdirectory and get its handle
-        const originalHandle = fileManager.getDirHandle(); // Save original handle
-        const projectDirHandle = await fileManager.createProjectDirectory(projectName);
-        // console.log('✓ Created project directory:', projectName);
-        
-        // If multi-part recording, backup original segments
-        if (allSegments.length > 1) {
-          try {
-            // Create backup subdirectory inside project directory
-            fileManager.setDirHandle(projectDirHandle);
-            const backupDirHandle = await fileManager.createProjectDirectory('backup');
-            fileManager.setDirHandle(backupDirHandle);
-            
-            // Save individual segments to backup folder
-            for (let i = 0; i < allSegments.length; i++) {
-              const segmentFileName = `${projectName}_part${i + 1}.webm`;
-              await fileManager.saveAudioFile(
-                allSegments[i].blob, 
-                segmentFileName, 
-                undefined,
-                false // Don't add time prefix since parent folder already has it
-              );
-            }
-            
-            // console.log(`📦 Backed up ${allSegments.length} segments to backup folder`);
-          } catch (error) {
-            console.error('Failed to backup segments:', error);
-            // Don't fail the entire save if backup fails
-          }
-        }
-        
-        // Set dirHandle to project directory for main files
-        fileManager.setDirHandle(projectDirHandle);
-        
-        // Save merged/final audio file
-        await fileManager.saveAudioFile(finalAudioBlob, audioFileName, undefined, true);
-        // console.log('✓ Saved audio file:', audioFileName);
-
-        // Build and save metadata
-        const metadata = MetadataBuilder.buildMetadata(
-          meetingInfo,
-          notes,
-          timestampMap,
-          speakersMap,
-          finalDuration,
-          audioFileName,
-          totalRecordingStartTime
-        );
-
-        await fileManager.saveMetadataFile(
-          metadata.meetingInfo,
-          `${projectName}_meeting_info.json`,
-          undefined,
-          true
-        );
-        // console.log('✓ Saved meeting_info.json');
-        
-        await fileManager.saveMetadataFile(
-          metadata.metadata,
-          `${projectName}_metadata.json`,
-          undefined,
-          true
-        );
-        // console.log('✓ Saved metadata.json');
-
-        // Save transcription data if available
-        if (transcriptions && transcriptions.length > 0) {
-          const transcriptionData = {
-            transcriptions: transcriptions.filter(t => t.isFinal), // Only save final results
-            totalCount: transcriptions.filter(t => t.isFinal).length,
-            savedAt: new Date().toISOString()
-          };
-          await fileManager.saveMetadataFile(
-            transcriptionData,
-            `${projectName}_transcription.json`,
-            undefined,
-            true
-          );
-          
-          // Save raw transcripts for AI refinement
-          const finalTranscriptions = transcriptions.filter(t => t.isFinal);
-          const rawTranscriptsData = {
-            rawTranscripts: finalTranscriptions.map(t => ({
-              text: t.text,
-              timestamp: t.startTime,
-              audioTimeMs: t.audioTimeMs,
-              confidence: t.confidence,
-              isFinal: t.isFinal
-            })),
-            totalCount: finalTranscriptions.length,
-            savedAt: new Date().toISOString()
-          };
-          await fileManager.saveMetadataFile(
-            rawTranscriptsData,
-            `${projectName}_rawTranscripts.json`,
-            undefined,
-            true
-          );
-          // console.log('💾 Transcription data saved:', transcriptionData.totalCount, 'items');
-        }
-
-        // Export Word document to same folder
-        const finalTranscriptions = transcriptions?.filter(t => t.isFinal) || [];
-        const wordBlob = await WordExporter.createWordBlob(meetingInfo, notes, finalTranscriptions, speakersMap);
-        await fileManager.saveWordFile(wordBlob, `${projectName}.docx`, undefined, true);
-        // console.log('✓ Saved Word document');
-        
-        // Restore original handle
-        if (originalHandle) {
-          fileManager.setDirHandle(originalHandle);
-        }
-
-        message.success(`Recording saved to folder: ${projectName}`);
-        setLastProjectName(projectName);
-        setLastRecordingDuration(finalDuration);
-        onSaveComplete(); // Notify parent that save is complete
-      } else {
-        // Fallback: download files
-        const downloader = new FileDownloadService();
-        await downloader.downloadAudioFile(finalAudioBlob, audioFileName);
-
-        const metadata = MetadataBuilder.buildMetadata(
-          meetingInfo,
-          notes,
-          timestampMap,
-          speakersMap,
-          finalDuration,
-          audioFileName,
-          totalRecordingStartTime
-        );
-
-        await downloader.downloadMetadataFile(
-          metadata.meetingInfo,
-          `${projectName}_meeting_info.json`
-        );
-        await downloader.downloadMetadataFile(
-          metadata.metadata,
-          `${projectName}_metadata.json`
-        );
-
-        // Save transcription data if available
-        if (transcriptions && transcriptions.length > 0) {
-          const transcriptionData = {
-            transcriptions: transcriptions.filter(t => t.isFinal),
-            totalCount: transcriptions.filter(t => t.isFinal).length,
-            savedAt: new Date().toISOString()
-          };
-          await downloader.downloadMetadataFile(
-            transcriptionData,
-            `${projectName}_transcription.json`
-          );
-          // console.log('💾 Transcription data saved:', transcriptionData.totalCount, 'items');
-
-          // Save raw transcripts for AI refinement
-          const rawTranscriptsData = {
-            rawTranscripts: transcriptions.filter(t => t.isFinal).map(t => ({
-              text: t.text,
-              timestamp: t.startTime,
-              audioTimeMs: t.audioTimeMs,
-              confidence: t.confidence,
-              isFinal: t.isFinal
-            })),
-            totalCount: transcriptions.filter(t => t.isFinal).length,
-            savedAt: new Date().toISOString()
-          };
-          await downloader.downloadMetadataFile(
-            rawTranscriptsData,
-            `${projectName}_rawTranscripts.json`
-          );
-        }
-
-        // Export Word document
-        const finalTranscriptions = transcriptions?.filter(t => t.isFinal) || [];
-        await WordExporter.exportToWord(
-          meetingInfo,
-          notes,
-          `${projectName}.docx`,
-          finalTranscriptions,
-          speakersMap
-        );
-
-        message.info('Files downloaded. Please save them to your meeting notes folder.');
-        setLastProjectName(projectName);
-        setLastRecordingDuration(finalDuration);
-        onSaveComplete(); // Notify parent that save is complete
-      }
-
-      // Set audio for playback and clear segments
-      onAudioBlobChange(finalAudioBlob);
-      setRecordingSegments([]); // Clear segments after successful save
+      // Clear segments and reset processing state
+      setRecordingSegments([]);
+      setIsProcessing(false);
     } catch (error: any) {
       message.error(`Failed to stop recording: ${error.message}`);
+      setIsProcessing(false);
     }
+  };
+  
+  // Helper function to process saving recording (shared by handleStopRecording and handleStopFromPause)
+  const processSaveRecording = async (
+    finalAudioBlob: Blob,
+    finalDuration: number,
+    totalRecordingStartTime: number,
+    allSegments: AudioSegment[]
+  ) => {
+    // Generate folder and file names with timestamp prefix and meeting title
+    const now = new Date(totalRecordingStartTime);
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const timePrefix = `${year}${month}${day}_${hours}${minutes}`;
+    
+    const sanitizedTitle = sanitizeMeetingTitle(meetingInfo.title || 'Meeting');
+    const projectName = `${timePrefix}_${sanitizedTitle}`;
+    const audioFileName = `${projectName}.webm`;
+
+    // Save files
+    if (FileManagerService.isSupported() && folderPath) {
+      // Create project subdirectory and get its handle
+      const originalHandle = fileManager.getDirHandle(); // Save original handle
+      const projectDirHandle = await fileManager.createProjectDirectory(projectName);
+      
+      // If multi-part recording, backup original segments
+      if (allSegments.length > 1) {
+        try {
+          // Create backup subdirectory inside project directory
+          fileManager.setDirHandle(projectDirHandle);
+          const backupDirHandle = await fileManager.createProjectDirectory('backup');
+          fileManager.setDirHandle(backupDirHandle);
+          
+          // Save individual segments to backup folder
+          for (let i = 0; i < allSegments.length; i++) {
+            const segmentFileName = `${projectName}_part${i + 1}.webm`;
+            await fileManager.saveAudioFile(
+              allSegments[i].blob, 
+              segmentFileName, 
+              undefined,
+              false
+            );
+          }
+        } catch (error) {
+          console.error('Failed to backup segments:', error);
+        }
+      }
+      
+      // Set dirHandle to project directory for main files
+      fileManager.setDirHandle(projectDirHandle);
+      
+      // Save merged/final audio file
+      await fileManager.saveAudioFile(finalAudioBlob, audioFileName, undefined, true);
+
+      // Build and save metadata
+      const metadata = MetadataBuilder.buildMetadata(
+        meetingInfo,
+        notes,
+        timestampMap,
+        speakersMap,
+        finalDuration,
+        audioFileName,
+        totalRecordingStartTime
+      );
+
+      await fileManager.saveMetadataFile(
+        metadata.meetingInfo,
+        `${projectName}_meeting_info.json`,
+        undefined,
+        true
+      );
+      
+      await fileManager.saveMetadataFile(
+        metadata.metadata,
+        `${projectName}_metadata.json`,
+        undefined,
+        true
+      );
+
+      // Save transcription data if available
+      if (transcriptions && transcriptions.length > 0) {
+        const transcriptionData = {
+          transcriptions: transcriptions.filter(t => t.isFinal),
+          totalCount: transcriptions.filter(t => t.isFinal).length,
+          savedAt: new Date().toISOString()
+        };
+        await fileManager.saveMetadataFile(
+          transcriptionData,
+          `${projectName}_transcription.json`,
+          undefined,
+          true
+        );
+        
+        // Save raw transcripts for AI refinement
+        const finalTranscriptions = transcriptions.filter(t => t.isFinal);
+        const rawTranscriptsData = {
+          rawTranscripts: finalTranscriptions.map(t => ({
+            text: t.text,
+            timestamp: t.startTime,
+            audioTimeMs: t.audioTimeMs,
+            confidence: t.confidence,
+            isFinal: t.isFinal
+          })),
+          totalCount: finalTranscriptions.length,
+          savedAt: new Date().toISOString()
+        };
+        await fileManager.saveMetadataFile(
+          rawTranscriptsData,
+          `${projectName}_rawTranscripts.json`,
+          undefined,
+          true
+        );
+      }
+
+      // Export Word document to same folder
+      const finalTranscriptions = transcriptions?.filter(t => t.isFinal) || [];
+      const wordBlob = await WordExporter.createWordBlob(meetingInfo, notes, finalTranscriptions, speakersMap);
+      await fileManager.saveWordFile(wordBlob, `${projectName}.docx`, undefined, true);
+      
+      // Restore original handle
+      if (originalHandle) {
+        fileManager.setDirHandle(originalHandle);
+      }
+
+      message.success(`Recording saved to folder: ${projectName}`);
+      setLastProjectName(projectName);
+      setLastRecordingDuration(finalDuration);
+      onSaveComplete();
+    } else {
+      // Fallback: download files
+      const downloader = new FileDownloadService();
+      await downloader.downloadAudioFile(finalAudioBlob, audioFileName);
+
+      const metadata = MetadataBuilder.buildMetadata(
+        meetingInfo,
+        notes,
+        timestampMap,
+        speakersMap,
+        finalDuration,
+        audioFileName,
+        totalRecordingStartTime
+      );
+
+      await downloader.downloadMetadataFile(
+        metadata.meetingInfo,
+        `${projectName}_meeting_info.json`
+      );
+      await downloader.downloadMetadataFile(
+        metadata.metadata,
+        `${projectName}_metadata.json`
+      );
+
+      // Save transcription data if available
+      if (transcriptions && transcriptions.length > 0) {
+        const transcriptionData = {
+          transcriptions: transcriptions.filter(t => t.isFinal),
+          totalCount: transcriptions.filter(t => t.isFinal).length,
+          savedAt: new Date().toISOString()
+        };
+        await downloader.downloadMetadataFile(
+          transcriptionData,
+          `${projectName}_transcription.json`
+        );
+
+        // Save raw transcripts for AI refinement
+        const rawTranscriptsData = {
+          rawTranscripts: transcriptions.filter(t => t.isFinal).map(t => ({
+            text: t.text,
+            timestamp: t.startTime,
+            audioTimeMs: t.audioTimeMs,
+            confidence: t.confidence,
+            isFinal: t.isFinal
+          })),
+          totalCount: transcriptions.filter(t => t.isFinal).length,
+          savedAt: new Date().toISOString()
+        };
+        await downloader.downloadMetadataFile(
+          rawTranscriptsData,
+          `${projectName}_rawTranscripts.json`
+        );
+      }
+
+      // Export Word document
+      const finalTranscriptions = transcriptions?.filter(t => t.isFinal) || [];
+      await WordExporter.exportToWord(
+        meetingInfo,
+        notes,
+        `${projectName}.docx`,
+        finalTranscriptions,
+        speakersMap
+      );
+
+      message.info('Files downloaded. Please save them to your meeting notes folder.');
+      setLastProjectName(projectName);
+      setLastRecordingDuration(finalDuration);
+      onSaveComplete();
+    }
+
+    // Set audio for playback
+    onAudioBlobChange(finalAudioBlob);
   };
 
   const handleSaveNotes = async () => {
@@ -1119,12 +1239,13 @@ export const RecordingControls: React.FC<Props> = ({
                 icon={<AudioOutlined />}
                 onClick={handleStartRecording}
                 size="large"
+                disabled={isProcessing}
               >
                 Ghi âm
               </Button>
               
-              {/* Show Continue Recording button if there are segments */}
-              {recordingSegments.length > 0 && (
+              {/* Show Continue Recording button only if there are segments AND not processing */}
+              {recordingSegments.length > 0 && !isProcessing && (
                 <Button
                   type="primary"
                   icon={<AudioOutlined />}
@@ -1135,16 +1256,54 @@ export const RecordingControls: React.FC<Props> = ({
                   Tiếp tục ghi âm
                 </Button>
               )}
+              
+              {isProcessing && (
+                <span style={{ marginLeft: '12px', color: '#1890ff', fontWeight: 600 }}>
+                  ⏳ Đang xử lý...
+                </span>
+              )}
+            </>
+          ) : isPaused ? (
+            <>
+              <Button
+                type="primary"
+                icon={<PlayCircleOutlined />}
+                onClick={handleResumeRecording}
+                size="large"
+                style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}
+              >
+                Tiếp tục
+              </Button>
+              <Button
+                type="primary"
+                icon={<StopOutlined />}
+                onClick={handleStopFromPause}
+                size="large"
+                danger
+              >
+                Dừng hẳn
+              </Button>
             </>
           ) : (
-            <Button
-              type="primary"
-              icon={<StopOutlined />}
-              onClick={handleStopRecording}
-              size="large"
-            >
-              Dừng
-            </Button>
+            <>
+              <Button
+                type="default"
+                icon={<PauseCircleOutlined />}
+                onClick={handlePauseRecording}
+                size="large"
+              >
+                Tạm dừng
+              </Button>
+              <Button
+                type="primary"
+                icon={<StopOutlined />}
+                onClick={handleStopRecording}
+                size="large"
+                danger
+              >
+                Dừng
+              </Button>
+            </>
           )}
 
           {/* Show Save Notes button when has unsaved data but not saved yet */}
@@ -1174,8 +1333,12 @@ export const RecordingControls: React.FC<Props> = ({
 
           <span className="duration-display">⏱ {formatDuration(duration)}</span>
           
-          {isRecording && (
-            <span className="recording-indicator">🔴 Recording...</span>
+          {isRecording && !isPaused && (
+            <span className="recording-indicator">🔴 Đang ghi âm...</span>
+          )}
+          
+          {isPaused && (
+            <span className="paused-indicator">⏸️ Đã tạm dừng</span>
           )}
         </Space>
 

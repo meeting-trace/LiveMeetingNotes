@@ -209,6 +209,15 @@ body {
   animation: pulse 1.5s ease-in-out infinite;
 }
 
+.paused-indicator {
+  font-weight: 600;
+  color: #faad14;
+  background: rgba(250, 173, 20, 0.1);
+  padding: 4px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(250, 173, 20, 0.3);
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
