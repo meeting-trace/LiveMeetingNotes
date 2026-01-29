@@ -1359,7 +1359,7 @@ export const RecordingControls: React.FC<Props> = ({
               <Tooltip title={isRecording ? 'Bật/tắt chuyển đổi giọng nói sang văn bản tự động' : 'Chỉ khả dụng khi đang ghi âm'}>
                 <Space>
                   <SoundOutlined style={{ fontSize: '18px', color: autoTranscribe ? '#52c41a' : '#999' }} />
-                  <span style={{ fontSize: '14px' }}>Tự động chuyển 🎤 → 🔠:</span>
+                  <span style={{ fontSize: '14px' }}>Auto 🎤 → 🔠:</span>
                   <Switch
                     checked={autoTranscribe}
                     onChange={(checked) => {
