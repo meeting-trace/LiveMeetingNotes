@@ -399,6 +399,9 @@ export const App: React.FC = () => {
       });
 
       // Start transcription with progress callback and config values
+      // Calculate meeting start time from meetingInfo
+      const meetingStartTime = new Date(`${meetingInfo.date}T${meetingInfo.time}:00`);
+      
       const results = await AIRefinementService.transcribeEntireAudioWithGemini(
         config.geminiApiKey,
         audioBlob,
@@ -420,7 +423,8 @@ export const App: React.FC = () => {
         },
         maxFileSizeMB,
         requestDelaySeconds,
-        maxDurationMinutes
+        maxDurationMinutes,
+        meetingStartTime
       );
 
       progressModal.destroy();
@@ -530,13 +534,16 @@ export const App: React.FC = () => {
 
         try {
           const maxFileSizeMB = config.maxFileSizeMB || 20;
+          const meetingStartTime = new Date(`${meetingInfo.date}T${meetingInfo.time}:00`);
+          
           const segmentResults = await AIRefinementService.transcribeAudioWithGemini(
             config.geminiApiKey!,
             segmentBlob,
             config.geminiModel!,
             undefined,
             false,
-            maxFileSizeMB
+            maxFileSizeMB,
+            meetingStartTime
           );
 
           // Adjust timestamps to match original audio
@@ -820,6 +827,8 @@ export const App: React.FC = () => {
           try {
             const config = speechToTextService.getConfig();
             const maxFileSizeMB = config?.maxFileSizeMB || 20;
+            const meetingStartTime = new Date(`${meetingInfo.date}T${meetingInfo.time}:00`);
+            
             const results = await AIRefinementService.transcribeAudioWithGemini(
               apiKey,
               audioBlob,
@@ -829,7 +838,8 @@ export const App: React.FC = () => {
                 console.log(`Transcription progress: ${progress.toFixed(0)}%`);
               },
               false,
-              maxFileSizeMB
+              maxFileSizeMB,
+              meetingStartTime
             );
 
             // Show merge/replace options modal

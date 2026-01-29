@@ -696,7 +696,8 @@ Giữ timestamp/audioTimeMs gốc. Chỉ trả về JSON array.`;
     modelName: string, // e.g., "models/gemini-1.5-flash" or "models/gemini-2.0-flash-exp"
     onProgress?: (progress: number) => void,
     skipSizeCheck: boolean = false, // Skip size check when called from auto-split flow
-    maxFileSizeMB: number = 20 // Maximum file size in MB (from config)
+    maxFileSizeMB: number = 20, // Maximum file size in MB (from config)
+    meetingStartTime?: Date // Meeting start time for accurate timestamp calculation
   ): Promise<TranscriptionResult[]> {
     if (!apiKey || apiKey.trim().length === 0) {
       throw new Error('Gemini API Key is required');
@@ -843,7 +844,7 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
       if (onProgress) onProgress(90);
 
       // Parse response
-      const results = this.parseGeminiAudioTranscription(data);
+      const results = this.parseGeminiAudioTranscription(data, meetingStartTime);
       if (onProgress) onProgress(100);
 
       return results;
@@ -1127,7 +1128,8 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
     onProgress?: (progress: number, message: string) => void,
     maxFileSizeMB: number = 20,
     requestDelaySeconds: number = 5,
-    maxDurationMinutes: number = 60
+    maxDurationMinutes: number = 60,
+    meetingStartTime?: Date // Meeting start time for accurate timestamp calculation
   ): Promise<TranscriptionResult[]> {
     const maxSizeMB = maxFileSizeMB;
 
@@ -1186,7 +1188,8 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
             }
           },
           true, // skipSizeCheck = true (chunks already validated)
-          maxSizeMB // Pass maxFileSizeMB to child call
+          maxSizeMB, // Pass maxFileSizeMB to child call
+          meetingStartTime // Pass meeting start time for accurate timestamps
         );
 
         // Adjust timestamps for this chunk
@@ -1269,7 +1272,7 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
   /**
    * Parse Gemini audio transcription response
    */
-  private static parseGeminiAudioTranscription(apiResponse: any): TranscriptionResult[] {
+  private static parseGeminiAudioTranscription(apiResponse: any, meetingStartTime?: Date): TranscriptionResult[] {
     try {
       const candidates = apiResponse.candidates;
       if (!candidates || candidates.length === 0) {
@@ -1298,9 +1301,53 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
         console.log('✂️ Extracted JSON from markdown code block');
       }
 
-      console.log('📄 JSON to parse:', jsonText.substring(0, 500) + '...');
+      // Clean control characters and invalid escape sequences
+      // Remove control characters except \n, \r, \t which are valid in JSON strings
+      jsonText = jsonText.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+      
+      // Fix common issues with escape sequences
+      jsonText = jsonText
+        .replace(/\\\\/g, '\\') // Fix double backslashes
+        .replace(/\\n/g, ' ')    // Replace \n with space in text content
+        .replace(/\\r/g, '')     // Remove \r
+        .replace(/\\t/g, ' ')    // Replace \t with space
+        .replace(/\n/g, ' ')     // Replace actual newlines with space
+        .replace(/\r/g, '')      // Remove actual carriage returns
+        .replace(/\t/g, ' ')     // Replace actual tabs with space
+        .replace(/\s+/g, ' ');   // Collapse multiple spaces
 
-      const parsed = JSON.parse(jsonText);
+      console.log('🧹 Cleaned JSON length:', jsonText.length, 'characters');
+      console.log('📄 JSON to parse (first 500):', jsonText.substring(0, 500) + '...');
+
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonText);
+      } catch (parseError: any) {
+        console.error('❌ JSON parse error:', parseError.message);
+        console.log('📋 Problematic JSON (around error position):');
+        
+        // Try to extract position info
+        const posMatch = parseError.message.match(/position (\d+)/);
+        let errorPosition = -1;
+        if (posMatch) {
+          errorPosition = parseInt(posMatch[1]);
+          const start = Math.max(0, errorPosition - 100);
+          const end = Math.min(jsonText.length, errorPosition + 100);
+          console.log(jsonText.substring(start, end));
+          console.log(' '.repeat(100) + '^--- Error here');
+        }
+        
+        // Try progressive parsing: parse valid parts and mark error parts
+        console.log('🔄 Attempting progressive segment extraction...');
+        const segments = this.extractSegmentsWithErrorHandling(jsonText, errorPosition);
+        
+        if (segments && segments.length > 0) {
+          console.log(`✅ Extracted ${segments.length} segments (including error markers)`);
+          parsed = { segments };
+        } else {
+          throw parseError;
+        }
+      }
 
       if (!parsed.segments || !Array.isArray(parsed.segments)) {
         console.error('❌ Invalid structure:', parsed);
@@ -1322,15 +1369,27 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
         const timestamp = segment.timestamp || '0:00';
         const audioTimeMs = this.parseTimestampToMs(timestamp);
 
-        // For Gemini transcription, we don't have actual wall-clock time
-        // Use current time as base, but mark it clearly
-        const now = new Date();
+        // Calculate actual time based on meeting start time + audio offset
+        let startTime: string;
+        let endTime: string;
+        
+        if (meetingStartTime) {
+          // Use meeting start time as base + audio offset
+          const actualTime = new Date(meetingStartTime.getTime() + audioTimeMs);
+          startTime = actualTime.toISOString();
+          endTime = actualTime.toISOString(); // Same as start since we don't have duration
+        } else {
+          // Fallback: use current time if meeting start time not provided
+          const now = new Date();
+          startTime = now.toISOString();
+          endTime = now.toISOString();
+        }
         
         return {
           id: `gemini-${Date.now()}-${index}`,
           text: segment.text || '',
-          startTime: now.toISOString(), // Use ISO format to avoid NaN display
-          endTime: now.toISOString(),   // Same time since we don't have duration
+          startTime,
+          endTime,
           audioTimeMs, // This is the relative position in audio file (mm:ss)
           confidence: 1.0,
           speaker: segment.speaker || 'Unknown',
@@ -1361,5 +1420,118 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
     } catch {
       return 0;
     }
+  }
+
+  /**
+   * Fallback: Extract segments manually from malformed JSON using regex
+   */
+  private static extractSegmentsManually(text: string): any[] {
+    const segments: any[] = [];
+    
+    // Pattern to match segment objects
+    // Looks for: "timestamp": "...", "speaker": "...", "text": "..."
+    const segmentPattern = /"timestamp"\s*:\s*"([^"]+)"\s*,\s*"speaker"\s*:\s*"([^"]+)"\s*,\s*"text"\s*:\s*"([^"]+)"/g;
+    
+    let match;
+    while ((match = segmentPattern.exec(text)) !== null) {
+      segments.push({
+        timestamp: match[1],
+        speaker: match[2],
+        text: match[3]
+      });
+    }
+    
+    // Alternative pattern: handle different field orders
+    if (segments.length === 0) {
+      const altPattern = /"speaker"\s*:\s*"([^"]+)"\s*,\s*"timestamp"\s*:\s*"([^"]+)"\s*,\s*"text"\s*:\s*"([^"]+)"/g;
+      while ((match = altPattern.exec(text)) !== null) {
+        segments.push({
+          timestamp: match[2],
+          speaker: match[1],
+          text: match[3]
+        });
+      }
+    }
+    
+    return segments;
+  }
+
+  /**
+   * Progressive segment extraction with error handling
+   * Parse valid parts, mark error parts, continue to end
+   */
+  private static extractSegmentsWithErrorHandling(text: string, _errorPosition: number): any[] {
+    const segments: any[] = [];
+    
+    // Strategy: Split by segment boundaries and parse each independently
+    // Look for segment patterns: { "timestamp": "...", "speaker": "...", "text": "..." }
+    
+    // Find all potential segment boundaries
+    const segmentBoundaries: number[] = [];
+    const boundaryPattern = /\{\s*"(timestamp|speaker)"/g;
+    let match;
+    
+    while ((match = boundaryPattern.exec(text)) !== null) {
+      segmentBoundaries.push(match.index);
+    }
+    
+    console.log(`📍 Found ${segmentBoundaries.length} potential segment boundaries`);
+    
+    // Parse each segment independently
+    for (let i = 0; i < segmentBoundaries.length; i++) {
+      const start = segmentBoundaries[i];
+      const end = i < segmentBoundaries.length - 1 ? segmentBoundaries[i + 1] : text.length;
+      const segmentText = text.substring(start, end).trim();
+      
+      // Remove trailing comma and closing braces if present
+      let cleanSegmentText = segmentText.replace(/[,\s]*$/, '');
+      if (!cleanSegmentText.endsWith('}')) {
+        cleanSegmentText += '}';
+      }
+      
+      try {
+        // Try to parse this segment as valid JSON
+        const segment = JSON.parse(cleanSegmentText);
+        
+        if (segment.timestamp || segment.speaker || segment.text) {
+          segments.push({
+            timestamp: segment.timestamp || '0:00',
+            speaker: segment.speaker || 'Unknown',
+            text: segment.text || ''
+          });
+        }
+      } catch (segmentError) {
+        // This segment is corrupted, extract what we can with regex
+        const tsMatch = segmentText.match(/"timestamp"\s*:\s*"([^"]+)"/);
+        const spMatch = segmentText.match(/"speaker"\s*:\s*"([^"]+)"/);
+        const txtMatch = segmentText.match(/"text"\s*:\s*"([^"]*?)"/);
+        
+        if (tsMatch || spMatch || txtMatch) {
+          // Partial data recovered
+          segments.push({
+            timestamp: tsMatch ? tsMatch[1] : '0:00',
+            speaker: spMatch ? spMatch[1] : '❌ LỖI',
+            text: txtMatch ? txtMatch[1] : `[Lỗi parse tại vị trí ${start}]`
+          });
+          console.log(`⚠️ Partial recovery at position ${start}`);
+        } else {
+          // Completely corrupted segment
+          segments.push({
+            timestamp: '0:00',
+            speaker: '❌ LỖI',
+            text: `[Đoạn bị lỗi không thể phục hồi - vị trí ${start}-${end}]`
+          });
+          console.log(`❌ Failed segment at position ${start}-${end}`);
+        }
+      }
+    }
+    
+    // If no segments found via boundary method, try full regex extraction
+    if (segments.length === 0) {
+      console.log('🔄 Falling back to full regex extraction...');
+      return this.extractSegmentsManually(text);
+    }
+    
+    return segments;
   }
 }
