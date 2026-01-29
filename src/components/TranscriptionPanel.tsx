@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { Collapse, Empty, Tag, Space, Tooltip, Input, Button } from 'antd';
 import { AudioOutlined, ClockCircleOutlined, UserOutlined, CheckCircleOutlined, EditOutlined, SaveOutlined, CloseOutlined, RobotOutlined } from '@ant-design/icons';
 import type { TranscriptionResult } from '../types/types';
@@ -13,7 +13,7 @@ interface Props {
   canRefineWithAI?: boolean;
 }
 
-export const TranscriptionPanel: React.FC<Props> = ({
+const TranscriptionPanelComponent: React.FC<Props> = ({
   transcriptions,
   isTranscribing,
   isOnline,
@@ -579,3 +579,17 @@ export const TranscriptionPanel: React.FC<Props> = ({
     />
   );
 };
+
+// Memoize to prevent unnecessary re-renders when parent updates
+export const TranscriptionPanel = memo(TranscriptionPanelComponent, (prevProps, nextProps) => {
+  // Only re-render if these specific props changed
+  return (
+    prevProps.transcriptions === nextProps.transcriptions &&
+    prevProps.isTranscribing === nextProps.isTranscribing &&
+    prevProps.isOnline === nextProps.isOnline &&
+    prevProps.canRefineWithAI === nextProps.canRefineWithAI &&
+    prevProps.onSeekAudio === nextProps.onSeekAudio &&
+    prevProps.onEditTranscription === nextProps.onEditTranscription &&
+    prevProps.onAIRefine === nextProps.onAIRefine
+  );
+});

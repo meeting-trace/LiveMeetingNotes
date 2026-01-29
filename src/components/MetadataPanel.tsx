@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { Input, Collapse } from 'antd';
 import type { MeetingInfo } from '../types/types';
 
@@ -10,12 +10,32 @@ interface Props {
 }
 
 export const MetadataPanel: React.FC<Props> = ({ meetingInfo, onChange }) => {
-  const handleChange = (field: keyof MeetingInfo, value: string) => {
-    onChange({
-      ...meetingInfo,
+  // Local state for immediate UI update
+  const [localInfo, setLocalInfo] = useState<MeetingInfo>(meetingInfo);
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Sync local state when prop changes (e.g., load project)
+  useEffect(() => {
+    setLocalInfo(meetingInfo);
+  }, [meetingInfo]);
+  
+  const handleChange = useCallback((field: keyof MeetingInfo, value: string) => {
+    // Update local state immediately for responsive UI
+    const newInfo = {
+      ...localInfo,
       [field]: value
-    });
-  };
+    };
+    setLocalInfo(newInfo);
+    
+    // Debounce onChange callback to parent (300ms)
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+    
+    debounceRef.current = setTimeout(() => {
+      onChange(newInfo);
+    }, 300); // 300ms debounce
+  }, [localInfo, onChange]);
 
   return (
     <Collapse
@@ -30,7 +50,7 @@ export const MetadataPanel: React.FC<Props> = ({ meetingInfo, onChange }) => {
               <div className="form-row">
                 <label>Tên cuộc họp:</label>
                 <Input
-                  value={meetingInfo.title}
+                  value={localInfo.title}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('title', e.target.value)}
                   placeholder="VD: Họp giao ban, thảo luận dự án..."
                 />
@@ -41,7 +61,7 @@ export const MetadataPanel: React.FC<Props> = ({ meetingInfo, onChange }) => {
                   <label>Ngày:</label>
                   <Input
                     type="date"
-                    value={meetingInfo.date}
+                    value={localInfo.date}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('date', e.target.value)}
                   />
                 </div>
@@ -50,7 +70,7 @@ export const MetadataPanel: React.FC<Props> = ({ meetingInfo, onChange }) => {
                   <label>Giờ:</label>
                   <Input
                     type="time"
-                    value={meetingInfo.time}
+                    value={localInfo.time}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('time', e.target.value)}
                   />
                 </div>
@@ -58,7 +78,7 @@ export const MetadataPanel: React.FC<Props> = ({ meetingInfo, onChange }) => {
                 <div className="form-field">
                 <label>Địa điểm:</label>
                 <Input
-                  value={meetingInfo.location}
+                  value={localInfo.location}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('location', e.target.value)}
                   placeholder="VD: Phòng họp A / Zoom"
                 />
@@ -69,7 +89,7 @@ export const MetadataPanel: React.FC<Props> = ({ meetingInfo, onChange }) => {
                 <div className="form-field">
                   <label>Chủ trì:</label>
                   <TextArea
-                  value={meetingInfo.host}
+                  value={localInfo.host}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleChange('host', e.target.value)}
                   placeholder="Tên người chủ trì"
                   rows={1}
@@ -79,7 +99,7 @@ export const MetadataPanel: React.FC<Props> = ({ meetingInfo, onChange }) => {
                 <div className="form-field">
                 <label>Thành viên tham dự:</label>
                 <TextArea
-                  value={meetingInfo.attendees}
+                  value={localInfo.attendees}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleChange('attendees', e.target.value)}
                   placeholder="Tên cách nhau bởi dấu phẩy (VD: An, Bình, Chi) - LiveMeetingNotes được đầu tư & phát triển bởi NguyenDacHung"
                   rows={1}

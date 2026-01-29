@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MetadataPanel } from './components/MetadataPanel';
 import { RecordingControls } from './components/RecordingControls';
 import { NotesEditor } from './components/NotesEditor';
@@ -1152,7 +1152,7 @@ export const App: React.FC = () => {
   };
 
   // Handle edit transcription
-  const handleEditTranscription = (id: string, newText: string, newSpeaker: string, newStartTime?: string, newAudioTimeMs?: number) => {
+  const handleEditTranscription = useCallback((id: string, newText: string, newSpeaker: string, newStartTime?: string, newAudioTimeMs?: number) => {
     // Check if user deleted all text (wants to remove segment)
     if (!newText || newText.trim() === '') {
       Modal.confirm({
@@ -1202,7 +1202,7 @@ export const App: React.FC = () => {
     );
     setHasUnsavedChanges(true);
     // console.log('✏️ Transcription edited:', { id, newText, newSpeaker, newStartTime, newAudioTimeMs });
-  };
+  }, [setTranscriptions, setHasUnsavedChanges]); // Memoized
 
   // Handle new transcription result
   const handleNewTranscription = (result: TranscriptionResult) => {
@@ -1304,12 +1304,12 @@ export const App: React.FC = () => {
   };
 
   // Handle seek to audio time
-  const handleSeekToAudio = (timeMs: number) => {
+  const handleSeekToAudio = useCallback((timeMs: number) => {
     if (audioPlayerRef.current) {
       audioPlayerRef.current.seekTo(timeMs);
       // console.log(`⏭️ Seeking to ${(timeMs / 1000).toFixed(2)}s`);
     }
-  };
+  }, []); // No dependencies - audioPlayerRef is stable
 
   // Handle AI refinement
   const handleAIRefine = async () => {
