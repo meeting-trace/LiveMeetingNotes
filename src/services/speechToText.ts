@@ -154,7 +154,7 @@ export class SpeechToTextService {
           
           if (canShowNotification) {
             message.warning({
-              content: 'Web Speech API gặp sự cố nhỏ trên trình duyệt này. Khuyên dùng Chrome để có trải nghiệm tốt nhất.',
+              content: 'Web Speech API gặp sự cố nhỏ trên trình duyệt này.',
               duration: 5,
               key: 'network-error' // Use fixed key to replace previous notification
             });
