@@ -26,6 +26,8 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
   const [contentHeight, setContentHeight] = useState<number>(100); // Initial height (1/5 of 500px)
   const [isExpanded, setIsExpanded] = useState<boolean>(false); // Track collapse/expand state
   const [editingId, setEditingId] = useState<string | null>(null);
+  
+  // Local edit states - NO parent state updates during typing!
   const [editText, setEditText] = useState<string>('');
   const [editSpeaker, setEditSpeaker] = useState<string>('');
   const [editStartTime, setEditStartTime] = useState<string>('');
@@ -43,7 +45,6 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
     if (editingId) {
       const segmentExists = transcriptions.some(t => t.id === editingId);
       if (!segmentExists) {
-        // Segment was deleted, clear edit state
         setEditingId(null);
         setEditText('');
         setEditSpeaker('');
@@ -154,23 +155,16 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
 
   const handleStartEdit = (item: TranscriptionResult) => {
     setEditingId(item.id);
+    const formattedTime = formatDateTimeForEdit(item.startTime);
     setEditText(item.text);
     setEditSpeaker(item.speaker);
-    setEditStartTime(formatDateTimeForEdit(item.startTime));
+    setEditStartTime(formattedTime);
     setEditAudioTimeMs(item.audioTimeMs);
   };
 
   const handleSaveEdit = (id: string) => {
     if (onEditTranscription) {
-      // Convert formatted datetime back to ISO before saving
       const isoStartTime = parseDateTimeFromEdit(editStartTime);
-      
-      // NOTE: onMarkUnsaved() is NOT needed here because:
-      // - handleEditTranscription (in App.tsx) already calls setHasUnsavedChanges(true)
-      // - Calling onMarkUnsaved() here causes conflict with auto-calculation logic
-      
-      // Always call onEditTranscription (even with empty text)
-      // Parent will handle empty text case (ask to delete segment)
       onEditTranscription(
         id, 
         editText.trim(), 
@@ -178,8 +172,6 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
         isoStartTime, 
         editAudioTimeMs
       );
-      
-      // Clear edit state
       setEditingId(null);
       setEditText('');
       setEditSpeaker('');
@@ -196,6 +188,24 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
     setEditAudioTimeMs(undefined);
   };
 
+  // Direct handlers - no debounce, no parent updates until Save
+  const handleEditTextChange = useCallback((value: string) => {
+    setEditText(value);
+  }, []);
+  
+  const handleEditSpeakerChange = useCallback((value: string) => {
+    setEditSpeaker(value);
+  }, []);
+  
+  const handleEditStartTimeChange = useCallback((value: string) => {
+    setEditStartTime(value);
+  }, []);
+  
+  const handleEditAudioTimeChange = useCallback((value: string) => {
+    const timeMs = parseAudioTime(value);
+    setEditAudioTimeMs(timeMs);
+  }, []);
+  
   const handleDoubleClickSegment = (item: TranscriptionResult) => {
     if (item.isFinal) {
       handleStartEdit(item);
@@ -465,7 +475,7 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
                                   <Input
                                     size="small"
                                     value={editStartTime}
-                                    onChange={(e) => setEditStartTime(e.target.value)}
+                                    onChange={(e) => handleEditStartTimeChange(e.target.value)}
                                     placeholder="yyyy-MM-dd HH:mm:ss"
                                     style={{ width: '170px' }}
                                   />
@@ -480,10 +490,7 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
                                     <Input
                                       size="small"
                                       value={formatAudioTime(editAudioTimeMs)}
-                                      onChange={(e) => {
-                                        const timeMs = parseAudioTime(e.target.value);
-                                        setEditAudioTimeMs(timeMs);
-                                      }}
+                                      onChange={(e) => handleEditAudioTimeChange(e.target.value)}
                                       placeholder="0:00"
                                       style={{ width: '80px' }}
                                     />
@@ -499,7 +506,7 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
                                   <Input
                                     size="small"
                                     value={editSpeaker}
-                                    onChange={(e) => setEditSpeaker(e.target.value)}
+                                    onChange={(e) => handleEditSpeakerChange(e.target.value)}
                                     placeholder="Người nói 1"
                                     style={{ width: '120px' }}
                                   />
@@ -509,7 +516,7 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
                               {/* Edit Text */}
                               <Input.TextArea
                                 value={editText}
-                                onChange={(e) => setEditText(e.target.value)}
+                                onChange={(e) => handleEditTextChange(e.target.value)}
                                 autoSize={{ minRows: 2, maxRows: 6 }}
                                 style={{ marginBottom: '8px' }}
                               />
@@ -582,7 +589,7 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
 
 // Memoize to prevent unnecessary re-renders when parent updates
 export const TranscriptionPanel = memo(TranscriptionPanelComponent, (prevProps, nextProps) => {
-  // Only re-render if these specific props changed
+  // Return true if props are equal (skip re-render), false if changed (do re-render)
   return (
     prevProps.transcriptions === nextProps.transcriptions &&
     prevProps.isTranscribing === nextProps.isTranscribing &&
