@@ -217,7 +217,11 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
                     ref={scrollRef}
                     style={{
                       flex: 1,
-                      padding: '16px'
+                      overflowY: 'auto',
+                      padding: '16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px'
                     }}
                   >
                     {transcriptions.map((item, index) => (

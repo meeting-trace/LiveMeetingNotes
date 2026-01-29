@@ -20,7 +20,7 @@ export const App: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [meetingInfo, setMeetingInfo] = useState<MeetingInfo>({
-    title: `${new Date().toISOString().split('T')[0]} _ `,
+    title: '',
     date: new Date().toISOString().split('T')[0],
     time: new Date().toTimeString().slice(0, 5),
     location: '',
