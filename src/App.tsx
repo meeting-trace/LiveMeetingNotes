@@ -1269,6 +1269,12 @@ export const App: React.FC = () => {
           const finalResults = prev.filter(item => item.isFinal);
           const existingDraft = prev.find(item => !item.isFinal);
           
+          // ⚠️ SPECIAL CASE: Empty text means remove draft segment (clear signal from SmartTranscriptManager)
+          if (!result.text || result.text.trim() === '') {
+            // Remove draft segment, keep only final results
+            return finalResults;
+          }
+          
           // Nếu đã có draft segment, CHỈ update nếu text thực sự thay đổi
           if (existingDraft) {
             // If text hasn't changed, return prev to prevent re-render

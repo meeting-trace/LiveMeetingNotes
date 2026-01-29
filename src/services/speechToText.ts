@@ -1,5 +1,6 @@
 import { message } from 'antd';
 import type { SpeechToTextConfig, TranscriptionResult } from '../types/types';
+import { SmartTranscriptManager } from './smartTranscriptManager';
 
 export class SpeechToTextService {
   private config: SpeechToTextConfig | null = null;
@@ -8,16 +9,12 @@ export class SpeechToTextService {
   private isTranscribing: boolean = false;
   private onTranscriptionCallback: ((result: TranscriptionResult) => void) | null = null;
   private transcriptionIdCounter: number = 0;
-  private lastInterimText: string = '';
-  private lastUpdateTime: number = 0;
-  private segmentCheckInterval: NodeJS.Timeout | null = null;
   private transcriptionStartTime: number = 0; // Track when transcription started
-  private segmentStartTimeMs: number = 0; // Track when current segment started (for fixed audioTimeMs)
-  private segmentStartTimestamp: string = ''; // Track segment start timestamp (ISO format, fixed per segment)
-  private interimDebounceTimer: NodeJS.Timeout | null = null; // Debounce timer for interim results
-  private lastInterimUpdateTime: number = 0; // Track last interim update for throttling
   private lastErrorNotificationTime: number = 0; // Track last error notification to prevent spam
   private errorNotificationCooldown: number = 10000; // 10 seconds cooldown between error notifications
+  
+  // ✨ NEW: Smart transcript manager for Buffer & Commit strategy
+  private smartManager: SmartTranscriptManager = new SmartTranscriptManager();
 
   /**
    * Initialize the service with configuration
@@ -116,18 +113,14 @@ export class SpeechToTextService {
       this.recognition.lang = this.config?.languageCode || 'vi-VN';
       this.recognition.maxAlternatives = this.config?.maxAlternatives || 1;
 
-      // Reset tracking variables
-      this.lastInterimText = '';
-      this.lastUpdateTime = Date.now();
-      this.lastInterimUpdateTime = 0;
-      this.segmentStartTimeMs = 0;
-      this.segmentStartTimestamp = '';
+      // ✨ Initialize SmartTranscriptManager
+      this.smartManager.initialize((result) => {
+        // Forward result directly to callback
+        onTranscription(result);
+      });
 
-      // Start interval to check for segment completion
-      const segmentTimeout = this.config?.segmentTimeout || 2500; // Increased to 2.5s for better grouping
-      this.segmentCheckInterval = setInterval(() => {
-        this.checkSegmentCompletion(onTranscription);
-      }, segmentTimeout);
+      const browserInfo = this.smartManager.getBrowserInfo();
+      console.log(`🌐 Using Web Speech API on ${browserInfo.name} (silence: ${browserInfo.silenceTimeout}ms, merge: ${browserInfo.mergeTimeWindow}ms)`);
 
       this.recognition.onresult = (event: any) => {
         for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -136,93 +129,13 @@ export class SpeechToTextService {
           const confidence = result[0].confidence || 0;
           const isFinal = result.isFinal;
 
-          this.lastUpdateTime = Date.now();
-
-          // Set segment start time when first text arrives in new segment
-          if (!this.segmentStartTimestamp && transcript.trim()) {
-            // Estimate audio start time by subtracting ~1 second (typical speech-to-text delay)
-            this.segmentStartTimeMs = this.lastUpdateTime - this.transcriptionStartTime - 1000;
-            if (this.segmentStartTimeMs < 0) this.segmentStartTimeMs = 0;
-            // Save fixed timestamp for this segment
-            this.segmentStartTimestamp = new Date().toISOString();
-            // console.log('🎬 New segment started at:', this.segmentStartTimestamp, 'audio time:', this.segmentStartTimeMs, 'ms');
-          }
-
-          // Check if we should force segment completion
-          const shouldForceSegment = this.shouldForceSegment(transcript, isFinal);
-
-          if (shouldForceSegment && !isFinal) {
-            // Force this interim result to become final
-            const transcriptionResult: TranscriptionResult = {
-              id: `transcription-${++this.transcriptionIdCounter}`,
-              text: transcript.trim(),
-              startTime: this.segmentStartTimestamp,
-              endTime: this.segmentStartTimestamp,
-              audioTimeMs: this.segmentStartTimeMs, // Fixed at segment start
-              confidence: confidence,
-              speaker: 'Person1', // Default speaker
-              isFinal: true // Force as final
-            };
-
-            onTranscription(transcriptionResult);
-            this.lastInterimText = ''; // Reset for next segment
-            this.segmentStartTimeMs = 0; // Reset for next segment
-            this.segmentStartTimestamp = ''; // Reset for next segment
-          } else if (isFinal) {
-            // Natural final result
-            const transcriptionResult: TranscriptionResult = {
-              id: `transcription-${++this.transcriptionIdCounter}`,
-              text: transcript.trim(),
-              startTime: this.segmentStartTimestamp,
-              endTime: this.segmentStartTimestamp,
-              audioTimeMs: this.segmentStartTimeMs, // Fixed at segment start
-              confidence: confidence,
-              speaker: 'Person1', // Default speaker
-              isFinal: true
-            };
-
-            onTranscription(transcriptionResult);
-            // KHÔNG reset segment - để ghép nhiều final results vào cùng 1 segment
-            // Chỉ reset lastInterimText để track text mới
-            this.lastInterimText = '';
-          } else {
-            // Interim result - only send if text changed significantly
-            // Apply throttling: only update if 200ms passed since last interim update
-            const timeSinceLastInterim = Date.now() - this.lastInterimUpdateTime;
-            if (transcript !== this.lastInterimText && timeSinceLastInterim >= 200) {
-              // Clear previous debounce timer
-              if (this.interimDebounceTimer) {
-                clearTimeout(this.interimDebounceTimer);
-              }
-
-              // Debounce: wait 100ms before sending (avoid rapid updates)
-              this.interimDebounceTimer = setTimeout(() => {
-                // Safety check: ensure timestamp is set
-                if (!this.segmentStartTimestamp) {
-                  this.segmentStartTimestamp = new Date().toISOString();
-                }
-                
-                // Tính timestamp hiện tại cho draft segment (update liên tục)
-                const currentTimestamp = new Date().toISOString();
-                const currentAudioTimeMs = Date.now() - this.transcriptionStartTime;
-                
-                const transcriptionResult: TranscriptionResult = {
-                  id: 'draft-segment-interim', // Use fixed ID for all interim results to prevent re-render
-                  text: transcript,
-                  startTime: currentTimestamp, // ** Update liên tục theo thời gian thực **
-                  endTime: currentTimestamp,
-                  audioTimeMs: currentAudioTimeMs, // ** Update liên tục **
-                  confidence: confidence,
-                  speaker: 'Person1', // Default speaker
-                  isFinal: false
-                };
-
-                onTranscription(transcriptionResult);
-                this.lastInterimText = transcript;
-                this.lastInterimUpdateTime = Date.now();
-              }, 100);
-            }
-          }
+          // ✨ Process result through SmartTranscriptManager
+          this.smartManager.processResult({
+            transcript: transcript,
+            confidence: confidence,
+            isFinal: isFinal,
+            speaker: 'Person1'
+          });
         }
       };
 
@@ -292,61 +205,6 @@ export class SpeechToTextService {
       console.error('Failed to initialize Web Speech API:', error);
       alert('Trình duyệt của bạn không hỗ trợ Web Speech API.');
       return false;
-    }
-  }
-
-  /**
-   * Check if current segment should be forced to complete
-   */
-  private shouldForceSegment(transcript: string, isFinal: boolean): boolean {
-    if (isFinal) return false; // Already final, no need to force
-
-    // Chỉ dựa vào dấu câu để tách segment, không giới hạn độ dài
-    // Force segment if ends with sentence punctuation + space
-    // This catches natural pauses after complete sentences
-    if (/[.!?]\s+$/.test(transcript)) {
-      // console.log('🔸 Force segment: Sentence end with space detected');
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
-   * Check if segment should complete due to silence timeout
-   */
-  private checkSegmentCompletion(onTranscription: (result: TranscriptionResult) => void): void {
-    if (!this.isTranscribing) return;
-
-    const now = Date.now();
-    const timeSinceLastUpdate = now - this.lastUpdateTime;
-    const segmentTimeout = this.config?.segmentTimeout || 2500; // Increased to 2.5s for better sentence grouping
-
-    // Nếu có segment đang active (có segmentStartTimestamp) và đã im lặng quá timeout
-    if (this.segmentStartTimestamp && timeSinceLastUpdate > segmentTimeout) {
-      // Nếu có text interim đang pending, gửi nó như final result
-      if (this.lastInterimText) {
-        // console.log('🔸 Force segment: Silence timeout (2.5s) with interim text');
-        
-        const transcriptionResult: TranscriptionResult = {
-          id: `transcription-${++this.transcriptionIdCounter}`,
-          text: this.lastInterimText.trim(),
-          startTime: this.segmentStartTimestamp,
-          endTime: this.segmentStartTimestamp,
-          audioTimeMs: this.segmentStartTimeMs, // cố định thời gian tại đoạn bắt đầu
-          confidence: 0.8, // Moderate confidence for timeout-forced segments
-          speaker: 'Person1', // Default speaker
-          isFinal: true
-        };
-        
-        onTranscription(transcriptionResult);
-        this.lastInterimText = '';
-      }
-      
-      // Reset segment để bắt đầu segment mới
-      this.segmentStartTimeMs = 0;
-      this.segmentStartTimestamp = '';
-      this.lastUpdateTime = now;
     }
   }
 
@@ -577,17 +435,8 @@ export class SpeechToTextService {
     this.isTranscribing = false;
     this.transcriptionStartTime = 0; // Reset start time
 
-    // Clear segment check interval
-    if (this.segmentCheckInterval) {
-      clearInterval(this.segmentCheckInterval);
-      this.segmentCheckInterval = null;
-    }
-
-    // Clear debounce timer
-    if (this.interimDebounceTimer) {
-      clearTimeout(this.interimDebounceTimer);
-      this.interimDebounceTimer = null;
-    }
+    // ✨ Force commit any pending interim buffer
+    this.smartManager.forceCommit();
 
     // Stop Web Speech API
     if (this.recognition) {
@@ -606,9 +455,6 @@ export class SpeechToTextService {
     }
 
     // Reset tracking variables
-    this.lastInterimText = '';
-    this.lastUpdateTime = 0;
-    this.lastInterimUpdateTime = 0;
     this.lastErrorNotificationTime = 0; // Reset error notification tracking
 
     // Stop MediaRecorder
@@ -622,6 +468,10 @@ export class SpeechToTextService {
     }
 
     this.onTranscriptionCallback = null;
+    
+    // ✨ Reset SmartTranscriptManager for next session
+    this.smartManager.reset();
+    
     // console.log('🛑 Transcription stopped');
   }
 
@@ -647,7 +497,6 @@ export class SpeechToTextService {
     // Reset tracking variables
     this.transcriptionIdCounter = 0;
     this.transcriptionStartTime = 0;
-    this.segmentStartTimeMs = 0;
 
     try {
       // Use Google Cloud API if available and speaker diarization is enabled
