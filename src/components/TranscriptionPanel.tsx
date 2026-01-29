@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
-import { Collapse, Empty, Tag, Space, Tooltip, Input, Button } from 'antd';
-import { AudioOutlined, ClockCircleOutlined, UserOutlined, CheckCircleOutlined, EditOutlined, SaveOutlined, CloseOutlined} from '@ant-design/icons';
+import { Collapse, Empty, Space, Tag, Tooltip, Button } from 'antd';
+import { AudioOutlined } from '@ant-design/icons';
 import type { TranscriptionResult } from '../types/types';
+import { TranscriptionItem } from './TranscriptionItem';
 
 interface Props {
   transcriptions: TranscriptionResult[];
@@ -23,70 +24,32 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
   canRefineWithAI
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [contentHeight, setContentHeight] = useState<number>(100); // Initial height (1/5 of 500px)
-  const [isExpanded, setIsExpanded] = useState<boolean>(false); // Track collapse/expand state
-  const [editingId, setEditingId] = useState<string | null>(null);
-  
-  // Local edit states - NO parent state updates during typing!
-  const [editText, setEditText] = useState<string>('');
-  const [editSpeaker, setEditSpeaker] = useState<string>('');
-  const [editStartTime, setEditStartTime] = useState<string>('');
-  const [editAudioTimeMs, setEditAudioTimeMs] = useState<number | undefined>(undefined);
+  const [contentHeight, setContentHeight] = useState<number>(100);
+  const [isExpanded, setIsExpanded] = useState<boolean>(false);
 
-  // Auto-scroll to bottom when new transcription arrives (but not when editing)
+  // Auto-scroll to bottom when new transcription arrives
   useEffect(() => {
-    if (scrollRef.current && !editingId) {
+    if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [transcriptions, editingId]);
+  }, [transcriptions]);
 
-  // Auto-clear edit mode if the editing segment is removed
+  // Auto-expand height based on content
   useEffect(() => {
-    if (editingId) {
-      const segmentExists = transcriptions.some(t => t.id === editingId);
-      if (!segmentExists) {
-        setEditingId(null);
-        setEditText('');
-        setEditSpeaker('');
-        setEditStartTime('');
-        setEditAudioTimeMs(undefined);
-      }
-    }
-  }, [transcriptions, editingId]);
-
-  // Auto-expand height based on content: min 100px (1/5 of 500), max 500px
-  useEffect(() => {
-    // Skip update when editing to prevent interference with input
-    if (editingId) {
-      return;
-    }
-
     const updateHeight = () => {
       if (scrollRef.current && transcriptions.length > 0 && isExpanded) {
         const scrollHeight = scrollRef.current.scrollHeight;
-        const newHeight = Math.min(scrollHeight + 80, 500); // +80 for header/footer, max 500px
-        const calculatedHeight = Math.max(newHeight, 100); // Minimum 100px (1/5 of 500px)
+        const newHeight = Math.min(scrollHeight + 80, 500);
+        const calculatedHeight = Math.max(newHeight, 100);
         
-        // CRITICAL: Only update if value actually changed to prevent infinite loop
-        setContentHeight(prev => {
-          if (prev === calculatedHeight) {
-            return prev; // Don't trigger re-render if same value
-          }
-          return calculatedHeight;
-        });
+        setContentHeight(prev => prev === calculatedHeight ? prev : calculatedHeight);
       } else if (transcriptions.length === 0) {
-        setContentHeight(prev => prev === 100 ? prev : 100); // Only update if different
+        setContentHeight(prev => prev === 100 ? prev : 100);
       }
     };
 
-    // Update immediately
     updateHeight();
-
-    // REMOVED setTimeout to prevent potential infinite loop
-    // Height will be recalculated on next transcriptions change
-    // const timeoutId = setTimeout(updateHeight, 100);
-    // return () => clearTimeout(timeoutId);
-  }, [transcriptions, isExpanded, editingId]);
+  }, [transcriptions, isExpanded]);
 
   const formatTime = (isoTime: string): string => {
     const date = new Date(isoTime);
@@ -147,76 +110,17 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
     return 0;
   };
 
-  const handleSeekToTime = (timeMs: number) => {
+  const handleSeekToTime = useCallback((timeMs: number) => {
     if (onSeekAudio) {
       onSeekAudio(timeMs);
     }
-  };
+  }, [onSeekAudio]);
 
-  const handleStartEdit = (item: TranscriptionResult) => {
-    setEditingId(item.id);
-    const formattedTime = formatDateTimeForEdit(item.startTime);
-    setEditText(item.text);
-    setEditSpeaker(item.speaker);
-    setEditStartTime(formattedTime);
-    setEditAudioTimeMs(item.audioTimeMs);
-  };
-
-  const handleSaveEdit = (id: string) => {
-    if (onEditTranscription) {
-      const isoStartTime = parseDateTimeFromEdit(editStartTime);
-      onEditTranscription(
-        id, 
-        editText.trim(), 
-        editSpeaker.trim() || 'Person1', 
-        isoStartTime, 
-        editAudioTimeMs
-      );
-      setEditingId(null);
-      setEditText('');
-      setEditSpeaker('');
-      setEditStartTime('');
-      setEditAudioTimeMs(undefined);
-    }
-  };
-
-  const handleCancelEdit = () => {
-    setEditingId(null);
-    setEditText('');
-    setEditSpeaker('');
-    setEditStartTime('');
-    setEditAudioTimeMs(undefined);
-  };
-
-  // Direct handlers - no debounce, no parent updates until Save
-  const handleEditTextChange = useCallback((value: string) => {
-    setEditText(value);
-  }, []);
-  
-  const handleEditSpeakerChange = useCallback((value: string) => {
-    setEditSpeaker(value);
-  }, []);
-  
-  const handleEditStartTimeChange = useCallback((value: string) => {
-    setEditStartTime(value);
-  }, []);
-  
-  const handleEditAudioTimeChange = useCallback((value: string) => {
-    const timeMs = parseAudioTime(value);
-    setEditAudioTimeMs(timeMs);
-  }, []);
-  
-  const handleDoubleClickSegment = (item: TranscriptionResult) => {
-    if (item.isFinal) {
-      handleStartEdit(item);
-    }
-  };
-
-  // Memoize these helper functions to prevent unnecessary re-renders
+  // Memoize these helper functions to pass to child components
   const getConfidenceColor = useCallback((confidence: number): string => {
-    if (confidence >= 0.9) return '#52c41a'; // green
-    if (confidence >= 0.7) return '#faad14'; // orange
-    return '#ff4d4f'; // red
+    if (confidence >= 0.9) return '#52c41a';
+    if (confidence >= 0.7) return '#faad14';
+    return '#ff4d4f';
   }, []);
 
   const getConfidenceLabel = useCallback((confidence: number): string => {
@@ -313,269 +217,25 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
                     ref={scrollRef}
                     style={{
                       flex: 1,
-                      overflowY: 'auto',
                       padding: '16px'
                     }}
                   >
-                    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                      {transcriptions.map((item, index) => {
-                        const isEditing = editingId === item.id;
-                        
-                        return (
-                        <div
-                          key={item.id}
-                          style={{
-                            padding: '12px',
-                            backgroundColor: item.isFinal ? (item.isManuallyEdited ? '#fff7e6' : '#f6ffed') : '#e6f7ff',
-                            border: `1px solid ${item.isFinal ? (item.isManuallyEdited ? '#ffa940' : '#b7eb8f') : '#91d5ff'}`,
-                            borderRadius: '8px',
-                            position: 'relative',
-                            cursor: item.isFinal && !isEditing ? 'pointer' : 'default'
-                          }}
-                          onDoubleClick={() => handleDoubleClickSegment(item)}
-                          title={item.isFinal ? "Double-click để chỉnh sửa" : ""}
-                        >
-                          {/* Header with metadata */}
-                          <div
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              marginBottom: '8px',
-                              fontSize: '12px',
-                              color: '#666'
-                            }}
-                          >
-                            <Space size="small">
-                              {/* Time - Only show if it's real recording time (not Gemini transcription) */}
-                              {/* Gemini transcription uses current time as placeholder, so we hide it */}
-                              {!item.isAIRefined && (
-                                <Tooltip title="Thời gian">
-                                  <Tag icon={<ClockCircleOutlined />} color="blue" style={{ fontSize: '11px' }}>
-                                    {formatTime(item.startTime)}
-                                  </Tag>
-                                </Tooltip>
-                              )}
-
-                              {/* Audio Time - Clickable */}
-                              {item.audioTimeMs !== undefined && (
-                                <Tooltip title="Double click để tua đến vị trí này trên audio">
-                                  <Tag 
-                                    color="cyan" 
-                                    style={{ 
-                                      cursor: 'pointer',
-                                      userSelect: 'none',
-                                      fontSize: '11px'
-                                    }}
-                                    onDoubleClick={(e) => {
-                                      e.stopPropagation(); // Prevent triggering edit mode
-                                      handleSeekToTime(item.audioTimeMs!);
-                                    }}
-                                  >
-                                    📍 {formatAudioTime(item.audioTimeMs)}
-                                  </Tag>
-                                </Tooltip>
-                              )}
-
-                              {/* Speaker */}
-                              {item.speaker && (
-                                <Tooltip title="Người nói">
-                                  <Tag icon={<UserOutlined />} color="purple" style={{ fontSize: '11px' }}>
-                                    {item.speaker}
-                                  </Tag>
-                                </Tooltip>
-                              )}
-
-                              {/* AI Refined Label */}
-                              {item.isAIRefined && (
-                                <Tooltip title="Đoạn văn bản được xử lý bởi Gemini AI">
-                                  <Tag 
-                                    style={{ 
-                                      fontSize: '11px',
-                                      background: 'linear-gradient(135deg, #667eea22 0%, #764ba222 100%)',
-                                      borderColor: '#667eea',
-                                      color: '#667eea'
-                                    }}
-                                  >
-                                    ✨ AI
-                                  </Tag>
-                                </Tooltip>
-                              )}
-
-                              {/* Confidence */}
-                              {item.confidence > 0 && (
-                                <Tooltip title={`Độ tin cậy: ${(item.confidence * 100).toFixed(0)}%`}>
-                                  <Tag 
-                                    color={getConfidenceColor(item.confidence)}
-                                    style={{ fontSize: '11px' }}
-                                  >
-                                    {getConfidenceLabel(item.confidence)}
-                                  </Tag>
-                                </Tooltip>
-                              )}
-
-                              {/* Final status */}
-                              {item.isFinal && (
-                                <Tooltip title="Kết quả cuối cùng">
-                                  <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                                </Tooltip>
-                              )}
-                            </Space>
-
-                            {/* Index and Edit button */}
-                            <Space size="small">
-                              <span style={{ 
-                                fontSize: '11px', 
-                                color: '#999',
-                                fontWeight: 'bold'
-                              }}>
-                                #{index + 1}
-                              </span>
-                              
-                              {/* Edit button - only for final results */}
-                              {item.isFinal && !isEditing && (
-                                <Tooltip title="Sửa nội dung">
-                                  <Button
-                                    type="text"
-                                    size="small"
-                                    icon={<EditOutlined />}
-                                    onClick={() => handleStartEdit(item)}
-                                    style={{ padding: '0 4px', height: 'auto' }}
-                                  />
-                                </Tooltip>
-                              )}
-                              
-                              {/* Manual edit indicator */}
-                              {item.isManuallyEdited && (
-                                <Tooltip title="Đã chỉnh sửa thủ công">
-                                  <Tag color="orange" style={{ fontSize: '10px', margin: 0 }}>
-                                    ✏️ Edited
-                                  </Tag>
-                                </Tooltip>
-                              )}
-                            </Space>
-                          </div>
-
-                          {/* Editable content */}
-                          {isEditing ? (
-                            <div style={{ marginTop: '8px' }}>
-                              {/* All metadata fields in one row */}
-                              <div style={{ 
-                                display: 'flex', 
-                                gap: '12px', 
-                                marginBottom: '8px',
-                                flexWrap: 'wrap',
-                                alignItems: 'center'
-                              }}>
-                                {/* Edit Start Time */}
-                                <div style={{ display: 'flex', alignItems: 'center' }}>
-                                  <label style={{ fontSize: '12px', color: '#666', marginRight: '6px', whiteSpace: 'nowrap' }}>
-                                    Thời điểm:
-                                  </label>
-                                  <Input
-                                    size="small"
-                                    value={editStartTime}
-                                    onChange={(e) => handleEditStartTimeChange(e.target.value)}
-                                    placeholder="yyyy-MM-dd HH:mm:ss"
-                                    style={{ width: '170px' }}
-                                  />
-                                </div>
-                                
-                                {/* Edit Timestamp (Audio Time) */}
-                                {editAudioTimeMs !== undefined && (
-                                  <div style={{ display: 'flex', alignItems: 'center' }}>
-                                    <label style={{ fontSize: '12px', color: '#666', marginRight: '6px', whiteSpace: 'nowrap' }}>
-                                      Vị trí audio:
-                                    </label>
-                                    <Input
-                                      size="small"
-                                      value={formatAudioTime(editAudioTimeMs)}
-                                      onChange={(e) => handleEditAudioTimeChange(e.target.value)}
-                                      placeholder="0:00"
-                                      style={{ width: '80px' }}
-                                    />
-                                  </div>
-                                )}
-
-                                
-                                {/* Edit Speaker */}
-                                <div style={{ display: 'flex', alignItems: 'center' }}>
-                                  <label style={{ fontSize: '12px', color: '#666', marginRight: '6px', whiteSpace: 'nowrap' }}>
-                                    Người nói:
-                                  </label>
-                                  <Input
-                                    size="small"
-                                    value={editSpeaker}
-                                    onChange={(e) => handleEditSpeakerChange(e.target.value)}
-                                    placeholder="Người nói 1"
-                                    style={{ width: '120px' }}
-                                  />
-                                </div>
-                              </div>
-                              
-                              {/* Edit Text */}
-                              <Input.TextArea
-                                value={editText}
-                                onChange={(e) => handleEditTextChange(e.target.value)}
-                                autoSize={{ minRows: 2, maxRows: 6 }}
-                                style={{ marginBottom: '8px' }}
-                              />
-                              
-                              {/* Edit actions */}
-                              <Space size="small">
-                                <Button
-                                  type="primary"
-                                  size="small"
-                                  icon={<SaveOutlined />}
-                                  onClick={() => handleSaveEdit(item.id)}
-                                >
-                                  Lưu
-                                </Button>
-                                <Button
-                                  size="small"
-                                  icon={<CloseOutlined />}
-                                  onClick={handleCancelEdit}
-                                >
-                                  Hủy
-                                </Button>
-                              </Space>
-                            </div>
-                          ) : (
-                            <>
-                              {/* Transcription text */}
-                              <div
-                                style={{
-                                  marginTop: '8px',
-                                  fontSize: '14px',
-                                  lineHeight: '1.6',
-                                  color: '#262626',
-                                  wordWrap: 'break-word',
-                                  fontStyle: item.isFinal ? 'normal' : 'italic',
-                                  fontWeight: item.isFinal ? 'normal' : '300'
-                                }}
-                              >
-                                {item.text}
-                              </div>
-
-                              {/* Draft indicator - only for interim results */}
-                              {!item.isFinal && (
-                                <div
-                                  style={{
-                                    marginTop: '8px',
-                                    fontSize: '11px',
-                                    color: '#1890ff',
-                                    fontStyle: 'italic'
-                                  }}
-                                >
-                                  ⏳ Đang nhận dạng...
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      );
-                      })}
-                    </Space>
+                    {transcriptions.map((item, index) => (
+                      <TranscriptionItem
+                        key={item.id}
+                        item={item}
+                        index={index}
+                        onEditTranscription={onEditTranscription!}
+                        onSeekToTime={handleSeekToTime}
+                        formatTime={formatTime}
+                        formatDateTimeForEdit={formatDateTimeForEdit}
+                        parseDateTimeFromEdit={parseDateTimeFromEdit}
+                        formatAudioTime={formatAudioTime}
+                        parseAudioTime={parseAudioTime}
+                        getConfidenceColor={getConfidenceColor}
+                        getConfidenceLabel={getConfidenceLabel}
+                      />
+                    ))}
                   </div>
                 </>
               )}
@@ -589,14 +249,9 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
 
 // Memoize to prevent unnecessary re-renders when parent updates
 export const TranscriptionPanel = memo(TranscriptionPanelComponent, (prevProps, nextProps) => {
-  // Return true if props are equal (skip re-render), false if changed (do re-render)
   return (
     prevProps.transcriptions === nextProps.transcriptions &&
     prevProps.isTranscribing === nextProps.isTranscribing &&
-    prevProps.isOnline === nextProps.isOnline &&
-    prevProps.canRefineWithAI === nextProps.canRefineWithAI &&
-    prevProps.onSeekAudio === nextProps.onSeekAudio &&
-    prevProps.onEditTranscription === nextProps.onEditTranscription &&
-    prevProps.onAIRefine === nextProps.onAIRefine
+    prevProps.canRefineWithAI === nextProps.canRefineWithAI
   );
 });

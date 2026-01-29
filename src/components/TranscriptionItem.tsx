@@ -1,16 +1,18 @@
-import React, { memo } from 'react';
-import { Tag, Space, Tooltip, Button } from 'antd';
-import { ClockCircleOutlined, UserOutlined, CheckCircleOutlined, EditOutlined } from '@ant-design/icons';
+import React, { memo, useState, useCallback } from 'react';
+import { Tag, Space, Tooltip, Button, Input } from 'antd';
+import { ClockCircleOutlined, UserOutlined, CheckCircleOutlined, EditOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
 import type { TranscriptionResult } from '../types/types';
 
 interface Props {
   item: TranscriptionResult;
   index: number;
-  onStartEdit: () => void;
+  onEditTranscription: (id: string, newText: string, newSpeaker: string, newStartTime?: string, newAudioTimeMs?: number) => void;
   onSeekToTime: (timeMs: number) => void;
-  onDoubleClick: () => void;
   formatTime: (isoTime: string) => string;
+  formatDateTimeForEdit: (isoTime: string) => string;
+  parseDateTimeFromEdit: (dateTimeStr: string) => string;
   formatAudioTime: (ms: number) => string;
+  parseAudioTime: (timeStr: string) => number;
   getConfidenceColor: (confidence: number) => string;
   getConfidenceLabel: (confidence: number) => string;
 }
@@ -18,14 +20,56 @@ interface Props {
 const TranscriptionItemComponent: React.FC<Props> = ({
   item,
   index,
-  onStartEdit,
+  onEditTranscription,
   onSeekToTime,
-  onDoubleClick,
   formatTime,
+  formatDateTimeForEdit,
+  parseDateTimeFromEdit,
   formatAudioTime,
+  parseAudioTime,
   getConfidenceColor,
   getConfidenceLabel
 }) => {
+  // Each item manages its own edit state - NO parent re-renders!
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState('');
+  const [editSpeaker, setEditSpeaker] = useState('');
+  const [editStartTime, setEditStartTime] = useState('');
+  const [editAudioTimeMs, setEditAudioTimeMs] = useState<number | undefined>(undefined);
+
+  const handleStartEdit = useCallback(() => {
+    setIsEditing(true);
+    setEditText(item.text);
+    setEditSpeaker(item.speaker);
+    setEditStartTime(formatDateTimeForEdit(item.startTime));
+    setEditAudioTimeMs(item.audioTimeMs);
+  }, [item.text, item.speaker, item.startTime, item.audioTimeMs, formatDateTimeForEdit]);
+
+  const handleSaveEdit = useCallback(() => {
+    const isoStartTime = parseDateTimeFromEdit(editStartTime);
+    onEditTranscription(
+      item.id,
+      editText.trim(),
+      editSpeaker.trim() || 'Person1',
+      isoStartTime,
+      editAudioTimeMs
+    );
+    setIsEditing(false);
+  }, [item.id, editText, editSpeaker, editStartTime, editAudioTimeMs, parseDateTimeFromEdit, onEditTranscription]);
+
+  const handleCancelEdit = useCallback(() => {
+    setIsEditing(false);
+    setEditText('');
+    setEditSpeaker('');
+    setEditStartTime('');
+    setEditAudioTimeMs(undefined);
+  }, []);
+
+  const handleDoubleClick = useCallback(() => {
+    if (item.isFinal && !isEditing) {
+      handleStartEdit();
+    }
+  }, [item.isFinal, isEditing, handleStartEdit]);
 
   return (
     <div
@@ -37,7 +81,7 @@ const TranscriptionItemComponent: React.FC<Props> = ({
         position: 'relative',
         cursor: item.isFinal ? 'pointer' : 'default'
       }}
-      onDoubleClick={onDoubleClick}
+      onDoubleClick={handleDoubleClick}
       title={item.isFinal ? "Double-click để chỉnh sửa" : ""}
     >
       {/* Header with metadata */}
@@ -53,15 +97,17 @@ const TranscriptionItemComponent: React.FC<Props> = ({
       >
         <Space size="small">
           {/* Time */}
-          <Tooltip title="Thời gian">
-            <Tag icon={<ClockCircleOutlined />} color="blue" style={{ fontSize: '11px' }}>
-              {formatTime(item.startTime)}
-            </Tag>
-          </Tooltip>
+          {!item.isAIRefined && (
+            <Tooltip title="Thời gian">
+              <Tag icon={<ClockCircleOutlined />} color="blue" style={{ fontSize: '11px' }}>
+                {formatTime(item.startTime)}
+              </Tag>
+            </Tooltip>
+          )}
 
           {/* Audio Time - Clickable */}
           {item.audioTimeMs !== undefined && (
-            <Tooltip title="Double click để tua đến vị trí này trên audio">
+            <Tooltip title="Click để nhảy đến vị trí này trong audio">
               <Tag 
                 color="cyan" 
                 style={{ 
@@ -69,12 +115,12 @@ const TranscriptionItemComponent: React.FC<Props> = ({
                   userSelect: 'none',
                   fontSize: '11px'
                 }}
-                onDoubleClick={(e) => {
+                onClick={(e) => {
                   e.stopPropagation();
                   onSeekToTime(item.audioTimeMs!);
                 }}
               >
-                📍 {formatAudioTime(item.audioTimeMs)}
+                🎵 {formatAudioTime(item.audioTimeMs)}
               </Tag>
             </Tooltip>
           )}
@@ -119,13 +165,13 @@ const TranscriptionItemComponent: React.FC<Props> = ({
           </span>
           
           {/* Edit button - only for final results */}
-          {item.isFinal && (
+          {item.isFinal && !isEditing && (
             <Tooltip title="Sửa nội dung">
               <Button
                 type="text"
                 size="small"
                 icon={<EditOutlined />}
-                onClick={onStartEdit}
+                onClick={handleStartEdit}
                 style={{ padding: '0 4px', height: 'auto' }}
               />
             </Tooltip>
@@ -151,8 +197,88 @@ const TranscriptionItemComponent: React.FC<Props> = ({
         </Space>
       </div>
 
-      {/* Transcription content */}
-      <>
+      {/* Content */}
+      {isEditing ? (
+        <>
+          {/* Edit Form */}
+          <div style={{ marginBottom: '8px' }}>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+              {/* Edit Start Time */}
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <label style={{ fontSize: '12px', color: '#666', marginRight: '6px', whiteSpace: 'nowrap' }}>
+                  Thời điểm:
+                </label>
+                <Input
+                  size="small"
+                  value={editStartTime}
+                  onChange={(e) => setEditStartTime(e.target.value)}
+                  placeholder="yyyy-MM-dd HH:mm:ss"
+                  style={{ width: '170px' }}
+                />
+              </div>
+
+              {/* Edit Audio Time */}
+              {editAudioTimeMs !== undefined && (
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <label style={{ fontSize: '12px', color: '#666', marginRight: '6px', whiteSpace: 'nowrap' }}>
+                    Vị trí audio:
+                  </label>
+                  <Input
+                    size="small"
+                    value={formatAudioTime(editAudioTimeMs)}
+                    onChange={(e) => setEditAudioTimeMs(parseAudioTime(e.target.value))}
+                    placeholder="0:00"
+                    style={{ width: '80px' }}
+                  />
+                </div>
+              )}
+
+              {/* Edit Speaker */}
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <label style={{ fontSize: '12px', color: '#666', marginRight: '6px', whiteSpace: 'nowrap' }}>
+                  Người nói:
+                </label>
+                <Input
+                  size="small"
+                  value={editSpeaker}
+                  onChange={(e) => setEditSpeaker(e.target.value)}
+                  placeholder="Người nói 1"
+                  style={{ width: '120px' }}
+                />
+              </div>
+            </div>
+
+            {/* Edit Text */}
+            <Input.TextArea
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
+              autoSize={{ minRows: 2, maxRows: 6 }}
+              style={{ marginBottom: '8px' }}
+              autoFocus
+            />
+
+            {/* Edit actions */}
+            <Space size="small">
+              <Button
+                type="primary"
+                size="small"
+                icon={<SaveOutlined />}
+                onClick={handleSaveEdit}
+              >
+                Lưu
+              </Button>
+              <Button
+                size="small"
+                icon={<CloseOutlined />}
+                onClick={handleCancelEdit}
+              >
+                Hủy
+              </Button>
+            </Space>
+          </div>
+        </>
+      ) : (
+        <>
           {/* Transcription text */}
           <div
             style={{
@@ -181,7 +307,8 @@ const TranscriptionItemComponent: React.FC<Props> = ({
               ⏳ Đang nhận dạng...
             </div>
           )}
-      </>
+        </>
+      )}
     </div>
   );
 };
