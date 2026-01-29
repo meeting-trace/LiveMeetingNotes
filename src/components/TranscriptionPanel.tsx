@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { Collapse, Empty, Tag, Space, Tooltip, Input, Button } from 'antd';
-import { AudioOutlined, ClockCircleOutlined, UserOutlined, CheckCircleOutlined, EditOutlined, SaveOutlined, CloseOutlined, RobotOutlined } from '@ant-design/icons';
+import { AudioOutlined, ClockCircleOutlined, UserOutlined, CheckCircleOutlined, EditOutlined, SaveOutlined, CloseOutlined} from '@ant-design/icons';
 import type { TranscriptionResult } from '../types/types';
 
 interface Props {
@@ -257,7 +257,7 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
                   <Button
                     type="primary"
                     size="small"
-                    icon={<RobotOutlined />}
+                    // icon={<RobotOutlined />}
                     onClick={(e) => {
                       e.stopPropagation(); // Prevent collapse toggle
                       onAIRefine();

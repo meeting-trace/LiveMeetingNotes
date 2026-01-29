@@ -35,6 +35,10 @@ export const NotesEditor: React.FC<Props> = ({
   const speakerRefs = useRef<Map<number, TextAreaRef>>(new Map());
   const textRefs = useRef<Map<number, TextAreaRef>>(new Map());
   const syncDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const notesDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Local notes state for immediate UI updates
+  const [localNotes, setLocalNotes] = useState<string>(notes);
   
   // Multi-line selection states
   const [selectedLines, setSelectedLines] = useState<Set<number>>(new Set());
@@ -49,6 +53,12 @@ export const NotesEditor: React.FC<Props> = ({
   
   // Use line-index-based timestamps (lineIndex → dateTimeMs) as source of truth
   const BLOCK_SEPARATOR = '§§§';
+  
+  // Sync localNotes when notes prop changes (e.g., load project, undo/redo from parent)
+  React.useEffect(() => {
+    setLocalNotes(notes);
+  }, [notes]);
+  
   const [lineTimestamps, setLineTimestamps] = useState<Map<number, number>>(() => {
     // Initialize from parent's timestampMap only once on mount
     const initialLineTimestamps = new Map<number, number>();
@@ -250,7 +260,7 @@ export const NotesEditor: React.FC<Props> = ({
       
       setLineTimestamps(newLineTimestamps);
       setLineSpeakers(newLineSpeakers);
-      onNotesChange(lines.join(BLOCK_SEPARATOR));
+      updateNotesImmediate(lines);
       syncToParentTimestampMap(lines, newLineTimestamps);
       
       // Focus the new line
@@ -451,7 +461,7 @@ export const NotesEditor: React.FC<Props> = ({
     setLineTimestamps(newLineTimestamps);
     setLineSpeakers(newLineSpeakers);
     setSelectedLines(new Set());
-    onNotesChange(lines.join(BLOCK_SEPARATOR));
+    updateNotesImmediate(lines);
     syncToParentTimestampMap(lines, newLineTimestamps);
   };
   
@@ -537,29 +547,25 @@ export const NotesEditor: React.FC<Props> = ({
 
   const handleLineChange = (index: number, value: string) => {
     const BLOCK_SEPARATOR = '§§§';
-    const lines = notes.split(BLOCK_SEPARATOR);
+    const lines = localNotes.split(BLOCK_SEPARATOR);
     const oldLine = lines[index];
     
     // Don't auto-delete line when it becomes empty
     // Let user explicitly delete via Backspace/Delete keys (handled in handleKeyDown)
     // Just update the content
     lines[index] = value;
+    const newNotes = lines.join(BLOCK_SEPARATOR);
+    
+    // Update local state immediately for responsive UI
+    setLocalNotes(newNotes);
     
     // Auto-create timestamp: Only in Live Mode when line goes from empty to having content
     if (isLiveMode) {
       const oldLineEmpty = oldLine.trim().length === 0;
       const newLineHasContent = value.trim().length > 0;
       
-      // console.log('⏰ Auto-timestamp check:', { 
-      //   index, 
-      //   oldLineEmpty, 
-      //   newLineHasContent, 
-      //   hasTimestamp: lineTimestamps.has(index),
-      //   isLiveMode 
-      // });
-      
       if (oldLineEmpty && newLineHasContent && !lineTimestamps.has(index)) {
-        // Save datetime with delay offset (người gõ note thường chậm hơn người nói)
+        // Save datetime with delay offset (định gõ note thường chậm hơn người nói)
         const currentDatetime = Date.now() - (timestampDelay * 1000);
         console.log('✅ Creating timestamp:', { index, currentDatetime, delay: timestampDelay });
         
@@ -567,16 +573,17 @@ export const NotesEditor: React.FC<Props> = ({
         newLineTimestamps.set(index, currentDatetime);
         setLineTimestamps(newLineTimestamps);
         
-        onNotesChange(lines.join(BLOCK_SEPARATOR));
-        syncToParentTimestampMap(lines, newLineTimestamps); // Immediate sync for timestamp creation
+        // Immediate sync for timestamp creation
+        onNotesChange(newNotes);
+        syncToParentTimestampMap(lines, newLineTimestamps);
         return;
       }
     }
     // In Loaded Mode: Never auto-create timestamp, user must use right-click on waveform
     
-    // Use debounced sync for regular text edits to improve performance
-    onNotesChange(lines.join(BLOCK_SEPARATOR));
-    debouncedSyncToParent(lines, lineTimestamps); // Debounced sync for better performance
+    // Use debounced callbacks for regular text edits to improve performance
+    debouncedNotesChange(newNotes); // Debounced parent update
+    debouncedSyncToParent(lines, lineTimestamps); // Debounced sync
     debouncedSaveToHistory(); // Auto-save after typing
   };
   
@@ -622,7 +629,7 @@ export const NotesEditor: React.FC<Props> = ({
         newLineTimestamps.set(index, currentDatetime);
         setLineTimestamps(newLineTimestamps);
         
-        const lines = notes.split('§§§');
+        const lines = localNotes.split('§§§');
         syncToParentTimestampMap(lines, newLineTimestamps);
       }
     }
@@ -648,7 +655,7 @@ export const NotesEditor: React.FC<Props> = ({
     onTimestampMapChange(newMap);
   }, [onTimestampMapChange]);
   
-  // Debounced version to reduce parent updates during typing
+  // Debounced sync to reduce parent updates during typing
   const debouncedSyncToParent = useCallback((lines: string[], lineTimestamps: Map<number, number>) => {
     if (syncDebounceRef.current) {
       clearTimeout(syncDebounceRef.current);
@@ -658,6 +665,29 @@ export const NotesEditor: React.FC<Props> = ({
       syncToParentTimestampMap(lines, lineTimestamps);
     }, 300); // 300ms debounce - reduces updates while typing
   }, [syncToParentTimestampMap]);
+  
+  // Debounced onNotesChange to reduce App re-renders
+  const debouncedNotesChange = useCallback((newNotes: string) => {
+    if (notesDebounceRef.current) {
+      clearTimeout(notesDebounceRef.current);
+    }
+    
+    notesDebounceRef.current = setTimeout(() => {
+      onNotesChange(newNotes);
+    }, 300); // 300ms debounce
+  }, [onNotesChange]);
+  
+  // Helper to get current lines from localNotes
+  const getLines = useCallback(() => {
+    return localNotes.split(BLOCK_SEPARATOR);
+  }, [localNotes]);
+  
+  // Helper to update notes immediately (for operations like Enter, Delete)
+  const updateNotesImmediate = useCallback((newLines: string[]) => {
+    const newNotes = newLines.join(BLOCK_SEPARATOR);
+    setLocalNotes(newNotes);
+    onNotesChange(newNotes);
+  }, [onNotesChange]);
   
   // Save current state to history
   const saveToHistory = () => {
@@ -749,7 +779,7 @@ export const NotesEditor: React.FC<Props> = ({
 
   const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const BLOCK_SEPARATOR = '§§§';
-    const lines = notes.split(BLOCK_SEPARATOR);
+    const lines = getLines();
     const currentLine = lines[index];
     const target = e.target as HTMLTextAreaElement;
     const cursorPos = target.selectionStart;
@@ -837,7 +867,7 @@ export const NotesEditor: React.FC<Props> = ({
       setLineTimestamps(newLineTimestamps);
       setLineSpeakers(newLineSpeakers);
       
-      onNotesChange(lines.join(BLOCK_SEPARATOR));
+      updateNotesImmediate(lines);
       syncToParentTimestampMap(lines, newLineTimestamps);
       
       // Focus next line after React re-renders
@@ -897,7 +927,7 @@ export const NotesEditor: React.FC<Props> = ({
         });
         setLineSpeakers(newLineSpeakers);
         
-        onNotesChange(lines.join(BLOCK_SEPARATOR));
+        updateNotesImmediate(lines);
         syncToParentTimestampMap(lines, newLineTimestamps);
         
         // Focus previous line at end
@@ -982,7 +1012,7 @@ export const NotesEditor: React.FC<Props> = ({
       });
       setLineSpeakers(newLineSpeakers);
       
-      onNotesChange(lines.join(BLOCK_SEPARATOR));
+      updateNotesImmediate(lines);
       syncToParentTimestampMap(lines, newLineTimestamps);
       
       // Focus current position (which will now be the next line)
@@ -1011,7 +1041,8 @@ export const NotesEditor: React.FC<Props> = ({
     }
   };
 
-  const lines = notes.split(BLOCK_SEPARATOR);
+  // Use localNotes for rendering to ensure immediate UI updates
+  const lines = localNotes.split(BLOCK_SEPARATOR);
   if (lines.length === 0 || (lines.length === 1 && lines[0] === '')) {
     lines[0] = '';
   }
