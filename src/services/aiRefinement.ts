@@ -769,6 +769,15 @@ Giữ timestamp/audioTimeMs gốc. Chỉ trả về JSON array.`;
       // Get MIME type (use WAV if converted)
       const mimeType = processedAudio.type || 'audio/wav';
 
+      // Debug logging before sending
+      const audioSizeMB = processedAudio.size / (1024 * 1024);
+      const base64SizeKB = (base64Audio.length * 0.75) / 1024; // Approximate size in KB
+      console.log('📤 Sending to Gemini:');
+      console.log('  • Audio size:', audioSizeMB.toFixed(2), 'MB');
+      console.log('  • MIME type:', mimeType);
+      console.log('  • Base64 size:', base64SizeKB.toFixed(2), 'KB');
+      console.log('  • Model:', modelName);
+
       // Prepare request
       const endpoint = `https://generativelanguage.googleapis.com/${this.GEMINI_API_VERSION}/${modelName}:generateContent?key=${apiKey}`;
 
@@ -776,19 +785,26 @@ Giữ timestamp/audioTimeMs gốc. Chỉ trả về JSON array.`;
         contents: [{
           parts: [
             {
-              text: `Hãy nghe file âm thanh cuộc họp này và chuyển thành văn bản. Yêu cầu bắt buộc:
+              text: `CHỈ CHUYỂN ĐỔI FILE ÂM THANH NÀY THÀNH VĂN BẢN.
 
-1. Chia văn bản thành các đoạn hội thoại tự nhiên.
-2. Gắn nhãn thời gian [mm:ss] vào đầu mỗi đoạn dựa trên thời điểm người nói bắt đầu trong file âm thanh.
-3. Nếu có nhiều người nói, hãy phân biệt bằng cách ghi 'Người nói 1:', 'Người nói 2:'...
-4. Làm sạch văn bản (loại bỏ từ đệm, sửa lỗi chính tả).
-5. Định dạng: Trả về kết quả dưới dạng JSON với cấu trúc:
+QUAN TRỌNG: CHỈ PHIÊN ÂM ĐÚNG NỘI DUNG CỦA FILE ÂM THANH ĐƯỢC CUNG CẤP. KHÔNG THÊM BẤT KỲ NỘI DUNG NÀO KHÁC.
+
+Yêu cầu:
+1. Nghe kỹ file âm thanh và chuyển thành văn bản CHÍNH XÁC những gì được nói trong file.
+2. Chia văn bản thành các đoạn hội thoại tự nhiên (khi có người khác nói hoặc tạm dừng).
+3. Gắn thời gian [mm:ss] vào đầu mỗi đoạn dựa trên vị trí trong file âm thanh (bắt đầu từ 0:00).
+4. Nếu có nhiều người nói, phân biệt bằng 'Người nói 1:', 'Người nói 2:'...
+5. Làm sạch văn bản (loại bỏ từ đệm không cần thiết, sửa lỗi chính tả).
+6. KHÔNG tự tạo thêm nội dung. KHÔNG thêm thông tin từ kiến thức của bạn.
+7. Nếu không nghe rõ một đoạn, ghi "[không rõ]" thay vì đoán.
+
+Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
 {
   "segments": [
     {
-      "timestamp": "mm:ss",
+      "timestamp": "0:00",
       "speaker": "Người nói 1",
-      "text": "nội dung"
+      "text": "nội dung chính xác từ audio"
     }
   ]
 }`
@@ -1270,17 +1286,35 @@ Giữ timestamp/audioTimeMs gốc. Chỉ trả về JSON array.`;
         throw new Error('No text in Gemini response');
       }
 
+      // Debug logging
+      console.log('🔍 Raw Gemini response text:', textResponse);
+      console.log('🔍 Response length:', textResponse.length, 'characters');
+
       // Extract JSON from response (handle markdown code blocks)
       let jsonText = textResponse.trim();
       const jsonMatch = jsonText.match(/```json\s*([\s\S]*?)```/) || jsonText.match(/```\s*([\s\S]*?)```/);
       if (jsonMatch) {
         jsonText = jsonMatch[1].trim();
+        console.log('✂️ Extracted JSON from markdown code block');
       }
+
+      console.log('📄 JSON to parse:', jsonText.substring(0, 500) + '...');
 
       const parsed = JSON.parse(jsonText);
 
       if (!parsed.segments || !Array.isArray(parsed.segments)) {
+        console.error('❌ Invalid structure:', parsed);
         throw new Error('Invalid JSON structure: missing segments array');
+      }
+
+      console.log(`✅ Parsed ${parsed.segments.length} segments from Gemini`);
+      
+      // Log first few segments for debugging
+      if (parsed.segments.length > 0) {
+        console.log('📝 First segment:', parsed.segments[0]);
+        if (parsed.segments.length > 1) {
+          console.log('📝 Second segment:', parsed.segments[1]);
+        }
       }
 
       // Convert to TranscriptionResult format
@@ -1307,8 +1341,8 @@ Giữ timestamp/audioTimeMs gốc. Chỉ trả về JSON array.`;
       });
 
     } catch (error: any) {
-      console.error('Failed to parse Gemini audio transcription:', error);
-      console.log('Raw API response:', JSON.stringify(apiResponse, null, 2));
+      console.error('❌ Failed to parse Gemini audio transcription:', error);
+      console.log('📋 Raw API response:', JSON.stringify(apiResponse, null, 2));
       throw new Error(`Failed to parse Gemini response: ${error.message}`);
     }
   }
