@@ -119,8 +119,8 @@ export class SpeechToTextService {
         onTranscription(result);
       });
 
-      const browserInfo = this.smartManager.getBrowserInfo();
-      console.log(`🌐 Using Web Speech API on ${browserInfo.name} (silence: ${browserInfo.silenceTimeout}ms, merge: ${browserInfo.mergeTimeWindow}ms)`);
+      // const browserInfo = this.smartManager.getBrowserInfo();
+      console.log(`🌐 Using Web Speech API`);
 
       this.recognition.onresult = (event: any) => {
         for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -436,7 +436,7 @@ export class SpeechToTextService {
     this.transcriptionStartTime = 0; // Reset start time
 
     // ✨ Force commit any pending interim buffer
-    this.smartManager.forceCommit();
+    // this.smartManager.forceCommit();
 
     // Stop Web Speech API
     if (this.recognition) {
@@ -470,7 +470,7 @@ export class SpeechToTextService {
     this.onTranscriptionCallback = null;
     
     // ✨ Reset SmartTranscriptManager for next session
-    this.smartManager.reset();
+    // this.smartManager.reset();
     
     // console.log('🛑 Transcription stopped');
   }
