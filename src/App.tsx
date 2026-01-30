@@ -1241,8 +1241,14 @@ export const App: React.FC = () => {
               return existingDraft ? [...finalResults, existingDraft] : finalResults;
             }
             
-            // ** LOGIC MỚI: Nếu cùng startTime → ghép text vào segment cuối **
-            if (result.startTime === lastResult.startTime) {
+            // ** LOGIC MỚI: ghép text vào segment cuối **
+              const lastText = lastResult.text || '';
+              const lastWordCount = lastText.trim().length === 0
+                ? 0
+                : lastText.trim().split(/\s+/).filter(Boolean).length;
+              
+              // Nếu last segment chưa >= 250 từ → merge, ngược lại tạo segment mới (fall through)
+              if (lastWordCount < 150){
               // Ghép text: lastText + " " + newText
               const updatedText = lastResult.text.trim() + ' ' + result.text.trim();
               
