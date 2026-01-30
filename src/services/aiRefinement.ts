@@ -808,7 +808,7 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
       "text": "nội dung chính xác từ audio"
     }
   ],
-  "summary": "Tóm tắt ngắn gọn các nội dung chính được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm các chủ đề chính, quyết định quan trọng, và kết luận (nếu có). Độ dài: 3-5 câu."
+  "summary": "Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có)."
 }`
             },
             {

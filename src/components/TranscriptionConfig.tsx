@@ -138,17 +138,17 @@ export const TranscriptionConfig: React.FC<Props> = ({
         timestampDelay: values.timestampDelay || 8,
         
         // Gemini API Limits
-        maxAudioDurationMinutes: values.maxAudioDurationMinutes || 60,
-        maxFileSizeMB: values.maxFileSizeMB || 20,
+        maxAudioDurationMinutes: values.maxAudioDurationMinutes || 180,
+        maxFileSizeMB: values.maxFileSizeMB || 300,
         requestDelaySeconds: values.requestDelaySeconds || 5
       };
 
       // Validate: Speaker diarization requires API Key
-      if (config.enableSpeakerDiarization && !config.apiKey) {
-        message.error('⚠️ Nhận diện người nói yêu cầu Google Cloud API Key');
-        setIsSaving(false);
-        return;
-      }
+      // if (config.enableSpeakerDiarization && !config.apiKey) {
+      //   message.error('⚠️ Nhận diện người nói yêu cầu Google Cloud API Key');
+      //   setIsSaving(false);
+      //   return;
+      // }
 
 
       // Save to localStorage
