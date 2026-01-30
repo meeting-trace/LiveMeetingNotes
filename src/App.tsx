@@ -47,6 +47,7 @@ export const App: React.FC = () => {
   const [transcriptionConfig, setTranscriptionConfig] = useState<SpeechToTextConfig | null>(null);
   const [transcriptions, setTranscriptions] = useState<TranscriptionResult[]>([]);
   const [rawTranscripts, setRawTranscripts] = useState<RawTranscriptData[]>([]); // Raw data from Web Speech API
+  const [geminiSummary, setGeminiSummary] = useState<string | undefined>(undefined); // Summary from Gemini AI
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   // Check browser compatibility
@@ -407,7 +408,7 @@ export const App: React.FC = () => {
       console.log('📅 Meeting start time:', meetingStartTime);
       console.log('📅 Is valid date?', !isNaN(meetingStartTime.getTime()));
       
-      const results = await AIRefinementService.transcribeEntireAudioWithGemini(
+      const parsed = await AIRefinementService.transcribeEntireAudioWithGemini(
         config.geminiApiKey,
         audioBlob,
         config.geminiModel,
@@ -433,9 +434,15 @@ export const App: React.FC = () => {
       );
 
       progressModal.destroy();
+      
+      // Save summary
+      if (parsed.summary) {
+        console.log('📋 Received summary from Gemini:', parsed.summary);
+        setGeminiSummary(parsed.summary);
+      }
 
       // Show merge/replace options modal
-      showMergeOrReplaceModal(results);
+      showMergeOrReplaceModal(parsed.results);
 
     } catch (error: any) {
       if (progressModal) progressModal.destroy();
@@ -541,7 +548,7 @@ export const App: React.FC = () => {
           const maxFileSizeMB = config.maxFileSizeMB || 20;
           const meetingStartTime = new Date(`${meetingInfo.date}T${meetingInfo.time}:00`);
           
-          const segmentResults = await AIRefinementService.transcribeAudioWithGemini(
+          const parsed = await AIRefinementService.transcribeAudioWithGemini(
             config.geminiApiKey!,
             segmentBlob,
             config.geminiModel!,
@@ -553,11 +560,17 @@ export const App: React.FC = () => {
 
           // Adjust timestamps to match original audio
           const adjustedResults = AIRefinementService.adjustTimestamps(
-            segmentResults,
+            parsed.results,
             startMs
           );
 
           hideProcessing();
+          
+          // Save summary if available
+          if (parsed.summary) {
+            console.log('📋 Received summary from segment:', parsed.summary);
+            setGeminiSummary(parsed.summary);
+          }
 
           // Show merge/replace options modal
           showMergeOrReplaceModal(adjustedResults);
@@ -834,7 +847,7 @@ export const App: React.FC = () => {
             const maxFileSizeMB = config?.maxFileSizeMB || 20;
             const meetingStartTime = new Date(`${meetingInfo.date}T${meetingInfo.time}:00`);
             
-            const results = await AIRefinementService.transcribeAudioWithGemini(
+            const parsed = await AIRefinementService.transcribeAudioWithGemini(
               apiKey,
               audioBlob,
               modelName,
@@ -847,8 +860,14 @@ export const App: React.FC = () => {
               meetingStartTime
             );
 
+            // Save summary if available
+            if (parsed.summary) {
+              console.log('📋 Received summary:', parsed.summary);
+              setGeminiSummary(parsed.summary);
+            }
+
             // Show merge/replace options modal
-            showMergeOrReplaceModal(results);
+            showMergeOrReplaceModal(parsed.results);
 
           } catch (error: any) {
             // Check if error is FILE_TOO_LARGE
@@ -1247,10 +1266,10 @@ export const App: React.FC = () => {
                 ? 0
                 : lastText.trim().split(/\s+/).filter(Boolean).length;
               
-              // Nếu last segment chưa >= 250 từ → merge, ngược lại tạo segment mới (fall through)
+              // Nếu last segment chưa >= 150 từ → merge, ngược lại tạo segment mới (fall through)
               if (lastWordCount < 150){
               // Ghép text: lastText + " " + newText
-              const updatedText = lastResult.text.trim() + ' ' + result.text.trim();
+              const updatedText = lastResult.text.trim() + '. ' + result.text.trim();
               
               finalResults[finalResults.length - 1] = {
                 ...lastResult,
@@ -1265,7 +1284,7 @@ export const App: React.FC = () => {
               return existingDraft ? [...finalResults, existingDraft] : finalResults;
             }
             
-            // ** Nếu startTime khác → tạo segment mới (logic cũ không cần thiết nữa) **
+            // ** Nếu nhiều hơn 150 từ → tạo segment mới (logic cũ không cần thiết nữa) **
           }
           
           // Thêm kết quả final mới và giữ draft segment nếu có
@@ -1275,7 +1294,7 @@ export const App: React.FC = () => {
           const finalResults = prev.filter(item => item.isFinal);
           const existingDraft = prev.find(item => !item.isFinal);
           
-          // ⚠️ SPECIAL CASE: Empty text means remove draft segment (clear signal from SmartTranscriptManager)
+          // ⚠️ trường hợp đặc biệt: Empty text means remove draft segment (clear signal from SmartTranscriptManager)
           if (!result.text || result.text.trim() === '') {
             // Remove draft segment, keep only final results
             return finalResults;
@@ -1900,6 +1919,7 @@ export const App: React.FC = () => {
           setRawTranscripts([]); // Also clear raw transcripts
         }}
         transcriptions={transcriptions}
+        geminiSummary={geminiSummary}
       />
 
       {/* Transcription Panel - Only show when online and configured */}

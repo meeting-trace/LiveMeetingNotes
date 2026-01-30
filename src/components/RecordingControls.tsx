@@ -54,6 +54,7 @@ interface Props {
   onClearTranscriptions: () => void;
   transcriptions: TranscriptionResult[];
   onSpeakerChange?: (lineIndex: number, speaker: string) => void; // Add handler for speaker changes
+  geminiSummary?: string; // Add geminiSummary prop
 }
 
 export const RecordingControls: React.FC<Props> = ({
@@ -77,7 +78,8 @@ export const RecordingControls: React.FC<Props> = ({
   transcriptionConfig,
   onNewTranscription,
   onClearTranscriptions,
-  transcriptions
+  transcriptions,
+  geminiSummary
 }) => {
   const { message } = App.useApp();
   const [duration, setDuration] = useState<number>(0);
@@ -496,7 +498,7 @@ export const RecordingControls: React.FC<Props> = ({
 
       // Export Word document to same folder
       const finalTranscriptions = transcriptions?.filter(t => t.isFinal) || [];
-      const wordBlob = await WordExporter.createWordBlob(meetingInfo, notes, finalTranscriptions, speakersMap);
+      const wordBlob = await WordExporter.createWordBlob(meetingInfo, notes, finalTranscriptions, speakersMap, geminiSummary);
       await fileManager.saveWordFile(wordBlob, `${projectName}.docx`, undefined, true);
       
       // Restore original handle
@@ -569,7 +571,8 @@ export const RecordingControls: React.FC<Props> = ({
         notes,
         `${projectName}.docx`,
         finalTranscriptions,
-        speakersMap
+        speakersMap,
+        geminiSummary
       );
 
       message.info('Files downloaded. Please save them to your meeting notes folder.');
@@ -612,7 +615,8 @@ export const RecordingControls: React.FC<Props> = ({
           notes,
           `${projectName}.docx`,
           finalTranscriptions,
-          speakersMap
+          speakersMap,
+          geminiSummary
         );
         
         message.info('Tệp đã được tải xuống. Vui lòng lưu vào thư mục ghi chú cuộc họp của bạn.');
@@ -697,7 +701,7 @@ export const RecordingControls: React.FC<Props> = ({
       
       // Export Word document
       const finalTranscriptions = transcriptions?.filter(t => t.isFinal) || [];
-      const wordBlob = await WordExporter.createWordBlob(meetingInfo, notes, finalTranscriptions, speakersMap);
+      const wordBlob = await WordExporter.createWordBlob(meetingInfo, notes, finalTranscriptions, speakersMap, geminiSummary);
       await fileManager.saveWordFile(wordBlob, `${projectName}.docx`, undefined, true);
       // console.log('✓ Saved Word document');
       
@@ -879,7 +883,7 @@ export const RecordingControls: React.FC<Props> = ({
 
           // Export Word document
           const finalTranscriptions = transcriptions?.filter(t => t.isFinal) || [];
-          const wordBlob = await WordExporter.createWordBlob(meetingInfo, notes, finalTranscriptions, speakersMap);
+          const wordBlob = await WordExporter.createWordBlob(meetingInfo, notes, finalTranscriptions, speakersMap, geminiSummary);
           await fileManager.saveWordFile(wordBlob, `${newProjectName}.docx`, undefined, true);
           // console.log('✓ Saved Word document');
           
@@ -952,7 +956,8 @@ export const RecordingControls: React.FC<Props> = ({
           notes,
           `${newProjectName}.docx`,
           finalTranscriptions,
-          speakersMap
+          speakersMap,
+          geminiSummary
         );
 
         message.info('Updated files downloaded as new version.');

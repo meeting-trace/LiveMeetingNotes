@@ -20,12 +20,18 @@ export class WordExporter {
     meetingInfo: MeetingInfo,
     notesText: string,
     transcriptions?: TranscriptionResult[],
-    speakersMap?: Map<number, string>
+    speakersMap?: Map<number, string>,
+    geminiSummary?: string // Add summary parameter
   ): Promise<Blob> {
     // Text is already clean (no timestamps embedded)
     const paragraphs = this.parseTextToParagraphs(notesText, speakersMap);
     
     console.log('transcriptions in createWordBlob:', transcriptions);
+
+    // Add summary section if available
+    const summaryParagraphs = geminiSummary
+      ? this.createSummaryParagraphs(geminiSummary)
+      : [];
 
     // Add transcription section if available
     const transcriptionParagraphs = transcriptions && transcriptions.length > 0
@@ -101,14 +107,20 @@ export class WordExporter {
               spacing: { after: 300 }
             }),
             
+            // Add summary section if available (before transcription)
+            ...summaryParagraphs,
+
             // Notes content
             new Paragraph({
-              text: 'NỘI DUNG CUỘC HỌP',
+              text: 'NỘI DUNG CUỘC HỌP CHI TIẾT',
               heading: HeadingLevel.HEADING_2,
-              spacing: { before: 200, after: 200 }
+              spacing: { before: 200, after: 200 },
+              alignment: AlignmentType.JUSTIFIED
             }),
             
             ...paragraphs,
+            
+
             
             // Add transcription section if available
             ...transcriptionParagraphs
@@ -128,11 +140,12 @@ export class WordExporter {
     notesText: string,
     fileName: string,
     transcriptions?: TranscriptionResult[],
-    speakersMap?: Map<number, string>
+    speakersMap?: Map<number, string>,
+    geminiSummary?: string
   ): Promise<void> {
     console.log('transcriptions:', transcriptions);
     const fileNameWithTimestamp = addTimestampPrefix(fileName);
-    const blob = await this.createWordBlob(meetingInfo, notesText, transcriptions, speakersMap);
+    const blob = await this.createWordBlob(meetingInfo, notesText, transcriptions, speakersMap, geminiSummary);
     saveAs(blob, fileNameWithTimestamp);
   }
   
@@ -159,7 +172,8 @@ export class WordExporter {
                 new TextRun({ text: `${speaker.trim()}: `, bold: true, size: 24 }),
                 new TextRun({ text: trimmed, size: 24 })
               ],
-              spacing: { after: 100 }
+              spacing: { after: 100 },
+              alignment: AlignmentType.JUSTIFIED
             })
           );
         } else {
@@ -169,7 +183,8 @@ export class WordExporter {
               children: [
                 new TextRun({ text: `${speaker.trim()}: `, bold: true, size: 24 })
               ],
-              spacing: { after: 100 }
+              spacing: { after: 100 },
+              alignment: AlignmentType.JUSTIFIED
             })
           );
         }
@@ -181,7 +196,8 @@ export class WordExporter {
               children: [
                 new TextRun({ text: trimmed, size: 24 })
               ],
-              spacing: { after: 100 }
+              spacing: { after: 100 },
+              alignment: AlignmentType.JUSTIFIED
             })
           );
         } else {
@@ -191,7 +207,8 @@ export class WordExporter {
               children: [
                 new TextRun({ text: '', size: 24 })
               ],
-              spacing: { after: 50 }
+              spacing: { after: 50 },
+              alignment: AlignmentType.JUSTIFIED
             })
           );
         }
@@ -210,7 +227,8 @@ export class WordExporter {
       new Paragraph({
         text: 'SPEECH-TO-TEXT',
         heading: HeadingLevel.HEADING_2,
-        spacing: { before: 400, after: 200 }
+        spacing: { before: 400, after: 200 },
+        alignment: AlignmentType.JUSTIFIED
       })
     );
     
@@ -238,7 +256,40 @@ export class WordExporter {
             new TextRun({ text: prefix, bold: true, size: 24 }),
             new TextRun({ text: item.text, size: 24 })
           ],
-          spacing: { after: 150 }
+          spacing: { after: 150 },
+          alignment: AlignmentType.JUSTIFIED
+        })
+      );
+    });
+    
+    return paragraphs;
+  }
+  
+  // Create paragraphs for Gemini AI summary
+  private static createSummaryParagraphs(summary: string): Paragraph[] {
+    const paragraphs: Paragraph[] = [];
+    
+    // Add heading
+    paragraphs.push(
+      new Paragraph({
+        text: 'TÓM TẮT NỘI DUNG',
+        heading: HeadingLevel.HEADING_2,
+        spacing: { before: 400, after: 200 },
+        alignment: AlignmentType.JUSTIFIED
+      })
+    );
+    
+    // Split summary into paragraphs if it contains line breaks
+    const summaryLines = summary.split('\n').filter(line => line.trim());
+    
+    summaryLines.forEach(line => {
+      paragraphs.push(
+        new Paragraph({
+          children: [
+            new TextRun({ text: line.trim(), size: 24 })
+          ],
+          spacing: { after: 150 },
+          alignment: AlignmentType.JUSTIFIED
         })
       );
     });

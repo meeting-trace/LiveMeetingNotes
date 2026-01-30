@@ -698,7 +698,7 @@ Giữ timestamp/audioTimeMs gốc. Chỉ trả về JSON array.`;
     skipSizeCheck: boolean = false, // Skip size check when called from auto-split flow
     maxFileSizeMB: number = 20, // Maximum file size in MB (from config)
     meetingStartTime?: Date // Meeting start time for accurate timestamp calculation
-  ): Promise<TranscriptionResult[]> {
+  ): Promise<{ results: TranscriptionResult[], summary?: string }> {
     if (!apiKey || apiKey.trim().length === 0) {
       throw new Error('Gemini API Key is required');
     }
@@ -807,7 +807,8 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
       "speaker": "Người nói 1",
       "text": "nội dung chính xác từ audio"
     }
-  ]
+  ],
+  "summary": "Tóm tắt ngắn gọn các nội dung chính được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm các chủ đề chính, quyết định quan trọng, và kết luận (nếu có). Độ dài: 3-5 câu."
 }`
             },
             {
@@ -843,11 +844,11 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
       const data = await response.json();
       if (onProgress) onProgress(90);
 
-      // Parse response
-      const results = this.parseGeminiAudioTranscription(data, meetingStartTime);
+      // Parse response (now returns { results, summary })
+      const parsed = this.parseGeminiAudioTranscription(data, meetingStartTime);
       if (onProgress) onProgress(100);
 
-      return results;
+      return parsed;
 
     } catch (error: any) {
       console.error('Gemini audio transcription error:', error);
@@ -1130,7 +1131,7 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
     requestDelaySeconds: number = 5,
     maxDurationMinutes: number = 60,
     meetingStartTime?: Date // Meeting start time for accurate timestamp calculation
-  ): Promise<TranscriptionResult[]> {
+  ): Promise<{ results: TranscriptionResult[], summary?: string }> {
     const maxSizeMB = maxFileSizeMB;
 
     // CRITICAL: Convert to WAV first if needed, THEN split based on size
@@ -1163,6 +1164,7 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
     if (onProgress) onProgress(10, `Đã chia thành ${chunks.length} phần. Bắt đầu chuyển đổi...`);
 
     const allResults: TranscriptionResult[] = [];
+    const allSummaries: string[] = [];
 
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
@@ -1177,7 +1179,7 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
 
       try {
         // Transcribe this chunk (skip size check - already validated and split)
-        const results = await this.transcribeAudioWithGemini(
+        const parsed = await this.transcribeAudioWithGemini(
           apiKey,
           chunk.blob,
           modelName,
@@ -1193,8 +1195,13 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
         );
 
         // Adjust timestamps for this chunk
-        const adjustedResults = this.adjustTimestamps(results, chunk.startTimeMs);
+        const adjustedResults = this.adjustTimestamps(parsed.results, chunk.startTimeMs);
         allResults.push(...adjustedResults);
+        
+        // Collect summary from this chunk
+        if (parsed.summary) {
+          allSummaries.push(`Phần ${i + 1}/${chunks.length}: ${parsed.summary}`);
+        }
 
         // Add delay between chunks to respect rate limits (15 req/min)
         if (i < chunks.length - 1) {
@@ -1226,7 +1233,13 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
     if (onProgress) onProgress(100, `Hoàn thành! ${allResults.length} segments`);
 
     console.log(`✅ Transcribed entire audio: ${allResults.length} segments from ${chunks.length} chunks`);
-    return allResults;
+    
+    // Combine all summaries into one
+    const combinedSummary = allSummaries.length > 0 
+      ? allSummaries.join('\n\n') 
+      : undefined;
+    
+    return { results: allResults, summary: combinedSummary };
   }
 
   /**
@@ -1272,7 +1285,7 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
   /**
    * Parse Gemini audio transcription response
    */
-  private static parseGeminiAudioTranscription(apiResponse: any, meetingStartTime?: Date): TranscriptionResult[] {
+  private static parseGeminiAudioTranscription(apiResponse: any, meetingStartTime?: Date): { results: TranscriptionResult[], summary?: string } {
     try {
       const candidates = apiResponse.candidates;
       if (!candidates || candidates.length === 0) {
@@ -1356,6 +1369,12 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
 
       console.log(`✅ Parsed ${parsed.segments.length} segments from Gemini`);
       
+      // Extract summary if available
+      const summary = parsed.summary || undefined;
+      if (summary) {
+        console.log('📋 Summary:', summary);
+      }
+      
       // Log first few segments for debugging
       if (parsed.segments.length > 0) {
         console.log('📝 First segment:', parsed.segments[0]);
@@ -1365,7 +1384,7 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
       }
 
       // Convert to TranscriptionResult format
-      return parsed.segments.map((segment: any, index: number) => {
+      const results = parsed.segments.map((segment: any, index: number) => {
         const timestamp = segment.timestamp || '0:00';
         const audioTimeMs = this.parseTimestampToMs(timestamp);
 
@@ -1409,6 +1428,8 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
           isAIRefined: true
         };
       });
+      
+      return { results, summary };
 
     } catch (error: any) {
       console.error('❌ Failed to parse Gemini audio transcription:', error);
