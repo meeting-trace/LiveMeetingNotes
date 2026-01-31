@@ -169,7 +169,7 @@ export const TranscriptionConfig: React.FC<Props> = ({
   const handleClearConfig = () => {
     Modal.confirm({
       title: 'Xóa cấu hình?',
-      content: 'Bạn có chắc chắn muốn xóa cấu hình Speech-to-Text?',
+      content: 'Bạn có chắc chắn muốn xóa cấu hình?',
       okText: 'Xóa',
       okType: 'danger',
       cancelText: 'Hủy',
@@ -186,7 +186,7 @@ export const TranscriptionConfig: React.FC<Props> = ({
       title={
         <Space>
           <SettingOutlined />
-          <span>Cấu hình Speech-to-Text</span>
+          <span>Cấu hình</span>
         </Space>
       }
       open={visible}

@@ -1358,7 +1358,7 @@ export const RecordingControls: React.FC<Props> = ({
               size="large"
               className={!transcriptionConfig ? 'blink-btn' : ''}
             >
-              Cấu hình Speech-to-Text
+              Cấu hình
             </Button>
 
             {transcriptionConfig && (

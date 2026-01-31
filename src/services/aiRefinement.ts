@@ -697,7 +697,8 @@ Giữ timestamp/audioTimeMs gốc. Chỉ trả về JSON array.`;
     onProgress?: (progress: number) => void,
     skipSizeCheck: boolean = false, // Skip size check when called from auto-split flow
     maxFileSizeMB: number = 20, // Maximum file size in MB (from config)
-    meetingStartTime?: Date // Meeting start time for accurate timestamp calculation
+    meetingStartTime?: Date, // Meeting start time for accurate timestamp calculation
+    summaryPrompt?: string // OPTIONAL: user-provided prompt text for the summary field
   ): Promise<{ results: TranscriptionResult[], summary?: string }> {
     if (!apiKey || apiKey.trim().length === 0) {
       throw new Error('Gemini API Key is required');
@@ -808,7 +809,7 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
       "text": "nội dung chính xác từ audio"
     }
   ],
-  "summary": "Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có)."
+  "summary": "${summaryPrompt ? summaryPrompt.replace(/"/g, '\\"') : 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'}"
 }`
             },
             {
