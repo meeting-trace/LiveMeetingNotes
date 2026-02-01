@@ -14,7 +14,15 @@ const CACHE_VERSION = BUILD_TIMESTAMP !== '__BUILD_TIMESTAMP__' ? BUILD_TIMESTAM
 const CACHE_NAME = `live-meeting-notes-v${CACHE_VERSION}`;
 
 // Static assets to cache (these paths are stable)
-const urlsToCache = [ Cache version:', CACHE_VERSION);
+const urlsToCache = [
+  '/',
+  '/index.html',
+  '/manifest.json'
+];
+
+// Install event - cache essential files
+self.addEventListener('install', (event) => {
+  console.log('[SW] Installing... Cache version:', CACHE_VERSION);
   
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -53,13 +61,13 @@ self.addEventListener('activate', (event) => {
         );
       })
       .then(() => {
-        console.log('[SW] Claiming clients - taking control immediatelyld cache:', cacheName);
-              return caches.delete(cacheName);
-            }
-          })
-        );
+        console.log('[SW] Claiming clients - taking control immediately');
+        return self.clients.claim();
       })
-      .then(() =>Network First strategy for HTML, Cache First for assets
+  );
+});
+
+// Fetch event - Network First strategy for HTML, Cache First for assets
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
@@ -103,14 +111,7 @@ self.addEventListener('fetch', (event) => {
           const responseToCache = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(request, responseToCache);
-
-          // Clone the response
-          const responseToCache = response.clone();
-
-          caches.open(CACHE_NAME)
-            .then((cache) => {
-              cache.put(event.request, responseToCache);
-            });
+          });
 
           return response;
         });
@@ -124,10 +125,7 @@ self.addEventListener('message', (event) => {
     console.log('[SW] Received SKIP_WAITING message');
     self.skipWaiting();
   }
-});
-
-// Notify clients when update is available
-self.addEventListener('message', (event) => {
+  
   if (event.data && event.data.type === 'CHECK_UPDATE') {
     console.log('[SW] Check update requested');
     // Send message to all clients
