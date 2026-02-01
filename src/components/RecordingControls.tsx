@@ -1214,7 +1214,7 @@ export const RecordingControls: React.FC<Props> = ({
             className={!transcriptionConfig ? 'blink-btn' : ''}
             style={{ marginLeft: 'auto' }}
           >
-            Cấu hình Speech-to-Text
+            Cấu hình
           </Button>
         )}
       </div>
@@ -1361,7 +1361,7 @@ export const RecordingControls: React.FC<Props> = ({
         {/* Show hint when transcription not configured */}
         {navigator.onLine && !transcriptionConfig && (
           <span style={{ fontSize: '13px', color: '#999', fontStyle: 'italic', marginLeft: 'auto' }}>
-            ℹ️ Cấu hình Speech-to-Text để sử dụng
+            ℹ️Cấu hình để sử dụng
           </span>
         )}
       </div>

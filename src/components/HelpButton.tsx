@@ -32,7 +32,8 @@ export const HelpButton: React.FC = () => {
               '🔒 100% bảo mật - Không upload dữ liệu lên server (trừ khi dùng Gemini API)',
               '🔄 Auto-backup & Recovery - Khôi phục khi crash',
               '📂 Load Project - Mở lại project cũ để chỉnh sửa',
-              '📄 Export Word - Xuất file .docx để chia sẻ'
+              '📄 Export Word - Xuất file .docx để chia sẻ',
+              '🔔 Tự động cập nhật - Thông báo khi có phiên bản mới'
             ]}
             renderItem={item => <List.Item>{item}</List.Item>}
           />
@@ -85,8 +86,9 @@ export const HelpButton: React.FC = () => {
                 <List.Item>• Sử dụng Gemini AI (chất lượng cao, tự động phân người nói, thêm dấu câu)</List.Item>
                 <List.Item>• Chuột phải vào waveform → "Chuyển đổi giọng nói bằng Gemini AI"</List.Item>
                 <List.Item>• Yêu cầu Gemini API Key (miễn phí 250K tokens/ngày)</List.Item>
-                <List.Item>• Tự động chia file lớn thành chunks nếu vượt giới hạn (20MB hoặc 60 phút)</List.Item>
+                <List.Item>• Tự động chia file lớn thành chunks nếu vượt giới hạn (theo cấu hình)</List.Item>
                 <List.Item>• Kết quả chất lượng cao hơn Web Speech API</List.Item>
+                <List.Item>• ✨ Tùy chỉnh câu lệnh tóm tắt nội dung cuộc họp trong chức năng Cấu hình → Cài đặt nâng cao</List.Item>
               </List>
               
               <Divider style={{ margin: '8px 0' }} />
@@ -113,7 +115,6 @@ export const HelpButton: React.FC = () => {
                 <List.Item>• <strong>Checkbox "Sử dụng dữ liệu bổ trợ":</strong> Tick để gửi thêm raw data (tốn x2 tokens)</List.Item>
                 <List.Item>• Hệ thống tự động chia batch nhỏ (30 segments) + delay 6s để tránh vượt quota</List.Item>
                 <List.Item>• ⚠️ <Text type="danger"><strong>Cảnh báo bảo mật:</strong></Text> Dữ liệu gửi đến Google Gemini API</List.Item>
-                <List.Item>• Kết quả lưu vào transcription.json để export Word</List.Item>
               </List>
             </div>
 
@@ -162,6 +163,19 @@ export const HelpButton: React.FC = () => {
                 <List.Item>• Backup tự xóa sau khi save thành công (hoặc người dùng quyết định hủy bỏ việc lưu)</List.Item>
               </List>
             </div>
+
+            <Divider style={{ margin: '12px 0' }} />
+
+            <div>
+              <Title level={4}>🔔 Tự động cập nhật ứng dụng</Title>
+              <List size="small">
+                <List.Item>• Tự động kiểm tra phiên bản mới khi mở ứng dụng</List.Item>
+                <List.Item>• Hiển thị thông báo khi có bản cập nhật</List.Item>
+                <List.Item>• Tùy chọn "Cập nhật ngay" hoặc "Để sau"</List.Item>
+                <List.Item>• Nếu chọn "Để sau" → reload trang sẽ thông báo lại</List.Item>
+                <List.Item>• Cài đặt: Click <Tag color="orange">⚙️Cấu hình</Tag> → bật/tắt tự động cập nhật</List.Item>
+              </List>
+            </div>
           </Space>
         </div>
       ),
@@ -179,23 +193,24 @@ export const HelpButton: React.FC = () => {
                 <List.Item>2. Điền thông tin cuộc họp</List.Item>
                 <List.Item>3. <strong>(TÙY CHỌN)</strong> Cấu hình: 
                   <List size="small" style={{marginTop: 8}}>
-                    <List.Item>• Click <Tag color="orange">⚙️ Cấu hình Speech-to-Text</Tag></List.Item>
+                    <List.Item>• Click <Tag color="orange">⚙️Cấu hình</Tag> (góc phải dòng 1)</List.Item>
                     <List.Item>• Chọn ngôn ngữ cho Web Speech API</List.Item>
                     <List.Item>• Nhập Gemini API Key (nếu dùng Gemini transcription hoặc AI refinement)</List.Item>
                     <List.Item>• Chọn Gemini Model (khuyên dùng: gemini-2.5-flash)</List.Item>
                     <List.Item>• Cấu hình giới hạn: thời lượng (60 phút), file size (20 MB), delay (5 giây)</List.Item>
-                    <List.Item>• Bật <Tag color="cyan">Tự động chuyển giọng nói thành văn bản</Tag> cho live transcription</List.Item>
+                    <List.Item>• Bật/tắt tự động cập nhật ứng dụng</List.Item>
                   </List>
                 </List.Item>
-                <List.Item>4. Click <Tag color="red">Ghi âm</Tag> → bắt đầu ghi âm</List.Item>
-                <List.Item>5. Gõ notes hoặc để Web Speech API tự động ghi nhận</List.Item>
-                <List.Item>6. <strong>(TÙY CHỌN)</strong> Xử lý transcription:
+                <List.Item>4. Bật <Tag color="cyan">Tự động chuyển giọng nói thành văn bản</Tag> (dòng 2) + Chọn ngôn ngữ</List.Item>
+                <List.Item>5. Click <Tag color="red">Ghi âm</Tag> → bắt đầu ghi âm</List.Item>
+                <List.Item>6. Gõ notes hoặc để Web Speech API tự động ghi nhận</List.Item>
+                <List.Item>7. <strong>(TÙY CHỌN)</strong> Xử lý transcription:
                   <List size="small" style={{marginTop: 8}}>
                     <List.Item>• <strong>Double-click</strong> để chỉnh sửa/xóa đoạn</List.Item>
                     <List.Item>• Click <Tag color="purple">✨ Chuẩn hóa bằng AI</Tag> → chọn có dùng raw data hay không</List.Item>
                   </List>
                 </List.Item>
-                <List.Item>7. Click <Tag>Dừng</Tag> → files tự động lưu</List.Item>
+                <List.Item>8. Click <Tag>Dừng</Tag> → files tự động lưu</List.Item>
               </List>
             </div>
 
@@ -226,7 +241,7 @@ export const HelpButton: React.FC = () => {
             <Divider style={{ margin: '12px 0' }} />
 
             <div>
-              <Title level={4}>Scenario 4: Chuyển đổi file audio sang text với Gemini AI</Title>
+              <Title level={4}>✨Scenario 4: Chuyển đổi file audio sang text với Gemini AI</Title>
               <List>
                 <List.Item>1. Tải project hoặc ghi âm mới</List.Item>
                 <List.Item>2. Đảm bảo đã cấu hình Gemini API Key</List.Item>
@@ -268,7 +283,7 @@ export const HelpButton: React.FC = () => {
               • <strong>"Chèn timestamp"</strong> → Thêm dấu thời gian vào Notes tại vị trí playback
             </List.Item>
             <List.Item style={{ paddingLeft: '32px' }}>
-              • <strong>"Chuyển đổi giọng nói bằng Gemini AI"</strong> → Transcribe toàn bộ audio file
+              • <strong>"Chuyển đổi giọng nói bằng Gemini AI"</strong> → Transcribe toàn bộ audio file và tóm tắt nội dung
             </List.Item>
           </List>
         </div>
@@ -286,7 +301,7 @@ export const HelpButton: React.FC = () => {
             <thead>
               <tr style={{ borderBottom: '2px solid #434343' }}>
                 <th style={{ padding: '12px', textAlign: 'left' }}>Tính năng</th>
-                <th style={{ padding: '12px', textAlign: 'center' }}>Chrome/Edge</th>
+                <th style={{ padding: '12px', textAlign: 'center' }}>Chrome</th>
                 <th style={{ padding: '12px', textAlign: 'center' }}>Safari</th>
                 <th style={{ padding: '12px', textAlign: 'center' }}>Firefox</th>
               </tr>
@@ -297,6 +312,12 @@ export const HelpButton: React.FC = () => {
                 <td style={{ padding: '8px', textAlign: 'center' }}>✅</td>
                 <td style={{ padding: '8px', textAlign: 'center' }}>✅ (14.1+)</td>
                 <td style={{ padding: '8px', textAlign: 'center' }}>✅</td>
+              </tr>
+              <tr style={{ borderBottom: '1px solid #434343' }}>
+                <td style={{ padding: '8px' }}>Nhận diện giọng nói (khi đang ghi âm)</td>
+                <td style={{ padding: '8px', textAlign: 'center' }}>✅</td>
+                <td style={{ padding: '8px', textAlign: 'center' }}>⚠️ không ổn định</td>
+                <td style={{ padding: '8px', textAlign: 'center' }}>⚠️ không ổn định</td>
               </tr>
               <tr style={{ borderBottom: '1px solid #434343' }}>
                 <td style={{ padding: '8px' }}>Truy cập Hệ thống Thư mục</td>
@@ -319,7 +340,7 @@ export const HelpButton: React.FC = () => {
             </tbody>
           </table>
           <Paragraph style={{ marginTop: 16 }}>
-            <Text strong>Khuyến nghị:</Text> Chrome hoặc Edge để có trải nghiệm tốt nhất.
+            <Text strong>Khuyến nghị:</Text> Chrome để có trải nghiệm tốt nhất.
           </Paragraph>
         </div>
       ),
