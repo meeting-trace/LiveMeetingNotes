@@ -437,7 +437,6 @@ export const RecordingControls: React.FC<Props> = ({
       message.success(`Recording saved to folder: ${projectName}`);
       setLastProjectName(projectName);
       setLastRecordingDuration(finalDuration);
-      onSaveComplete();
     } else {
       // Fallback: download files
       const downloader = new FileDownloadService();
@@ -507,11 +506,14 @@ export const RecordingControls: React.FC<Props> = ({
       message.info('Files downloaded. Please save them to your meeting notes folder.');
       setLastProjectName(projectName);
       setLastRecordingDuration(finalDuration);
-      onSaveComplete();
     }
 
-    // Set audio for playback
+    // Set audio for playback BEFORE calling onSaveComplete
+    // to avoid triggering hasUnsavedChanges after save
     onAudioBlobChange(finalAudioBlob);
+    
+    // Call onSaveComplete LAST to properly reset hasUnsavedChanges flag
+    onSaveComplete();
   };
 
   const handleSaveNotes = async () => {
@@ -1228,7 +1230,7 @@ export const RecordingControls: React.FC<Props> = ({
                 icon={<AudioOutlined />}
                 onClick={handleStartRecording}
                 size="large"
-                disabled={isProcessing}
+                disabled={isProcessing || audioBlob !== null}
               >
                 Ghi âm
               </Button>
@@ -1236,6 +1238,12 @@ export const RecordingControls: React.FC<Props> = ({
               {isProcessing && (
                 <span style={{ marginLeft: '12px', color: '#1890ff', fontWeight: 600 }}>
                   ⏳ Đang xử lý...
+                </span>
+              )}
+              
+              {audioBlob !== null && !isProcessing && (
+                <span style={{ fontSize: '13px', color: '#999', fontStyle: 'italic' }}>
+                  💡 Tải lại trang web này để bắt đầu Dự án mới (nếu cần)
                 </span>
               )}
             </>
