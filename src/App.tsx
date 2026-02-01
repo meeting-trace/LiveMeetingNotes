@@ -1083,6 +1083,15 @@ export const App: React.FC = () => {
   const handleRestoreBackup = async () => {
     const backup = await loadBackup();
     if (backup) {
+      console.log('🔍 Backup data structure:', {
+        hasAudioBlob: !!backup.audioBlob,
+        audioBlobSize: backup.audioBlob?.size || 0,
+        transcriptionsCount: backup.transcriptions?.length || 0,
+        rawTranscriptsCount: backup.rawTranscripts?.length || 0,
+        hasSummary: !!backup.geminiSummary,
+        summaryLength: backup.geminiSummary?.length || 0
+      });
+      
       setMeetingInfo({
         title: backup.meetingInfo.projectName,
         date: new Date().toISOString().split('T')[0],
@@ -1103,14 +1112,20 @@ export const App: React.FC = () => {
       // Restore transcriptions and rawTranscripts if available
       if (backup.transcriptions && backup.transcriptions.length > 0) {
         setTranscriptions(backup.transcriptions);
+      } else {
+        setTranscriptions([]); // Clear if no transcriptions in backup
       }
       if (backup.rawTranscripts && backup.rawTranscripts.length > 0) {
         setRawTranscripts(backup.rawTranscripts);
+      } else {
+        setRawTranscripts([]); // Clear if no raw transcripts in backup
       }
       
       // Restore geminiSummary if available
       if (backup.geminiSummary) {
         setGeminiSummary(backup.geminiSummary);
+      } else {
+        setGeminiSummary(''); // Clear if no summary in backup
       }
       
       // Update snapshots and unsaved changes flag
@@ -1120,7 +1135,11 @@ export const App: React.FC = () => {
       setSavedTranscriptionsSnapshot(backup.transcriptions ? [...backup.transcriptions] : []);
       
       setShowBackupDialog(false);
-      console.log('✅ Backup restored successfully, speakersMap size:', backup.speakersMap.size);
+      console.log('✅ Backup restored successfully:', {
+        speakersMapSize: backup.speakersMap.size,
+        transcriptionsRestored: backup.transcriptions?.length || 0,
+        audioRestored: !!backup.audioBlob
+      });
     }
   };
   
@@ -1937,10 +1956,6 @@ export const App: React.FC = () => {
         transcriptionConfig={transcriptionConfig}
         shouldBlink={!transcriptionConfig} 
         onNewTranscription={handleNewTranscription}
-        onClearTranscriptions={() => {
-          setTranscriptions([]);
-          setRawTranscripts([]); // Also clear raw transcripts
-        }}
         transcriptions={transcriptions}
         geminiSummary={geminiSummary}
       />

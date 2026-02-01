@@ -52,7 +52,6 @@ interface Props {
   transcriptionConfig: SpeechToTextConfig | null;
   shouldBlink?: boolean;
   onNewTranscription: (result: TranscriptionResult) => void;
-  onClearTranscriptions: () => void;
   transcriptions: TranscriptionResult[];
   onSpeakerChange?: (lineIndex: number, speaker: string) => void; // Add handler for speaker changes
   geminiSummary?: string; // Add geminiSummary prop
@@ -78,7 +77,6 @@ export const RecordingControls: React.FC<Props> = ({
   onShowTranscriptionConfig,
   transcriptionConfig,
   onNewTranscription,
-  onClearTranscriptions,
   transcriptions,
   geminiSummary
 }) => {
@@ -1376,9 +1374,7 @@ export const RecordingControls: React.FC<Props> = ({
                     checked={autoTranscribe}
                     onChange={(checked) => {
                       setAutoTranscribe(checked);
-                      if (!checked) {
-                        onClearTranscriptions();
-                      }
+                      // Just toggle the auto-transcribe feature, don't clear existing data
                     }}
                     disabled={isRecording}
                     checkedChildren="ON"
