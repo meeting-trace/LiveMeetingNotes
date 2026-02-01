@@ -1145,8 +1145,8 @@ export const RecordingControls: React.FC<Props> = ({
 
   return (
     <div className="recording-controls">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
-        {/* Left side: Main controls */}
+      {/* Row 1: File Management & Configuration */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
         <Space size="middle" wrap>
           <Button
             icon={<FolderOpenOutlined />}
@@ -1169,6 +1169,57 @@ export const RecordingControls: React.FC<Props> = ({
             Tải dự án đã lưu
           </Button>
 
+          {/* Show Save Notes button when has unsaved data but not saved yet */}
+          {!isRecording && !isSaved && hasUnsavedChanges && (
+            <Button
+              type="primary"
+              icon={<SaveOutlined />}
+              onClick={handleSaveNotes}
+              size="large"
+            >
+              Lưu ghi chú
+            </Button>
+          )}
+
+          {/* Show Save Changes button when has unsaved changes after first save */}
+          {!isRecording && isSaved && hasUnsavedChanges && (
+            <Button
+              type="default"
+              icon={<SaveOutlined />}
+              onClick={handleSaveChanges}
+              size="large"
+              style={{ backgroundColor: '#52c41a', color: 'white', borderColor: '#52c41a' }}
+            >
+              Lưu thay đổi
+            </Button>
+          )}
+
+          {/* Speech-to-Text Config Button */}
+          {navigator.onLine && (
+            <Button
+              icon={<SettingOutlined />}
+              onClick={onShowTranscriptionConfig}
+              disabled={isRecording || isPaused}
+              size="large"
+              className={!transcriptionConfig ? 'blink-btn' : ''}
+            >
+              Cấu hình Speech-to-Text
+            </Button>
+          )}
+        </Space>
+
+        {/* Folder path display */}
+        {folderPath && (
+          <span style={{ fontSize: '13px', color: '#666', marginLeft: 'auto' }}>
+            📁 <strong>{folderPath}</strong>
+          </span>
+        )}
+      </div>
+
+      {/* Row 2: Recording Controls & Transcription */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+        {/* Left: Recording Controls */}
+        <Space size="middle" wrap>
           {!isRecording ? (
             <>
               <Button
@@ -1231,31 +1282,6 @@ export const RecordingControls: React.FC<Props> = ({
             </>
           )}
 
-          {/* Show Save Notes button when has unsaved data but not saved yet */}
-          {!isRecording && !isSaved && hasUnsavedChanges && (
-            <Button
-              type="primary"
-              icon={<SaveOutlined />}
-              onClick={handleSaveNotes}
-              size="large"
-            >
-              Lưu ghi chú
-            </Button>
-          )}
-
-          {/* Show Save Changes button when has unsaved changes after first save */}
-          {!isRecording && isSaved && hasUnsavedChanges && (
-            <Button
-              type="default"
-              icon={<SaveOutlined />}
-              onClick={handleSaveChanges}
-              size="large"
-              style={{ backgroundColor: '#52c41a', color: 'white', borderColor: '#52c41a' }}
-            >
-              Lưu thay đổi
-            </Button>
-          )}
-
           <span className="duration-display">⏱ {formatDuration(duration)}</span>
           
           {isRecording && !isPaused && (
@@ -1267,89 +1293,69 @@ export const RecordingControls: React.FC<Props> = ({
           )}
         </Space>
 
-        {/* Right side: Speech-to-Text Controls - Only show when online */}
-        {navigator.onLine && (
+        {/* Right: Speech-to-Text Controls - Only show when online */}
+        {navigator.onLine && transcriptionConfig && (
           <Space size="middle" wrap style={{ marginLeft: 'auto' }}>
+            <Tooltip title={
+              (isRecording && !isPaused)
+                ? 'Bật/tắt chuyển đổi giọng nói sang văn bản tự động' 
+                : isPaused
+                  ? 'Thay đổi sẽ có hiệu lực khi tiếp tục ghi âm'
+                  : 'Chỉ khả dụng khi đang ghi âm'
+            }>
+              <Space>
+                <SoundOutlined style={{ fontSize: '18px', color: autoTranscribe ? '#52c41a' : '#999' }} />
+                <span style={{ fontSize: '14px' }}>Auto 🎤 → 🔠:</span>
+                <Switch
+                  checked={autoTranscribe}
+                  onChange={(checked) => {
+                    setAutoTranscribe(checked);
+                  }}
+                  disabled={isRecording && !isPaused}
+                  checkedChildren="ON"
+                  unCheckedChildren="OFF"
+                />
+              </Space>
+            </Tooltip>
+
             {/* Language Quick Selector */}
-            {transcriptionConfig && (
-              <Tooltip title={
-                isRecording && !isPaused
-                  ? '🔄 Đổi ngôn ngữ ngay - Chuyển đổi giọng nói sẽ khởi động lại (ghi âm không bị gián đoạn)'
-                  : isPaused
-                    ? 'Thay đổi sẽ có hiệu lực khi tiếp tục ghi âm'
-                    : 'Chọn ngôn ngữ để chuyển đổi giọng nói'
-              }>
-                <Select
-                  value={selectedLanguage}
-                  onChange={handleLanguageChange}
-                  style={{ width: 180 }}
-                  size="large"
-                  suffixIcon={<GlobalOutlined />}
-                  disabled={false} // Always enabled for quick switch
-                >
-                  <Select.Option value="vi-VN">🇻🇳 Tiếng Việt</Select.Option>
-                  <Select.Option value="en-US">🇺🇸 English (US)</Select.Option>
-                  <Select.Option value="en-GB">🇬🇧 English (UK)</Select.Option>
-                  <Select.Option value="ja-JP">🇯🇵 日本語</Select.Option>
-                  <Select.Option value="ko-KR">🇰🇷 한국어</Select.Option>
-                  <Select.Option value="zh-CN">🇨🇳 中文 (简)</Select.Option>
-                  <Select.Option value="zh-TW">🇹🇼 中文 (繁)</Select.Option>
-                  <Select.Option value="fr-FR">🇫🇷 Français</Select.Option>
-                  <Select.Option value="de-DE">🇩🇪 Deutsch</Select.Option>
-                  <Select.Option value="es-ES">🇪🇸 Español</Select.Option>
-                </Select>
-              </Tooltip>
-            )}
-
-            <Button
-              icon={<SettingOutlined />}
-              onClick={onShowTranscriptionConfig}
-              disabled={isRecording || isPaused}
-              size="large"
-              className={!transcriptionConfig ? 'blink-btn' : ''}
-            >
-              Cấu hình
-            </Button>
-
-            {transcriptionConfig && (
-              <Tooltip title={
-                (isRecording && !isPaused)
-                  ? 'Bật/tắt chuyển đổi giọng nói sang văn bản tự động' 
-                  : isPaused
-                    ? 'Thay đổi sẽ có hiệu lực khi tiếp tục ghi âm'
-                    : 'Chỉ khả dụng khi đang ghi âm'
-              }>
-                <Space>
-                  <SoundOutlined style={{ fontSize: '18px', color: autoTranscribe ? '#52c41a' : '#999' }} />
-                  <span style={{ fontSize: '14px' }}>Auto 🎤 → 🔠:</span>
-                  <Switch
-                    checked={autoTranscribe}
-                    onChange={(checked) => {
-                      setAutoTranscribe(checked);
-                      // Just toggle the auto-transcribe feature, don't clear existing data
-                    }}
-                    disabled={isRecording && !isPaused}
-                    checkedChildren="ON"
-                    unCheckedChildren="OFF"
-                  />
-                </Space>
-              </Tooltip>
-            )}
-
-            {!transcriptionConfig && (
-              <span style={{ fontSize: '13px', color: '#999', fontStyle: 'italic' }}>
-                ℹ️ Cấu hình để sử dụng
-              </span>
-            )}
+            <Tooltip title={
+              isRecording && !isPaused
+                ? '🔄 Đổi ngôn ngữ ngay - Chuyển đổi giọng nói sẽ khởi động lại (ghi âm không bị gián đoạn)'
+                : isPaused
+                  ? 'Thay đổi sẽ có hiệu lực khi tiếp tục ghi âm'
+                  : 'Chọn ngôn ngữ để chuyển đổi giọng nói'
+            }>
+              <Select
+                value={selectedLanguage}
+                onChange={handleLanguageChange}
+                style={{ width: 180 }}
+                size="large"
+                suffixIcon={<GlobalOutlined />}
+                disabled={false}
+              >
+                <Select.Option value="vi-VN">🇻🇳 Tiếng Việt</Select.Option>
+                <Select.Option value="en-US">🇺🇸 English (US)</Select.Option>
+                <Select.Option value="en-GB">🇬🇧 English (UK)</Select.Option>
+                <Select.Option value="ja-JP">🇯🇵 日本語</Select.Option>
+                <Select.Option value="ko-KR">🇰🇷 한국어</Select.Option>
+                <Select.Option value="zh-CN">🇨🇳 中文 (简)</Select.Option>
+                <Select.Option value="zh-TW">🇹🇼 中文 (繁)</Select.Option>
+                <Select.Option value="fr-FR">🇫🇷 Français</Select.Option>
+                <Select.Option value="de-DE">🇩🇪 Deutsch</Select.Option>
+                <Select.Option value="es-ES">🇪🇸 Español</Select.Option>
+              </Select>
+            </Tooltip>
           </Space>
         )}
+        
+        {/* Show hint when transcription not configured */}
+        {navigator.onLine && !transcriptionConfig && (
+          <span style={{ fontSize: '13px', color: '#999', fontStyle: 'italic', marginLeft: 'auto' }}>
+            ℹ️ Cấu hình Speech-to-Text để sử dụng
+          </span>
+        )}
       </div>
-
-      {folderPath && (
-        <div className="folder-info">
-          📁 Thư mục hiện tại: <strong>{folderPath}</strong>
-        </div>
-      )}
 
       {!FileManagerService.isSupported() && (
         <div className="browser-warning">
