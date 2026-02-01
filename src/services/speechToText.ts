@@ -123,18 +123,61 @@ export class SpeechToTextService {
       console.log(`🌐 Using Web Speech API`);
 
       this.recognition.onresult = (event: any) => {
+        // 🔍 DEBUG: Log toàn bộ event để quan sát
+        console.log('📊 === WEB SPEECH API RESULT ===');
+        console.log('🕒 Timestamp:', new Date().toISOString());
+        console.log('📍 ResultIndex:', event.resultIndex);
+        console.log('📦 Total Results:', event.results.length);
+
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
-          const transcript = result[0].transcript;
-          const confidence = result[0].confidence || 0;
           const isFinal = result.isFinal;
+          
+          // 🔍 DEBUG: Log chi tiết từng result
+          console.log(`\n🎯 Result[${i}] (${isFinal ? 'FINAL' : 'INTERIM'}):`);  
+          console.log('  📝 Alternatives count:', result.length);
+          
+          // ✨ Tìm alternative có confidence cao nhất VÀ ngắn nhất (nếu là interim)
+          let bestAlternative = result[0];
+          let bestConfidence = result[0].confidence || 0;
+          // let selectedForProcessing = true;
+          
+          // Log tất cả alternatives
+          for (let j = 0; j < result.length; j++) {
+            const alt = result[j];
+            const altConfidence = alt.confidence || 0;
+            const wordCount = alt.transcript.trim().split(/\s+/).length;
+            
+            console.log(`  └─ Alternative[${j}]:`);
+            console.log(`     • Text: "${alt.transcript}"`);
+            console.log(`     • Words: ${wordCount}`);
+            console.log(`     • Confidence: ${(altConfidence * 100).toFixed(2)}%`);
+            
+            // Chọn alternative tốt nhất
+            if (altConfidence > bestConfidence) {
+              bestAlternative = alt;
+              bestConfidence = altConfidence;
+            }
+          }
+          
+          const transcript = bestAlternative.transcript;
+          const confidence = bestConfidence;
+          const wordCount = transcript.trim().split(/\s+/).length;
+          
+          // ⚡ Đánh dấu kết quả ngắn để ưu tiên tích lũy
+          const isShortChunk = wordCount <= 5;
+          
+          console.log(`  ✅ SELECTED (Best): "${transcript}" (${(confidence * 100).toFixed(2)}%, ${wordCount} words)`);
+          console.log(`  🎬 Action: PROCESS (${isShortChunk ? 'SHORT - good for accumulation' : 'LONG - use as fallback'})`);
+          console.log('================================\n');
 
-          // ✨ Process result through SmartTranscriptManager
+          // ✨ Luôn process để hiển thị, nhưng đánh dấu kết quả ngắn
           this.smartManager.processResult({
             transcript: transcript,
             confidence: confidence,
             isFinal: isFinal,
-            speaker: 'Person1'
+            speaker: 'Person1',
+            isShortChunk: isShortChunk  // Thông tin thêm cho SmartManager
           });
         }
       };

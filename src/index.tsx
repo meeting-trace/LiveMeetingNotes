@@ -4,8 +4,8 @@ import { App as MainApp } from './App';
 import { ConfigProvider, theme, App as AntdApp } from 'antd';
 import './styles/global.css';
 
-// Register service worker for caching and updates
-if ('serviceWorker' in navigator) {
+// Register service worker for caching and updates (only in production)
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
     // Add timestamp to bypass GitHub Pages cache
     const swUrl = `/sw.js?v=${Date.now()}`;
