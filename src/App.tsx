@@ -1024,7 +1024,8 @@ export const App: React.FC = () => {
           isSaved,
           transcriptions,
           rawTranscripts,
-          speakersMap
+          speakersMap,
+          geminiSummary
         );
       }, 3000); // Auto-save 3 seconds after last change
     }
@@ -1105,6 +1106,11 @@ export const App: React.FC = () => {
       }
       if (backup.rawTranscripts && backup.rawTranscripts.length > 0) {
         setRawTranscripts(backup.rawTranscripts);
+      }
+      
+      // Restore geminiSummary if available
+      if (backup.geminiSummary) {
+        setGeminiSummary(backup.geminiSummary);
       }
       
       setShowBackupDialog(false);
@@ -1903,14 +1909,6 @@ export const App: React.FC = () => {
 
       <MetadataPanel meetingInfo={meetingInfo} onChange={setMeetingInfo} />
 
-      {/* Meeting Summary Panel - Show when summary is available */}
-      {geminiSummary && (
-        <MeetingSummaryPanel
-          summary={geminiSummary}
-          onSummaryChange={setGeminiSummary}
-          onMarkUnsaved={() => setHasUnsavedChanges(true)}
-        />
-      )}
 
       <RecordingControls
         folderPath={folderPath}
@@ -1940,7 +1938,14 @@ export const App: React.FC = () => {
         transcriptions={transcriptions}
         geminiSummary={geminiSummary}
       />
-
+      {/* Meeting Summary Panel - Show when summary is available */}
+      {geminiSummary && (
+        <MeetingSummaryPanel
+          summary={geminiSummary}
+          onSummaryChange={setGeminiSummary}
+          onMarkUnsaved={() => setHasUnsavedChanges(true)}
+        />
+      )}
       {/* Transcription Panel - Only show when online and configured */}
       {isOnline && transcriptionConfig && (
         <TranscriptionPanel
