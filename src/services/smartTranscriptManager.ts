@@ -39,10 +39,21 @@ export class SmartTranscriptManager {
   // ✨ Lưu timestamp khi bắt đầu tích lũy (dùng cho segment chính thức)
   private accumulationStartTime: string = '';
   private accumulationStartAudioTimeMs: number = 0;
+  
+  // ✨ Idle detection: tự động commit khi không có text mới trong 2s
+  private idleTimer: any = null;
+  private lastUpdateTime: number = 0;
+  private idleTimeout: number = 2000; // 2 giây
+  private onIdleCommit: (() => void) | null = null;
 
   constructor() {
     this.browserBehavior = this.detectBrowser();
     console.log('🌐 Using SmartTranscriptManager:', this.browserBehavior.name);
+  }
+
+  // ✨ Set callback để restart recognition khi idle
+  setIdleCallback(callback: () => void) {
+    this.onIdleCommit = callback;
   }
 
   initialize(cb: (r: TranscriptionResult) => void) {
@@ -55,7 +66,9 @@ export class SmartTranscriptManager {
     this.transcriptionStartTime = Date.now();
     this.accumulationStartTime = '';
     this.accumulationStartAudioTimeMs = 0;
+    this.lastUpdateTime = Date.now();
     this.clearSilenceTimer();
+    this.clearIdleTimer();
   }
 
   processResult(r: { transcript: string; confidence: number; isFinal: boolean; speaker?: string; isShortChunk?: boolean }) {
@@ -120,6 +133,10 @@ export class SmartTranscriptManager {
         
         this.interimText = accumulatedText;
         displayText = accumulatedText;
+        
+        // ⚡ Cập nhật thời gian update cuối và restart idle timer
+        this.lastUpdateTime = Date.now();
+        this.startIdleTimer(audioTimeMs, timestamp, r.confidence, speaker);
         
         // console.log('🔄 INTERIM (SHORT chunk - accumulated):', {
         //   newChunk: text,
@@ -384,6 +401,59 @@ export class SmartTranscriptManager {
 
     this.confirmedSegments.push(seg);
     this.emitFinal(seg);
+  }
+
+  // ================== IDLE DETECTION ==================
+
+  private startIdleTimer(_audioTimeMs: number, _timestamp: string, confidence: number, speaker: string) {
+    this.clearIdleTimer();
+    
+    // Nếu có text tích lũy, bắt đầu đếm ngược idle
+    if (this.interimText) {
+      this.idleTimer = setTimeout(() => {
+        const timeSinceLastUpdate = Date.now() - this.lastUpdateTime;
+        
+        // Nếu thực sự không có update trong 2s
+        if (timeSinceLastUpdate >= this.idleTimeout && this.interimText) {
+          console.log('🚨 IDLE DETECTED: No new text for 2s, auto-committing:', {
+            idleTime: timeSinceLastUpdate + 'ms',
+            text: this.interimText.substring(0, 80) + '...',
+            words: this.interimText.split(/\s+/).length
+          });
+          
+          // Commit segment hiện tại
+          this.finalLongest = this.interimText;
+          this.commitFinal(
+            this.accumulationStartAudioTimeMs,
+            this.accumulationStartTime,
+            confidence,
+            speaker
+          );
+          
+          // Reset
+          this.interimText = '';
+          this.finalLongest = '';
+          this.accumulationStartTime = '';
+          this.accumulationStartAudioTimeMs = 0;
+          this.clearInterim();
+          
+          // ⚡ Gọi callback để restart recognition
+          if (this.onIdleCommit) {
+            console.log('🔄 Triggering speech recognition restart...');
+            setTimeout(() => {
+              this.onIdleCommit?.();
+            }, 100);
+          }
+        }
+      }, this.idleTimeout);
+    }
+  }
+
+  private clearIdleTimer() {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
   }
 
   // ================== SILENCE ==================
