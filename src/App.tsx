@@ -2008,14 +2008,12 @@ export const App: React.FC = () => {
         transcriptions={transcriptions}
         geminiSummary={geminiSummary}
       />
-      {/* Meeting Summary Panel - Show when summary is available */}
-      {geminiSummary && (
-        <MeetingSummaryPanel
-          summary={geminiSummary}
-          onSummaryChange={setGeminiSummary}
-          onMarkUnsaved={() => setHasUnsavedChanges(true)}
-        />
-      )}
+      {/* Meeting Summary Panel - Always show to allow manual input */}
+      <MeetingSummaryPanel
+        summary={geminiSummary || ''}
+        onSummaryChange={setGeminiSummary}
+        onMarkUnsaved={() => setHasUnsavedChanges(true)}
+      />
       {/* Transcription Panel - Show when has transcriptions OR (online and configured for real-time) */}
       {(transcriptions.length > 0 || (isOnline && transcriptionConfig)) && (
         <TranscriptionPanel

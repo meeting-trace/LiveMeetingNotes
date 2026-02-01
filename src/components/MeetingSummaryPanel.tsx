@@ -39,7 +39,7 @@ export const MeetingSummaryPanel: React.FC<Props> = ({
 
   return (
     <Collapse
-      defaultActiveKey={['1']}
+      defaultActiveKey={summary ? ['1'] : []}
       className="metadata-panel"
       items={[
         {
@@ -85,10 +85,12 @@ export const MeetingSummaryPanel: React.FC<Props> = ({
               {!summary && !isEditing ? (
                 <Empty
                   description="Chưa có tóm tắt"
-                  style={{ padding: '32px 0' }}
+                  style={{ padding: '32px 0', cursor: 'pointer' }}
+                  onDoubleClick={() => setIsEditing(true)}
                 >
                   <Text type="secondary">
-                    Sử dụng tính năng "Chuyển đổi giọng nói bằng Gemini AI" để tự động tạo tóm tắt cuộc họp
+                    Double-click để thêm tóm tắt thủ công<br/>
+                    hoặc sử dụng "Chuyển đổi giọng nói bằng Gemini AI" để tự động tạo
                   </Text>
                 </Empty>
               ) : isEditing ? (
