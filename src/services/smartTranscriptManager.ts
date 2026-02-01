@@ -119,7 +119,8 @@ export class SmartTranscriptManager {
             this.accumulationStartAudioTimeMs, // Dùng audioTime bắt đầu
             this.accumulationStartTime,         // Dùng timestamp bắt đầu
             r.confidence, 
-            speaker
+            speaker,
+            false // Normal commit - có thể merge
           );
           
           // Reset và bắt đầu mới
@@ -293,7 +294,7 @@ export class SmartTranscriptManager {
 
   // ================== CORE COMMIT ==================
 
-  private commitFinal(audioTimeMs: number, timestamp: string, confidence: number, speaker: string) {
+  private commitFinal(audioTimeMs: number, timestamp: string, confidence: number, speaker: string, isIdleCommit: boolean = false) {
     const text = this.finalLongest.trim();
     if (!text) return;
 
@@ -374,7 +375,8 @@ export class SmartTranscriptManager {
 
     // Tái sử dụng biến 'last' đã khai báo ở trên (không khai báo lại)
 
-    if (
+    // ⚡ IDLE COMMIT: Không merge, tạo segment riêng biệt
+    if (!isIdleCommit &&
       last &&
       !last.isLocked &&
       last.speaker === speaker &&
@@ -396,8 +398,17 @@ export class SmartTranscriptManager {
       speaker,
       startTime: timestamp,
       endTime: timestamp,
-      isLocked: true // 🔒 silence = kết thúc câu
+      isLocked: true // 🔒 silence hoặc idle = kết thúc câu, không merge
     };
+    
+    // 📌 Log nếu là idle commit
+    if (isIdleCommit) {
+      console.log('🔒 IDLE COMMIT: Created isolated segment (no merge):', {
+        id: seg.id,
+        text: seg.text.substring(0, 80) + '...',
+        words: seg.text.split(/\s+/).length
+      });
+    }
 
     this.confirmedSegments.push(seg);
     this.emitFinal(seg);
@@ -416,22 +427,23 @@ export class SmartTranscriptManager {
         
         // Nếu thực sự không có update trong 2s VÀ vẫn có text
         if (timeSinceLastUpdate >= this.idleTimeout && this.interimText) {
-          console.log('🚨 IDLE DETECTED: No new text for 2s, auto-committing:', {
-            idleTime: timeSinceLastUpdate + 'ms',
-            text: this.interimText.substring(0, 80) + '...',
-            words: this.interimText.split(/\s+/).length
-          });
+          // console.log('🚨 IDLE DETECTED: No new text for 2s, auto-committing:', {
+          //   idleTime: timeSinceLastUpdate + 'ms',
+          //   text: this.interimText.substring(0, 80) + '...',
+          //   words: this.interimText.split(/\s+/).length
+          // });
           
           // Clear timer trước khi commit
           this.clearIdleTimer();
           
-          // Commit segment hiện tại
+          // Commit segment hiện tại với flag isIdleCommit=true
           this.finalLongest = this.interimText;
           this.commitFinal(
             this.accumulationStartAudioTimeMs,
             this.accumulationStartTime,
             confidence,
-            speaker
+            speaker,
+            true // ⚡ isIdleCommit = true → tạo segment riêng, không merge
           );
           
           // Reset
@@ -464,7 +476,7 @@ export class SmartTranscriptManager {
 
   private startSilenceTimer(audioTimeMs: number, timestamp: string, confidence: number, speaker: string) {
     this.silenceTimer = setTimeout(() => {
-      this.commitFinal(audioTimeMs, timestamp, confidence, speaker);
+      this.commitFinal(audioTimeMs, timestamp, confidence, speaker, false); // Silence commit - có thể merge
       this.clearInterim();
     }, this.browserBehavior.silenceTimeout);
   }
