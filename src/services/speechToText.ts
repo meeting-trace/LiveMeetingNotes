@@ -164,8 +164,8 @@ export class SpeechToTextService {
           const confidence = bestConfidence;
           const wordCount = transcript.trim().split(/\s+/).length;
           
-          // ⚡ Đánh dấu kết quả ngắn để ưu tiên tích lũy
-          const isShortChunk = wordCount <= 5;
+          // ⚡ Đánh dấu kết quả ngắn để ưu tiên tích lũy (≤10 từ)
+          const isShortChunk = wordCount <= 10;
           
           console.log(`  ✅ SELECTED (Best): "${transcript}" (${(confidence * 100).toFixed(2)}%, ${wordCount} words)`);
           console.log(`  🎬 Action: PROCESS (${isShortChunk ? 'SHORT - good for accumulation' : 'LONG - use as fallback'})`);

@@ -66,6 +66,81 @@ export const App: React.FC = () => {
     }
   }, []);
   
+  // 🌐 Check browser and device for optimal experience
+  useEffect(() => {
+    const checkBrowserAndDevice = () => {
+      const ua = navigator.userAgent.toLowerCase();
+      const isChrome = ua.includes('chrome/') && !ua.includes('edg/');
+      const isEdge = ua.includes('edg/');
+      const isDesktop = !(/android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua));
+      
+      // Detect specific browser
+      let browserName = 'Unknown';
+      if (isChrome) browserName = 'Chrome';
+      else if (isEdge) browserName = 'Edge';
+      else if (ua.includes('firefox/')) browserName = 'Firefox';
+      else if (ua.includes('safari/') && !ua.includes('chrome/')) browserName = 'Safari';
+      
+      // Detect device type
+      const deviceType = isDesktop ? 'Desktop/Laptop' : 'Mobile/Tablet';
+      
+      console.log('🌐 Browser:', browserName, '| Device:', deviceType);
+      
+      // Show recommendation if not Chrome on Desktop
+      if (!isChrome || !isDesktop) {
+        const warningKey = 'browser-device-warning-shown';
+        const hasShownWarning = sessionStorage.getItem(warningKey);
+        
+        // Only show once per session
+        if (!hasShownWarning) {
+          setTimeout(() => {
+            let warningMessage = '';
+            
+            if (!isChrome && !isDesktop) {
+              warningMessage = `Bạn đang sử dụng ${browserName} trên ${deviceType}. Để có trải nghiệm tốt nhất với tính năng nhận dạng giọng nói, chúng tôi khuyến nghị sử dụng Google Chrome trên máy tính/laptop.`;
+            } else if (!isChrome) {
+              warningMessage = `Bạn đang sử dụng ${browserName}. Để có trải nghiệm tốt nhất với tính năng nhận dạng giọng nói, chúng tôi khuyến nghị sử dụng Google Chrome trên máy tính/laptop.`;
+            } else if (!isDesktop) {
+              warningMessage = `Bạn đang sử dụng thiết bị ${deviceType}. Để có trải nghiệm tốt nhất với tính năng nhận dạng giọng nói, chúng tôi khuyến nghị sử dụng Google Chrome trên máy tính/laptop.`;
+            }
+            
+            if (warningMessage) {
+              Modal.info({
+                title: '💡 Khuyến nghị trình duyệt & thiết bị',
+                content: (
+                  <div>
+                    <p>{warningMessage}</p>
+                    <p style={{ marginTop: '12px', fontSize: '13px', color: '#666' }}>
+                      <strong>Lý do:</strong> Các thuật toán nhận dạng giọng nói đã được tối ưu hóa cho Web Speech API của Google Chrome trên máy tính, mang lại độ chính xác và hiệu suất cao nhất.
+                    </p>
+                  </div>
+                ),
+                okText: 'Đã hiểu',
+                width: 500,
+                onOk: () => {
+                  sessionStorage.setItem(warningKey, 'true');
+                }
+              });
+            }
+          }, 1500); // Delay 1.5s để UI load xong
+        }
+      }
+    };
+    
+    // Check when app loads and when coming back online
+    checkBrowserAndDevice();
+    
+    const handleOnlineCheck = () => {
+      setTimeout(checkBrowserAndDevice, 500);
+    };
+    
+    window.addEventListener('online', handleOnlineCheck);
+    
+    return () => {
+      window.removeEventListener('online', handleOnlineCheck);
+    };
+  }, []);
+  
   // Load Speech-to-Text config on mount
   useEffect(() => {
     const savedConfig = SpeechToTextService.loadConfig();

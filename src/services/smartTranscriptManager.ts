@@ -35,6 +35,10 @@ export class SmartTranscriptManager {
   private transcriptionStartTime = 0;
   private browserBehavior: BrowserBehavior;
   private onResult: ((r: TranscriptionResult) => void) | null = null;
+  
+  // ✨ Lưu timestamp khi bắt đầu tích lũy (dùng cho segment chính thức)
+  private accumulationStartTime: string = '';
+  private accumulationStartAudioTimeMs: number = 0;
 
   constructor() {
     this.browserBehavior = this.detectBrowser();
@@ -49,6 +53,8 @@ export class SmartTranscriptManager {
     this.lastCommittedHash = '';
     this.idCounter = 0;
     this.transcriptionStartTime = Date.now();
+    this.accumulationStartTime = '';
+    this.accumulationStartAudioTimeMs = 0;
     this.clearSilenceTimer();
   }
 
@@ -66,31 +72,48 @@ export class SmartTranscriptManager {
 
     // 🔹 INTERIM: Tích lũy text từ các kết quả ngắn (≤5 từ)
     if (!r.isFinal) {
-      const wordCount = text.split(/\s+/).length;
+      // const wordCount = text.split(/\s+/).length;
       
       let displayText = text;
       
       // ✨ Ưu tiên tích lũy từ kết quả ngắn
       if (isShortChunk) {
+        // ⚡ Nếu đang bắt đầu tích lũy mới, lưu timestamp
+        if (!this.interimText) {
+          this.accumulationStartTime = timestamp;
+          this.accumulationStartAudioTimeMs = audioTimeMs;
+          console.log('🎬 Starting new accumulation:', {
+            startTime: timestamp,
+            startAudioTimeMs: audioTimeMs
+          });
+        }
+        
         const accumulatedText = this.accumulateInterimText(text);
         const accumulatedWordCount = accumulatedText.split(/\s+/).length;
         
-        // ⚡ Nếu text tích lũy quá dài (>80 từ), tự động commit thành segment chính thức
-        if (accumulatedWordCount > 80) {
-          console.log('🔴 INTERIM too long, auto-committing:', {
+        // ⚡ Nếu text tích lũy quá dài (>250 từ), COMMIT thành segment chính thức
+        if (accumulatedWordCount > 250) {
+          console.log('🔴 INTERIM too long (>250 words), COMMITTING as final segment:', {
             words: accumulatedWordCount,
-            text: accumulatedText.substring(0, 100) + '...'
+            text: accumulatedText.substring(0, 100) + '...',
+            startTime: this.accumulationStartTime,
+            startAudioTimeMs: this.accumulationStartAudioTimeMs
           });
           
-          // Commit thành segment chính thức
+          // ⚡ Commit thành segment chính thức với timestamp bắt đầu
           this.finalLongest = accumulatedText;
-          this.commitFinal(audioTimeMs, timestamp, r.confidence, speaker);
+          this.commitFinal(
+            this.accumulationStartAudioTimeMs, // Dùng audioTime bắt đầu
+            this.accumulationStartTime,         // Dùng timestamp bắt đầu
+            r.confidence, 
+            speaker
+          );
           
-          // ⚡ QUAN TRỌNG: Reset cả interimText và finalLongest để tránh commit lại
+          // Reset và bắt đầu mới
           this.interimText = '';
           this.finalLongest = '';
-          
-          // Clear interim display
+          this.accumulationStartTime = '';
+          this.accumulationStartAudioTimeMs = 0;
           this.clearInterim();
           return;
         }
@@ -98,21 +121,21 @@ export class SmartTranscriptManager {
         this.interimText = accumulatedText;
         displayText = accumulatedText;
         
-        console.log('🔄 INTERIM (SHORT chunk - accumulated):', {
-          newChunk: text,
-          chunkWords: wordCount,
-          accumulated: accumulatedText.substring(0, 100) + (accumulatedText.length > 100 ? '...' : ''),
-          totalWords: accumulatedWordCount,
-          confidence: (r.confidence * 100).toFixed(2) + '%'
-        });
+        // console.log('🔄 INTERIM (SHORT chunk - accumulated):', {
+        //   newChunk: text,
+        //   chunkWords: wordCount,
+        //   accumulated: accumulatedText.substring(0, 100) + (accumulatedText.length > 100 ? '...' : ''),
+        //   totalWords: accumulatedWordCount,
+        //   confidence: (r.confidence * 100).toFixed(2) + '%'
+        // });
       } else {
         // Kết quả dài: hiển thị trực tiếp NHƯNG KHÔNG tích lũy
-        console.log('🔄 INTERIM (LONG chunk - display only, no accumulation):', {
-          text: text.substring(0, 100) + (text.length > 100 ? '...' : ''),
-          words: wordCount,
-          confidence: (r.confidence * 100).toFixed(2) + '%',
-          note: 'Waiting for short chunks to accumulate properly'
-        });
+        // console.log('🔄 INTERIM (LONG chunk - display only, no accumulation):', {
+        //   text: text.substring(0, 100) + (text.length > 100 ? '...' : ''),
+        //   words: wordCount,
+        //   confidence: (r.confidence * 100).toFixed(2) + '%',
+        //   note: 'Waiting for short chunks to accumulate properly'
+        // });
         
         // Nếu chưa có text tích lĉy, dùng text dài làm fallback
         if (!this.interimText) {
@@ -128,13 +151,20 @@ export class SmartTranscriptManager {
       return;
     }
 
-    // 🔹 FINAL: chọn câu dài nhất (Chrome mở rộng dần)
-    if (text.length > this.finalLongest.length) {
-      this.finalLongest = text;
-    }
-
-    this.emitInterim(this.finalLongest, audioTimeMs, timestamp, r.confidence, speaker);
-    this.startSilenceTimer(audioTimeMs, timestamp, r.confidence, speaker);
+    // 🔹 FINAL từ Google: KHÔNG xử lý nữa (segment chính thức chỉ từ tích lũy của chúng ta)
+    // Chúng ta tự commit khi >250 từ ở trên
+    console.log('⚠️  Ignoring Google isFinal result:', {
+      text: text.substring(0, 80) + '...',
+      reason: 'We handle commits internally when accumulated text reaches 250 words'
+    });
+    return;
+    
+    // Code cũ (bỏ):
+    // if (text.length > this.finalLongest.length) {
+    //   this.finalLongest = text;
+    // }
+    // this.emitInterim(this.finalLongest, audioTimeMs, timestamp, r.confidence, speaker);
+    // this.startSilenceTimer(audioTimeMs, timestamp, r.confidence, speaker);
   }
 
   /**
