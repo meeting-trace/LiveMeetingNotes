@@ -4,15 +4,25 @@ import { App as MainApp } from './App';
 import { ConfigProvider, theme, App as AntdApp } from 'antd';
 import './styles/global.css';
 
-// Unregister old service worker if exists
+// Register service worker for caching and updates
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then((registrations) => {
-    registrations.forEach((registration) => {
-      if (registration.active?.scriptURL?.includes('service-worker.js')) {
-        registration.unregister();
-        // console.log('Old service worker unregistered');
-      }
-    });
+  window.addEventListener('load', () => {
+    // Add timestamp to bypass GitHub Pages cache
+    const swUrl = `/sw.js?v=${Date.now()}`;
+    
+    navigator.serviceWorker
+      .register(swUrl)
+      .then((registration) => {
+        console.log('✅ Service Worker registered:', registration.scope);
+        
+        // Check for updates every minute
+        setInterval(() => {
+          registration.update();
+        }, 60000);
+      })
+      .catch((error) => {
+        console.error('❌ Service Worker registration failed:', error);
+      });
   });
 }
 

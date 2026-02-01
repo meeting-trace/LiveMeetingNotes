@@ -7,10 +7,12 @@ import { HelpButton } from './components/HelpButton';
 import { TranscriptionConfig } from './components/TranscriptionConfig';
 import { TranscriptionPanel } from './components/TranscriptionPanel';
 import { MeetingSummaryPanel } from './components/MeetingSummaryPanel';
+import { UpdateNotification } from './components/UpdateNotification';
 import { FileManagerService } from './services/fileManager';
 import { saveBackup, loadBackup, clearBackup, hasBackup, getBackupAge } from './services/autoBackup';
 import { speechToTextService, SpeechToTextService } from './services/speechToText';
 import { AIRefinementService, type RawTranscriptData } from './services/aiRefinement';
+import { updateManager, UpdateManagerService } from './services/updateManager';
 import type { MeetingInfo, SpeechToTextConfig, TranscriptionResult } from './types/types';
 import { message, Modal } from 'antd';
 import { ExclamationCircleOutlined } from '@ant-design/icons';
@@ -50,6 +52,10 @@ export const App: React.FC = () => {
   const [rawTranscripts, setRawTranscripts] = useState<RawTranscriptData[]>([]); // Raw data from Web Speech API
   const [geminiSummary, setGeminiSummary] = useState<string | undefined>(undefined); // Summary from Gemini AI
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  
+  // Update manager states
+  const [showUpdateNotification, setShowUpdateNotification] = useState(false);
+  const [updateConfig, setUpdateConfig] = useState(() => UpdateManagerService.loadConfig());
 
   // Check browser compatibility
   useEffect(() => {
@@ -92,6 +98,44 @@ export const App: React.FC = () => {
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+  
+  // Initialize update manager
+  useEffect(() => {
+    const initUpdateManager = async () => {
+      await updateManager.initialize();
+      
+      // Listen for update notifications
+      updateManager.onUpdateAvailable(() => {
+        console.log('🔔 Update notification received');
+        setShowUpdateNotification(true);
+      });
+      
+      // Start periodic checks if auto-update is enabled and online
+      if (updateConfig.autoUpdate && navigator.onLine) {
+        updateManager.startPeriodicCheck(updateConfig.checkInterval);
+      }
+    };
+    
+    initUpdateManager();
+    
+    // Cleanup on unmount
+    return () => {
+      updateManager.stopPeriodicCheck();
+    };
+  }, [updateConfig.autoUpdate, updateConfig.checkInterval]);
+  
+  // Handle auto-update config changes
+  const handleUpdateConfigChange = (newConfig: typeof updateConfig) => {
+    setUpdateConfig(newConfig);
+    UpdateManagerService.saveConfig(newConfig);
+    
+    // Restart/stop periodic checks based on new config
+    if (newConfig.autoUpdate && navigator.onLine) {
+      updateManager.startPeriodicCheck(newConfig.checkInterval);
+    } else {
+      updateManager.stopPeriodicCheck();
+    }
+  };
   
   // Function to show options modal when file is too large
   const showSegmentSelectionModal = (fileSizeMB: number, maxSizeMB: number) => {
@@ -1931,6 +1975,11 @@ export const App: React.FC = () => {
           <HelpButton />
         </div>
       </header>
+      
+      {/* Update Notification */}
+      {showUpdateNotification && (
+        <UpdateNotification onClose={() => setShowUpdateNotification(false)} />
+      )}
 
       <MetadataPanel meetingInfo={meetingInfo} onChange={setMeetingInfo} />
 
@@ -2005,6 +2054,8 @@ export const App: React.FC = () => {
         onClose={() => setShowTranscriptionConfig(false)}
         onSave={handleSaveTranscriptionConfig}
         currentConfig={transcriptionConfig}
+        updateConfig={updateConfig}
+        onUpdateConfigChange={handleUpdateConfigChange}
       />
     </div>
   );
