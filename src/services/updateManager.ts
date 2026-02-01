@@ -24,54 +24,27 @@ export class UpdateManagerService {
     }
 
     try {
-      // Get existing registration or wait for it
+      // Listen for VitePWA update events
+      window.addEventListener('sw-update-available', () => {
+        console.log('✨ New version detected from VitePWA!');
+        this.updateAvailable = true;
+        
+        if (this.onUpdateCallback) {
+          // Get registration to pass to callback
+          navigator.serviceWorker.ready.then((registration) => {
+            if (this.onUpdateCallback) {
+              this.onUpdateCallback(registration);
+            }
+          });
+        }
+      });
+
+      // Get existing registration
       this.registration = await navigator.serviceWorker.ready;
       console.log('✅ Service Worker ready for update checks');
-
-      // Listen for service worker updates
-      this.setupUpdateListeners();
     } catch (error) {
       console.error('Failed to initialize update manager:', error);
     }
-  }
-
-  /**
-   * Setup listeners for service worker update events
-   */
-  private setupUpdateListeners() {
-    if (!this.registration) return;
-
-    // Listen for new service worker installing
-    this.registration.addEventListener('updatefound', () => {
-      const newWorker = this.registration?.installing;
-      if (!newWorker) return;
-
-      console.log('🔄 New version detected, installing...');
-
-      newWorker.addEventListener('statechange', () => {
-        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-          // New service worker installed and waiting
-          console.log('✨ New version available!');
-          this.updateAvailable = true;
-          
-          if (this.onUpdateCallback && this.registration) {
-            this.onUpdateCallback(this.registration);
-          }
-        }
-      });
-    });
-
-    // Listen for messages from service worker
-    navigator.serviceWorker.addEventListener('message', (event) => {
-      if (event.data.type === 'UPDATE_AVAILABLE') {
-        console.log('📢 Service worker notified: Update available');
-        this.updateAvailable = true;
-        
-        if (this.onUpdateCallback && this.registration) {
-          this.onUpdateCallback(this.registration);
-        }
-      }
-    });
   }
 
   /**

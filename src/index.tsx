@@ -3,26 +3,27 @@ import ReactDOM from 'react-dom/client';
 import { App as MainApp } from './App';
 import { ConfigProvider, theme, App as AntdApp } from 'antd';
 import './styles/global.css';
+import { registerSW } from 'virtual:pwa-register';
 
-// Register service worker for caching and updates (only in production)
-if ('serviceWorker' in navigator && (import.meta as any).env?.PROD) {
-  window.addEventListener('load', () => {
-    // Add timestamp to bypass GitHub Pages cache
-    const swUrl = `/sw.js?v=${Date.now()}`;
-    
-    navigator.serviceWorker
-      .register(swUrl)
-      .then((registration) => {
-        console.log('✅ Service Worker registered:', registration.scope);
-        
-        // Check for updates every minute
-        setInterval(() => {
-          registration.update();
-        }, 60000);
-      })
-      .catch((error) => {
-        console.error('❌ Service Worker registration failed:', error);
-      });
+// Register service worker with update prompt
+if ((import.meta as any).env?.PROD) {
+  registerSW({
+    immediate: true,
+    onNeedRefresh() {
+      console.log('🔄 New version available! App will notify user.');
+      // Dispatch custom event that updateManager can listen to
+      window.dispatchEvent(new CustomEvent('sw-update-available'));
+    },
+    onOfflineReady() {
+      console.log('✅ App ready to work offline');
+    },
+    onRegistered(registration: any) {
+      if (registration) {
+        console.log('✅ Service Worker registered');
+        // Check for updates when app loads
+        registration.update();
+      }
+    }
   });
 }
 

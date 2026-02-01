@@ -10,8 +10,10 @@
 
 // Cache version - will be auto-updated by build timestamp
 const BUILD_TIMESTAMP = '__BUILD_TIMESTAMP__'; // Replaced at build time
-const CACHE_VERSION = BUILD_TIMESTAMP !== '__BUILD_TIMESTAMP__' ? BUILD_TIMESTAMP : Date.now();
+const CACHE_VERSION = BUILD_TIMESTAMP;
 const CACHE_NAME = `live-meeting-notes-v${CACHE_VERSION}`;
+
+console.log('[SW] Service Worker Version:', CACHE_VERSION);
 
 // Static assets to cache (these paths are stable)
 const urlsToCache = [

@@ -408,18 +408,22 @@ export class SmartTranscriptManager {
   private startIdleTimer(_audioTimeMs: number, _timestamp: string, confidence: number, speaker: string) {
     this.clearIdleTimer();
     
-    // Nếu có text tích lũy, bắt đầu đếm ngược idle
+    // Nếu có text tích lũy, bắt đầu check định kỳ mỗi 1s
     if (this.interimText) {
-      this.idleTimer = setTimeout(() => {
+      // ⚡ Dùng setInterval để check liên tục mỗi 1 giây
+      this.idleTimer = setInterval(() => {
         const timeSinceLastUpdate = Date.now() - this.lastUpdateTime;
         
-        // Nếu thực sự không có update trong 2s
+        // Nếu thực sự không có update trong 2s VÀ vẫn có text
         if (timeSinceLastUpdate >= this.idleTimeout && this.interimText) {
           console.log('🚨 IDLE DETECTED: No new text for 2s, auto-committing:', {
             idleTime: timeSinceLastUpdate + 'ms',
             text: this.interimText.substring(0, 80) + '...',
             words: this.interimText.split(/\s+/).length
           });
+          
+          // Clear timer trước khi commit
+          this.clearIdleTimer();
           
           // Commit segment hiện tại
           this.finalLongest = this.interimText;
@@ -445,13 +449,13 @@ export class SmartTranscriptManager {
             }, 100);
           }
         }
-      }, this.idleTimeout);
+      }, 1000); // Check mỗi 1 giây
     }
   }
 
   private clearIdleTimer() {
     if (this.idleTimer) {
-      clearTimeout(this.idleTimer);
+      clearInterval(this.idleTimer); // Đổi từ clearTimeout sang clearInterval
       this.idleTimer = null;
     }
   }
