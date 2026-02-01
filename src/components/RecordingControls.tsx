@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Space, Switch, Tooltip, App } from 'antd';
+import { Button, Space, Switch, Tooltip, App, Select } from 'antd';
 import {
   FolderOpenOutlined,
   AudioOutlined,
@@ -9,13 +9,14 @@ import {
   SettingOutlined,
   SoundOutlined,
   PauseCircleOutlined,
-  PlayCircleOutlined
+  PlayCircleOutlined,
+  GlobalOutlined
 } from '@ant-design/icons';
 import { AudioRecorderService } from '../services/audioRecorder';
 import { FileManagerService, FileDownloadService } from '../services/fileManager';
 import { MetadataBuilder } from '../services/metadataBuilder';
 import { WordExporter } from '../services/wordExporter';
-import { speechToTextService } from '../services/speechToText';
+import { speechToTextService, SpeechToTextService } from '../services/speechToText';
 import type { RawTranscriptData } from '../services/aiRefinement';
 import type { MeetingInfo, SpeechToTextConfig, TranscriptionResult } from '../types/types';
 
@@ -89,6 +90,14 @@ export const RecordingControls: React.FC<Props> = ({
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false); // Track save operations
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('vi-VN'); // Language selector
+
+  // Initialize language from config
+  useEffect(() => {
+    if (transcriptionConfig?.languageCode) {
+      setSelectedLanguage(transcriptionConfig.languageCode);
+    }
+  }, [transcriptionConfig]);
 
   useEffect(() => {
     if (!isRecording && !isPaused) return;
@@ -190,6 +199,73 @@ export const RecordingControls: React.FC<Props> = ({
     } catch (error: any) {
       message.error(error.message);
     }
+  };
+
+  const handleLanguageChange = async (languageCode: string) => {
+    setSelectedLanguage(languageCode);
+    
+    // Update config and save
+    if (transcriptionConfig) {
+      const updatedConfig = {
+        ...transcriptionConfig,
+        languageCode: languageCode
+      };
+      
+      // Save to localStorage
+      SpeechToTextService.saveConfig(updatedConfig);
+      
+      // Re-initialize service with new config
+      speechToTextService.initialize(updatedConfig);
+      
+      // If paused, just update for next resume
+      if (isPaused) {
+        message.info(`🌐 Ngôn ngữ sẽ đổi sang ${getLanguageName(languageCode)} khi tiếp tục`);
+      } else if (isRecording && autoTranscribe) {
+        // If recording and auto-transcribe is ON, restart transcription immediately
+        message.loading({ content: `🌐 Đang chuyển sang ${getLanguageName(languageCode)}...`, key: 'langChange' });
+        
+        speechToTextService.stopTranscription();
+        
+        // Wait a bit for service to stop cleanly, then restart with new language
+        setTimeout(async () => {
+          if (autoTranscribe && navigator.onLine && audioStream) {
+            try {
+              await speechToTextService.startTranscription(audioStream, onNewTranscription);
+              message.success({ 
+                content: `✅ Đã chuyển sang ${getLanguageName(languageCode)}`, 
+                key: 'langChange',
+                duration: 2 
+              });
+            } catch (error: any) {
+              console.error('Failed to restart transcription:', error);
+              message.error({ 
+                content: `⚠️ Không thể khởi động lại: ${error.message}`, 
+                key: 'langChange',
+                duration: 3 
+              });
+            }
+          }
+        }, 500);
+      } else {
+        message.success(`🌐 Đã chọn ${getLanguageName(languageCode)}`);
+      }
+    }
+  };
+
+  const getLanguageName = (code: string): string => {
+    const languages: Record<string, string> = {
+      'vi-VN': 'Tiếng Việt',
+      'en-US': 'English (US)',
+      'en-GB': 'English (UK)',
+      'ja-JP': '日本語',
+      'ko-KR': '한국어',
+      'zh-CN': '中文 (简体)',
+      'zh-TW': '中文 (繁體)',
+      'fr-FR': 'Français',
+      'de-DE': 'Deutsch',
+      'es-ES': 'Español'
+    };
+    return languages[code] || code;
   };
 
   const handleStopFromPause = async () => {
@@ -1194,6 +1270,37 @@ export const RecordingControls: React.FC<Props> = ({
         {/* Right side: Speech-to-Text Controls - Only show when online */}
         {navigator.onLine && (
           <Space size="middle" wrap style={{ marginLeft: 'auto' }}>
+            {/* Language Quick Selector */}
+            {transcriptionConfig && (
+              <Tooltip title={
+                isRecording && !isPaused
+                  ? '🔄 Đổi ngôn ngữ ngay - Chuyển đổi giọng nói sẽ khởi động lại (ghi âm không bị gián đoạn)'
+                  : isPaused
+                    ? 'Thay đổi sẽ có hiệu lực khi tiếp tục ghi âm'
+                    : 'Chọn ngôn ngữ để chuyển đổi giọng nói'
+              }>
+                <Select
+                  value={selectedLanguage}
+                  onChange={handleLanguageChange}
+                  style={{ width: 180 }}
+                  size="large"
+                  suffixIcon={<GlobalOutlined />}
+                  disabled={false} // Always enabled for quick switch
+                >
+                  <Select.Option value="vi-VN">🇻🇳 Tiếng Việt</Select.Option>
+                  <Select.Option value="en-US">🇺🇸 English (US)</Select.Option>
+                  <Select.Option value="en-GB">🇬🇧 English (UK)</Select.Option>
+                  <Select.Option value="ja-JP">🇯🇵 日本語</Select.Option>
+                  <Select.Option value="ko-KR">🇰🇷 한국어</Select.Option>
+                  <Select.Option value="zh-CN">🇨🇳 中文 (简)</Select.Option>
+                  <Select.Option value="zh-TW">🇹🇼 中文 (繁)</Select.Option>
+                  <Select.Option value="fr-FR">🇫🇷 Français</Select.Option>
+                  <Select.Option value="de-DE">🇩🇪 Deutsch</Select.Option>
+                  <Select.Option value="es-ES">🇪🇸 Español</Select.Option>
+                </Select>
+              </Tooltip>
+            )}
+
             <Button
               icon={<SettingOutlined />}
               onClick={onShowTranscriptionConfig}
