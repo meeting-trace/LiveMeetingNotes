@@ -57,6 +57,35 @@ export const App: React.FC = () => {
   const [showUpdateNotification, setShowUpdateNotification] = useState(false);
   const [updateConfig, setUpdateConfig] = useState(() => UpdateManagerService.loadConfig());
 
+  /**
+   * Get valid meeting start time for Gemini transcription
+   * Priority: 1) meetingInfo, 2) first transcription time, 3) current time
+   */
+  const getValidMeetingStartTime = useCallback((): Date => {
+    // Try meetingInfo first
+    if (meetingInfo.date && meetingInfo.time) {
+      const meetingStartTime = new Date(`${meetingInfo.date}T${meetingInfo.time}:00`);
+      if (!isNaN(meetingStartTime.getTime())) {
+        console.log('✅ Using meetingInfo time:', meetingStartTime.toISOString());
+        return meetingStartTime;
+      }
+    }
+    
+    // Fallback to first transcription time if available
+    if (transcriptions.length > 0 && transcriptions[0].startTime) {
+      const firstTranscriptionTime = new Date(transcriptions[0].startTime);
+      if (!isNaN(firstTranscriptionTime.getTime())) {
+        console.log('⚠️ meetingInfo empty, using first transcription time:', firstTranscriptionTime.toISOString());
+        return firstTranscriptionTime;
+      }
+    }
+    
+    // Last resort: current time
+    const now = new Date();
+    console.warn('⚠️ No valid meeting time found, using current time:', now.toISOString());
+    return now;
+  }, [meetingInfo.date, meetingInfo.time, transcriptions]);
+
   // Check browser compatibility
   useEffect(() => {
     if (!FileManagerService.isSupported()) {
@@ -199,6 +228,42 @@ export const App: React.FC = () => {
     setUpdateConfig(newConfig);
     UpdateManagerService.saveConfig(newConfig);
   };
+  
+  /**
+   * Convert all transcription timestamps based on new meeting start time
+   * Formula: startTime = newMeetingStartTime + audioTimeMs
+   */
+  const handleConvertTimestamps = useCallback((newMeetingStartTime: Date) => {
+    if (transcriptions.length === 0) {
+      message.info('Không có segments để convert');
+      return;
+    }
+    
+    let convertedCount = 0;
+    const updatedTranscriptions = transcriptions.map(segment => {
+      // Only convert if audioTimeMs is available
+      if (segment.audioTimeMs !== undefined) {
+        const newStartTime = new Date(newMeetingStartTime.getTime() + segment.audioTimeMs);
+        convertedCount++;
+        return {
+          ...segment,
+          startTime: newStartTime.toISOString(),
+          endTime: newStartTime.toISOString() // Keep same as start
+        };
+      }
+      return segment;
+    });
+    
+    setTranscriptions(updatedTranscriptions);
+    setHasUnsavedChanges(true); // Mark as unsaved to show Save button
+    
+    message.success(`✅ Đã convert ${convertedCount}/${transcriptions.length} segments`);
+    console.log('🕐 Converted timestamps:', {
+      newMeetingStartTime: newMeetingStartTime.toISOString(),
+      totalSegments: transcriptions.length,
+      convertedSegments: convertedCount
+    });
+  }, [transcriptions]);
   
   // Function to show options modal when file is too large
   const showSegmentSelectionModal = (fileSizeMB: number, maxSizeMB: number) => {
@@ -508,13 +573,9 @@ export const App: React.FC = () => {
       });
 
       // Start transcription with progress callback and config values
-      // Calculate meeting start time from meetingInfo
-      const meetingStartTime = new Date(`${meetingInfo.date}T${meetingInfo.time}:00`);
-      console.log('📅 Meeting info:', meetingInfo);
-      console.log('📅 Meeting date:', meetingInfo.date);
-      console.log('📅 Meeting time:', meetingInfo.time);
-      console.log('📅 Meeting start time:', meetingStartTime);
-      console.log('📅 Is valid date?', !isNaN(meetingStartTime.getTime()));
+      // Get valid meeting start time (fallback to transcription time or current time if meetingInfo is empty)
+      const meetingStartTime = getValidMeetingStartTime();
+      console.log('📅 Meeting start time for Gemini:', meetingStartTime.toISOString());
       
       const parsed = await AIRefinementService.transcribeEntireAudioWithGemini(
         config.geminiApiKey,
@@ -655,7 +716,7 @@ export const App: React.FC = () => {
 
         try {
           const maxFileSizeMB = config.maxFileSizeMB || 20;
-          const meetingStartTime = new Date(`${meetingInfo.date}T${meetingInfo.time}:00`);
+          const meetingStartTime = getValidMeetingStartTime();
           
           const parsed = await AIRefinementService.transcribeAudioWithGemini(
             config.geminiApiKey!,
@@ -955,7 +1016,7 @@ export const App: React.FC = () => {
           try {
             const config = speechToTextService.getConfig();
             const maxFileSizeMB = config?.maxFileSizeMB || 20;
-            const meetingStartTime = new Date(`${meetingInfo.date}T${meetingInfo.time}:00`);
+            const meetingStartTime = getValidMeetingStartTime();
             
             const parsed = await AIRefinementService.transcribeAudioWithGemini(
               apiKey,
@@ -2044,7 +2105,12 @@ export const App: React.FC = () => {
         <UpdateNotification onClose={() => setShowUpdateNotification(false)} />
       )}
 
-      <MetadataPanel meetingInfo={meetingInfo} onChange={setMeetingInfo} />
+      <MetadataPanel 
+        meetingInfo={meetingInfo} 
+        onChange={setMeetingInfo}
+        hasSegments={transcriptions.length > 0}
+        onConvertTimestamps={handleConvertTimestamps}
+      />
 
 
       <RecordingControls

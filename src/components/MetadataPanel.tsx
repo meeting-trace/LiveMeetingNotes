@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
-import { Input, Collapse } from 'antd';
+import { Input, Collapse, Modal } from 'antd';
+import { ExclamationCircleOutlined } from '@ant-design/icons';
 import type { MeetingInfo } from '../types/types';
 
 const { TextArea } = Input;
@@ -7,16 +8,28 @@ const { TextArea } = Input;
 interface Props {
   meetingInfo: MeetingInfo;
   onChange: (info: MeetingInfo) => void;
+  hasSegments?: boolean; // Whether there are transcription segments
+  onConvertTimestamps?: (newMeetingStartTime: Date) => void; // Callback to convert timestamps
 }
 
-export const MetadataPanel: React.FC<Props> = ({ meetingInfo, onChange }) => {
+export const MetadataPanel: React.FC<Props> = ({ 
+  meetingInfo, 
+  onChange, 
+  hasSegments = false,
+  onConvertTimestamps
+}) => {
   // Local state for immediate UI update
   const [localInfo, setLocalInfo] = useState<MeetingInfo>(meetingInfo);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const previousDateTimeRef = useRef<{ date: string; time: string }>({ 
+    date: meetingInfo.date, 
+    time: meetingInfo.time 
+  });
   
   // Sync local state when prop changes (e.g., load project)
   useEffect(() => {
     setLocalInfo(meetingInfo);
+    previousDateTimeRef.current = { date: meetingInfo.date, time: meetingInfo.time };
   }, [meetingInfo]);
   
   const handleChange = useCallback((field: keyof MeetingInfo, value: string) => {
@@ -27,6 +40,58 @@ export const MetadataPanel: React.FC<Props> = ({ meetingInfo, onChange }) => {
     };
     setLocalInfo(newInfo);
     
+    // Check if date or time changed AND there are segments
+    const isDateTimeChange = (field === 'date' || field === 'time');
+    const hasValidPreviousDateTime = previousDateTimeRef.current.date && previousDateTimeRef.current.time;
+    const hasValidNewDateTime = newInfo.date && newInfo.time;
+    
+    if (isDateTimeChange && hasSegments && hasValidPreviousDateTime && hasValidNewDateTime && onConvertTimestamps) {
+      const previousDateTime = new Date(`${previousDateTimeRef.current.date}T${previousDateTimeRef.current.time}:00`);
+      const newDateTime = new Date(`${newInfo.date}T${newInfo.time}:00`);
+      
+      // Only ask if both are valid dates and they are different
+      if (!isNaN(previousDateTime.getTime()) && !isNaN(newDateTime.getTime()) && 
+          previousDateTime.getTime() !== newDateTime.getTime()) {
+        
+        // Show confirmation modal
+        Modal.confirm({
+          title: '🕐 Convert nhãn thời gian?',
+          icon: <ExclamationCircleOutlined />,
+          content: (
+            <div style={{ marginTop: 16 }}>
+              <p>Bạn đã thay đổi thời gian bắt đầu cuộc họp:</p>
+              <ul style={{ marginLeft: 20, marginTop: 8 }}>
+                <li><b>Trước:</b> {previousDateTime.toLocaleString('vi-VN')}</li>
+                <li><b>Sau:</b> {newDateTime.toLocaleString('vi-VN')}</li>
+              </ul>
+              <p style={{ marginTop: 12 }}>
+                Bạn có muốn cập nhật lại nhãn thời gian (startTime) của các segments theo thời gian mới không?
+              </p>
+              <p style={{ fontSize: '12px', color: '#666', marginTop: 8 }}>
+                ℹ️ Công thức: <code>startTime = thời gian bắt đầu họp + audioTimeMs</code>
+              </p>
+            </div>
+          ),
+          okText: 'Có, convert lại',
+          cancelText: 'Không',
+          width: 520,
+          onOk: () => {
+            // User confirmed - convert timestamps
+            onConvertTimestamps(newDateTime);
+            // Update previous reference
+            previousDateTimeRef.current = { date: newInfo.date, time: newInfo.time };
+          },
+          onCancel: () => {
+            // User declined - just update the reference
+            previousDateTimeRef.current = { date: newInfo.date, time: newInfo.time };
+          }
+        });
+      } else {
+        // Update reference even if dates are same
+        previousDateTimeRef.current = { date: newInfo.date, time: newInfo.time };
+      }
+    }
+    
     // Debounce onChange callback to parent (300ms)
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
@@ -35,7 +100,7 @@ export const MetadataPanel: React.FC<Props> = ({ meetingInfo, onChange }) => {
     debounceRef.current = setTimeout(() => {
       onChange(newInfo);
     }, 300); // 300ms debounce
-  }, [localInfo, onChange]);
+  }, [localInfo, onChange, hasSegments, onConvertTimestamps]);
 
   return (
     <Collapse

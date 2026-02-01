@@ -905,7 +905,7 @@ export const RecordingControls: React.FC<Props> = ({
         message: error.message,
         stack: error.stack
       });
-      message.error(`Failed to save changes: ${error.message}`);
+      message.error(`Lỗi khi lưu thay đổi (có thể do đường dẫn lưu file quá dài): ${error.message}`);
     }
   };
 
@@ -915,7 +915,7 @@ export const RecordingControls: React.FC<Props> = ({
     try {
       if (!FileManagerService.isSupported()) {
         // console.error('Browser not supported');
-        message.error('Your browser does not support loading projects. Please use Chrome or Edge.');
+        message.error('Trình duyệt của bạn không hỗ trợ tải project. Vui lòng sử dụng Chrome hoặc Edge.');
         return;
       }
 
