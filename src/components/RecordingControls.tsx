@@ -36,6 +36,7 @@ interface Props {
     recordingStartTime: number;
     transcriptions?: TranscriptionResult[]; // Add transcriptions array
     rawTranscripts?: RawTranscriptData[]; // Add raw transcripts for AI refinement
+    summary?: string; // Add summary field
   }) => void;
   meetingInfo: MeetingInfo;
   notes: string;
@@ -466,6 +467,7 @@ export const RecordingControls: React.FC<Props> = ({
         const transcriptionData = {
           transcriptions: transcriptions.filter(t => t.isFinal),
           totalCount: transcriptions.filter(t => t.isFinal).length,
+          summary: geminiSummary || '', // Include summary
           savedAt: new Date().toISOString()
         };
         await fileManager.saveMetadataFile(
@@ -539,6 +541,7 @@ export const RecordingControls: React.FC<Props> = ({
         const transcriptionData = {
           transcriptions: transcriptions.filter(t => t.isFinal),
           totalCount: transcriptions.filter(t => t.isFinal).length,
+          summary: geminiSummary || '', // Include summary
           savedAt: new Date().toISOString()
         };
         await downloader.downloadMetadataFile(
@@ -851,6 +854,7 @@ export const RecordingControls: React.FC<Props> = ({
             const transcriptionData = {
               transcriptions: finalTranscriptions, // Only save final results
               totalCount: finalTranscriptions.length,
+              summary: geminiSummary || '', // Include summary
               savedAt: new Date().toISOString()
             };
             await fileManager.saveMetadataFile(
@@ -1162,7 +1166,8 @@ export const RecordingControls: React.FC<Props> = ({
         audioBlob: audioBlob,
         recordingStartTime: recordingStart,
         transcriptions: transcriptionData?.transcriptions || [], // Pass transcriptions array
-        rawTranscripts: rawTranscriptsData?.rawTranscripts || [] // Pass raw transcripts for AI refinement
+        rawTranscripts: rawTranscriptsData?.rawTranscripts || [], // Pass raw transcripts for AI refinement
+        summary: transcriptionData?.summary || '' // Pass summary if available
       });
 
       // Show message if transcriptions loaded

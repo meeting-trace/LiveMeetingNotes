@@ -45,7 +45,8 @@ export const TranscriptionConfig: React.FC<Props> = ({
         timestampDelay: 8,
         maxAudioDurationMinutes: 60,
         maxFileSizeMB: 20,
-        requestDelaySeconds: 5
+        requestDelaySeconds: 5,
+        summaryPrompt: 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'
       };
       
       // Merge saved config with defaults (ensures new fields have default values)
@@ -140,7 +141,8 @@ export const TranscriptionConfig: React.FC<Props> = ({
         // Gemini API Limits
         maxAudioDurationMinutes: values.maxAudioDurationMinutes || 180,
         maxFileSizeMB: values.maxFileSizeMB || 300,
-        requestDelaySeconds: values.requestDelaySeconds || 5
+        requestDelaySeconds: values.requestDelaySeconds || 5,
+        summaryPrompt: values.summaryPrompt || 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'
       };
 
       // Validate: Speaker diarization requires API Key
@@ -502,6 +504,20 @@ export const TranscriptionConfig: React.FC<Props> = ({
                       max={60}
                       style={{ width: '100%' }}
                       addonAfter="giây"
+                    />
+                  </Form.Item>
+
+                  <Form.Item
+                    label="Prompt tóm tắt"
+                    name="summaryPrompt"
+                    initialValue="Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có)."
+                    extra="Prompt tuỳ chỉnh để yêu cầu Gemini tóm tắt nội dung cuộc họp theo ý bạn"
+                  >
+                    <Input.TextArea
+                      placeholder="Nhập prompt tuỳ chỉnh cho tóm tắt..."
+                      rows={4}
+                      showCount
+                      maxLength={1000}
                     />
                   </Form.Item>
 

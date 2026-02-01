@@ -787,20 +787,24 @@ Giữ timestamp/audioTimeMs gốc. Chỉ trả về JSON array.`;
         contents: [{
           parts: [
             {
-              text: `CHỈ CHUYỂN ĐỔI FILE ÂM THANH NÀY THÀNH VĂN BẢN.
+              text: `BẠN LÀ THÀNH VIÊN THAM GIA CUỘC HỌP. NHIỆM VỤ: Phiên âm file âm thanh và tóm tắt nội dung cuộc họp.
 
-QUAN TRỌNG: CHỈ PHIÊN ÂM ĐÚNG NỘI DUNG CỦA FILE ÂM THANH ĐƯỢC CUNG CẤP. KHÔNG THÊM BẤT KỲ NỘI DUNG NÀO KHÁC.
+PHẦN 1: PHIÊN ÂM (TRANSCRIPTION)
+- Nghe kỹ file âm thanh và chuyển thành văn bản CHÍNH XÁC những gì được nói.
+- Chia văn bản thành các đoạn hội thoại tự nhiên (khi có người khác nói hoặc tạm dừng).
+- Gắn thời gian [mm:ss] vào đầu mỗi đoạn dựa trên vị trí trong file âm thanh (bắt đầu từ 0:00).
+- Nếu có nhiều người nói, phân biệt bằng 'Người nói 1:', 'Người nói 2:', v.v.
+- Làm sạch văn bản (loại bỏ từ đệm không cần thiết, sửa lỗi chính tả).
+- CHỈ phiên âm những gì nghe được trong audio. KHÔNG thêm thông tin từ kiến thức của bạn.
+- Nếu không nghe rõ một đoạn, ghi "[không rõ]".
 
-Yêu cầu:
-1. Nghe kỹ file âm thanh và chuyển thành văn bản CHÍNH XÁC những gì được nói trong file.
-2. Chia văn bản thành các đoạn hội thoại tự nhiên (khi có người khác nói hoặc tạm dừng).
-3. Gắn thời gian [mm:ss] vào đầu mỗi đoạn dựa trên vị trí trong file âm thanh (bắt đầu từ 0:00).
-4. Nếu có nhiều người nói, phân biệt bằng 'Người nói 1:', 'Người nói 2:'...
-5. Làm sạch văn bản (loại bỏ từ đệm không cần thiết, sửa lỗi chính tả).
-6. KHÔNG tự tạo thêm nội dung. KHÔNG thêm thông tin từ kiến thức của bạn.
-7. Nếu không nghe rõ một đoạn, ghi "[không rõ]" thay vì đoán.
+PHẦN 2: TÓM TẮT (SUMMARY)
+Sau khi phiên âm xong, hãy tóm tắt nội dung cuộc họp dựa trên yêu cầu sau:
+${summaryPrompt || 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'}
 
-Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
+CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu gạch đầu dòng.
+
+ĐỊNH DẠNG ĐẦU RA (CHỈ TRẢ VỀ JSON, KHÔNG CÓ TEXT GIẢI THÍCH THÊM):
 {
   "segments": [
     {
@@ -809,7 +813,7 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
       "text": "nội dung chính xác từ audio"
     }
   ],
-  "summary": "${summaryPrompt ? summaryPrompt.replace(/"/g, '\\"') : 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'}"
+  "summary": "Nội dung tóm tắt chi tiết về cuộc họp dựa trên yêu cầu ở trên. Viết thành văn xuôi liền mạch."
 }`
             },
             {
@@ -1131,7 +1135,8 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
     maxFileSizeMB: number = 20,
     requestDelaySeconds: number = 5,
     maxDurationMinutes: number = 60,
-    meetingStartTime?: Date // Meeting start time for accurate timestamp calculation
+    meetingStartTime?: Date, // Meeting start time for accurate timestamp calculation
+    summaryPrompt?: string // OPTIONAL: user-provided prompt text for the summary field
   ): Promise<{ results: TranscriptionResult[], summary?: string }> {
     const maxSizeMB = maxFileSizeMB;
 
@@ -1192,7 +1197,8 @@ Trả về ĐÚNG định dạng JSON sau (KHÔNG có text giải thích thêm):
           },
           true, // skipSizeCheck = true (chunks already validated)
           maxSizeMB, // Pass maxFileSizeMB to child call
-          meetingStartTime // Pass meeting start time for accurate timestamps
+          meetingStartTime, // Pass meeting start time for accurate timestamps
+          summaryPrompt // Pass user-provided summary prompt through
         );
 
         // Adjust timestamps for this chunk

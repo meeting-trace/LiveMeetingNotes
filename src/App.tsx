@@ -6,6 +6,7 @@ import { AudioPlayer, AudioPlayerRef } from './components/AudioPlayer';
 import { HelpButton } from './components/HelpButton';
 import { TranscriptionConfig } from './components/TranscriptionConfig';
 import { TranscriptionPanel } from './components/TranscriptionPanel';
+import { MeetingSummaryPanel } from './components/MeetingSummaryPanel';
 import { FileManagerService } from './services/fileManager';
 import { saveBackup, loadBackup, clearBackup, hasBackup, getBackupAge } from './services/autoBackup';
 import { speechToTextService, SpeechToTextService } from './services/speechToText';
@@ -430,7 +431,8 @@ export const App: React.FC = () => {
         maxFileSizeMB,
         requestDelaySeconds,
         maxDurationMinutes,
-        meetingStartTime
+        meetingStartTime,
+        config.summaryPrompt
       );
 
       progressModal.destroy();
@@ -555,7 +557,8 @@ export const App: React.FC = () => {
             undefined,
             false,
             maxFileSizeMB,
-            meetingStartTime
+            meetingStartTime,
+            config.summaryPrompt
           );
 
           // Adjust timestamps to match original audio
@@ -857,7 +860,8 @@ export const App: React.FC = () => {
               },
               false,
               maxFileSizeMB,
-              meetingStartTime
+              meetingStartTime,
+              config?.summaryPrompt
             );
 
             // Save summary if available
@@ -1123,6 +1127,7 @@ export const App: React.FC = () => {
     recordingStartTime: number;
     transcriptions?: TranscriptionResult[]; // Add transcriptions array
     rawTranscripts?: RawTranscriptData[]; // Add raw transcripts for AI refinement
+    summary?: string; // Add summary field
   }) => {
     // console.log('📂 App.handleLoadProject - Data received:', {
     //   meetingInfo: loadedData.meetingInfo,
@@ -1153,6 +1158,11 @@ export const App: React.FC = () => {
       setRawTranscripts(loadedData.rawTranscripts);
     } else {
       setRawTranscripts([]); // Clear raw transcripts if none
+    }
+    
+    // Load summary if available
+    if (loadedData.summary) {
+      setGeminiSummary(loadedData.summary);
     }
     
     setIsSaved(true);
@@ -1937,6 +1947,14 @@ export const App: React.FC = () => {
             (!!transcriptionConfig.geminiApiKey || !!transcriptionConfig.apiKey) &&
             !!transcriptionConfig.geminiModel
           }
+        />
+      )}
+
+      {/* Meeting Summary Panel - Show when summary is available */}
+      {geminiSummary && (
+        <MeetingSummaryPanel
+          summary={geminiSummary}
+          onSummaryChange={setGeminiSummary}
         />
       )}
 

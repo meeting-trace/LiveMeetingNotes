@@ -82,6 +82,7 @@ export interface SpeechToTextConfig {
   maxAudioDurationMinutes?: number; // Maximum audio duration in minutes (default: 60)
   maxFileSizeMB?: number; // Maximum file size in MB (default: 20)
   requestDelaySeconds?: number; // Delay between API requests in seconds (default: 5)
+  summaryPrompt?: string; // Custom prompt for Gemini summary generation
 }
 
 export interface TranscriptionResult {
