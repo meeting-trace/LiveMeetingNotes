@@ -4,6 +4,7 @@ export class AudioRecorderService {
   private startTime: number = 0;
   private audioChunks: Blob[] = [];
   private currentChunkSize = 0;
+  private isPausedState: boolean = false; // Track pause state for UI
 
   async startRecording(): Promise<void> {
     try {
@@ -42,6 +43,7 @@ export class AudioRecorderService {
 
       this.audioChunks = [];
       this.currentChunkSize = 0;
+      this.isPausedState = false; // Reset pause state
 
       // Collect audio data in chunks to prevent memory overflow
       this.mediaRecorder.ondataavailable = (event) => {
@@ -106,6 +108,7 @@ export class AudioRecorderService {
         this.stream = null;
         this.audioChunks = [];
         this.currentChunkSize = 0;
+        this.isPausedState = false; // Reset pause state
         
         resolve(blob);
       };
@@ -115,11 +118,68 @@ export class AudioRecorderService {
   }
 
   getCurrentDuration(): number {
+    if (!this.mediaRecorder) return 0;
+    
+    // Return total elapsed time (including pauses)
+    // This matches the actual audio file duration which includes silence during pauses
     return Date.now() - this.startTime;
   }
 
   isRecording(): boolean {
-    return this.mediaRecorder !== null && this.mediaRecorder.state === 'recording';
+    return this.mediaRecorder !== null && 
+           this.mediaRecorder.state === 'recording' && 
+           !this.isPausedState; // Not paused
+  }
+
+  isPaused(): boolean {
+    return this.isPausedState;
+  }
+
+  /**
+   * Pause recording by muting the microphone
+   * MediaRecorder continues running and records silence
+   * This ensures audio file duration matches total elapsed time
+   */
+  pauseRecording(): void {
+    if (!this.mediaRecorder || this.mediaRecorder.state !== 'recording') {
+      throw new Error('No active recording to pause');
+    }
+
+    if (!this.stream) {
+      throw new Error('No audio stream available');
+    }
+
+    // Mute all audio tracks instead of pausing MediaRecorder
+    // This way MediaRecorder continues recording silence
+    this.stream.getAudioTracks().forEach(track => {
+      track.enabled = false;
+    });
+
+    this.isPausedState = true;
+  }
+
+  /**
+   * Resume recording by unmuting the microphone
+   */
+  resumeRecording(): void {
+    if (!this.mediaRecorder || this.mediaRecorder.state !== 'recording') {
+      throw new Error('Recording is not active');
+    }
+
+    if (!this.stream) {
+      throw new Error('No audio stream available');
+    }
+
+    if (!this.isPausedState) {
+      throw new Error('Recording is not paused');
+    }
+
+    // Unmute all audio tracks
+    this.stream.getAudioTracks().forEach(track => {
+      track.enabled = true;
+    });
+
+    this.isPausedState = false;
   }
 
   // Format duration to HH:MM:SS

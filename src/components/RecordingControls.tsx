@@ -16,7 +16,6 @@ import { FileManagerService, FileDownloadService } from '../services/fileManager
 import { MetadataBuilder } from '../services/metadataBuilder';
 import { WordExporter } from '../services/wordExporter';
 import { speechToTextService } from '../services/speechToText';
-import { AudioMerger, AudioSegment } from '../services/audioMerger';
 import type { RawTranscriptData } from '../services/aiRefinement';
 import type { MeetingInfo, SpeechToTextConfig, TranscriptionResult } from '../types/types';
 
@@ -89,30 +88,22 @@ export const RecordingControls: React.FC<Props> = ({
   const [autoTranscribe, setAutoTranscribe] = useState<boolean>(true);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [isPaused, setIsPaused] = useState<boolean>(false);
-  const [isProcessing, setIsProcessing] = useState<boolean>(false); // Track merge/save operations
-  
-  // Recording segments tracking for multi-part recording
-  const [recordingSegments, setRecordingSegments] = useState<Array<{
-    blob: Blob;
-    startTime: number; // absolute timestamp (Date.now())
-    endTime: number;   // absolute timestamp (Date.now())
-    duration: number;  // duration in ms
-  }>>([]);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false); // Track save operations
 
   useEffect(() => {
-    if (!isRecording) return;
+    if (!isRecording && !isPaused) return;
 
     const interval = setInterval(() => {
       setDuration(recorder.getCurrentDuration());
     }, 100);
 
     return () => clearInterval(interval);
-  }, [isRecording, recorder]);
+  }, [isRecording, isPaused, recorder]);
 
   // Start/stop transcription when recording state or autoTranscribe changes
   useEffect(() => {
     const startTranscription = async () => {
-      if (isRecording && autoTranscribe && transcriptionConfig && navigator.onLine && audioStream) {
+      if (isRecording && !isPaused && autoTranscribe && transcriptionConfig && navigator.onLine && audioStream) {
         try {
           // Use the shared audio stream from recorder
           await speechToTextService.startTranscription(audioStream, onNewTranscription);
@@ -121,14 +112,14 @@ export const RecordingControls: React.FC<Props> = ({
           console.error('Failed to start transcription:', error);
           message.error('Không thể bắt đầu chuyển đổi: ' + error.message);
         }
-      } else if (!isRecording || !autoTranscribe) {
+      } else if (!isRecording || !autoTranscribe || isPaused) {
         // Stop transcription (but don't stop the stream - recorder owns it)
         speechToTextService.stopTranscription();
       }
     };
 
     startTranscription();
-  }, [isRecording, autoTranscribe, transcriptionConfig, audioStream]);
+  }, [isRecording, isPaused, autoTranscribe, transcriptionConfig, audioStream]);
 
   const handleSelectFolder = async () => {
     try {
@@ -156,7 +147,6 @@ export const RecordingControls: React.FC<Props> = ({
       
       onRecordingChange(true);
       setDuration(0);
-      setRecordingSegments([]); // Clear segments for new recording
       setIsPaused(false);
       message.success('Bắt đầu ghi âm');
     } catch (error: any) {
@@ -164,51 +154,16 @@ export const RecordingControls: React.FC<Props> = ({
     }
   };
 
-  const handleContinueRecording = async () => {
-    try {
-      await recorder.startRecording();
-      
-      // Get the audio stream from recorder to share with transcription
-      const stream = recorder.getStream();
-      if (stream) {
-        setAudioStream(stream);
-      }
-      
-      onRecordingChange(true);
-      message.success('Tiếp tục ghi âm');
-    } catch (error: any) {
-      message.error(error.message);
-    }
-  };
-
   const handlePauseRecording = async () => {
     try {
-      // Set paused state immediately for instant UI feedback
+      // Just pause the MediaRecorder - no need to stop or save segments
+      recorder.pauseRecording();
       setIsPaused(true);
       
-      // Stop current recording segment
-      const audioBlob = await recorder.stopRecording();
-      const recordingDuration = recorder.getCurrentDuration();
-      const segmentEndTime = Date.now();
-      
-      // Wait for transcription to complete if active
+      // Pause transcription service as well
       if (autoTranscribe && speechToTextService.isProcessing()) {
-        await speechToTextService.waitForCompletion(3000);
+        speechToTextService.stopTranscription();
       }
-      
-      // Stop audio stream and transcription
-      setAudioStream(null);
-      speechToTextService.stopTranscription();
-      
-      // Save current segment
-      const currentSegment: AudioSegment = {
-        blob: audioBlob,
-        startTime: recordingStartTime,
-        endTime: segmentEndTime,
-        duration: recordingDuration
-      };
-      
-      setRecordingSegments(prev => [...prev, currentSegment]);
       
       message.info('⏸️ Đã tạm dừng ghi âm');
     } catch (error: any) {
@@ -218,18 +173,18 @@ export const RecordingControls: React.FC<Props> = ({
 
   const handleResumeRecording = async () => {
     try {
-      // Start new recording segment
-      await recorder.startRecording();
-      const newSegmentStartTime = Date.now();
-      onRecordingStartTimeChange(newSegmentStartTime);
-      
-      // Get audio stream for transcription
-      const stream = recorder.getStream();
-      if (stream) {
-        setAudioStream(stream);
-      }
-      
+      // Just resume the MediaRecorder - no new segment needed
+      recorder.resumeRecording();
       setIsPaused(false);
+      
+      // Resume transcription if it was active
+      if (autoTranscribe && transcriptionConfig && navigator.onLine && audioStream) {
+        try {
+          await speechToTextService.startTranscription(audioStream, onNewTranscription);
+        } catch (error: any) {
+          console.error('Failed to resume transcription:', error);
+        }
+      }
       
       message.success('▶️ Tiếp tục ghi âm');
     } catch (error: any) {
@@ -239,59 +194,15 @@ export const RecordingControls: React.FC<Props> = ({
 
   const handleStopFromPause = async () => {
     try {
-      // When paused, recorder is already stopped, so we just process segments
-      setIsProcessing(true);
-      onRecordingChange(false);
+      // When paused, MediaRecorder is still recording silence
+      // Just unmute and stop normally
+      if (recorder.isPaused()) {
+        recorder.resumeRecording(); // Unmute before stopping
+      }
       setIsPaused(false);
-      
-      // All segments are already in recordingSegments array
-      const allSegments = recordingSegments;
-      
-      if (allSegments.length === 0) {
-        message.error('Không có segment nào để xử lý');
-        setIsProcessing(false);
-        return;
-      }
-
-      // Check if we need to merge multiple segments
-      let finalAudioBlob: Blob;
-      let finalDuration = 0;
-      let totalRecordingStartTime = allSegments[0].startTime;
-
-      if (allSegments.length > 1) {
-        message.loading({ content: '🔀 Đang ghép các đoạn ghi âm...', key: 'mergeAudio' });
-        
-        try {
-          // Merge all segments
-          const mergeResult = await AudioMerger.mergeSegments(allSegments);
-          finalAudioBlob = mergeResult.mergedBlob;
-          finalDuration = mergeResult.totalDuration;
-          totalRecordingStartTime = allSegments[0].startTime; // Use first segment's start time
-          
-          message.success({ content: `✅ Đã ghép ${allSegments.length} đoạn ghi âm`, key: 'mergeAudio', duration: 2 });
-        } catch (error) {
-          message.error({ content: '❌ Lỗi khi ghép audio segments', key: 'mergeAudio', duration: 3 });
-          // Continue with last segment only if merge fails
-          console.error('Merge error:', error);
-          const lastSegment = allSegments[allSegments.length - 1];
-          finalAudioBlob = lastSegment.blob;
-          finalDuration = allSegments.reduce((sum, seg) => sum + seg.duration, 0);
-        }
-      } else {
-        // Single segment, use directly
-        finalAudioBlob = allSegments[0].blob;
-        finalDuration = allSegments[0].duration;
-      }
-
-      // Continue with save process (same as handleStopRecording)
-      await processSaveRecording(finalAudioBlob, finalDuration, totalRecordingStartTime, allSegments);
-      
-      // Clear segments and reset states
-      setRecordingSegments([]);
-      setIsProcessing(false);
+      await handleStopRecording();
     } catch (error: any) {
       message.error(`Lỗi khi dừng: ${error.message}`);
-      setIsProcessing(false);
       setIsPaused(false);
       onRecordingChange(false);
     }
@@ -317,62 +228,27 @@ export const RecordingControls: React.FC<Props> = ({
       setIsProcessing(true);
       const audioBlob = await recorder.stopRecording();
       const recordingDuration = recorder.getCurrentDuration();
-      const segmentEndTime = Date.now();
       onRecordingChange(false);
+      setIsPaused(false); // Reset pause state
 
       // If auto-transcription is active, wait for it to complete
       if (autoTranscribe && speechToTextService.isProcessing()) {
         message.loading({ content: '⏳ Đang chờ chuyển đổi giọng nói hoàn tất...', key: 'waitTranscription' });
-        await speechToTextService.waitForCompletion(10000); // Wait up to 3 seconds
+        await speechToTextService.waitForCompletion(10000);
         message.success({ content: '✅ Chuyển đổi giọng nói hoàn tất', key: 'waitTranscription', duration: 2 });
       }
 
       // Note: audioStream is already stopped by recorder.stopRecording()
       setAudioStream(null);
 
-      // Add current recording as a segment
-      const currentSegment: AudioSegment = {
-        blob: audioBlob,
-        startTime: recordingStartTime,
-        endTime: segmentEndTime,
-        duration: recordingDuration
-      };
-      
-      const allSegments = [...recordingSegments, currentSegment];
-      setRecordingSegments(allSegments);
-
-      // Check if we need to merge multiple segments
-      let finalAudioBlob: Blob = audioBlob;
-      let finalDuration = recordingDuration;
-      let totalRecordingStartTime = recordingStartTime;
-
-      if (allSegments.length > 1) {
-        message.loading({ content: '🔀 Merging audio segments...', key: 'mergeAudio' });
-        
-        try {
-          // Merge all segments
-          const mergeResult = await AudioMerger.mergeSegments(allSegments);
-          finalAudioBlob = mergeResult.mergedBlob;
-          finalDuration = mergeResult.totalDuration;
-          totalRecordingStartTime = allSegments[0].startTime; // Use first segment's start time
-          
-          message.success({ 
-            content: `✅ Merged ${allSegments.length} segments (${(mergeResult.totalDuration / 1000).toFixed(1)}s total)`, 
-            key: 'mergeAudio',
-            duration: 3
-          });
-        } catch (error: any) {
-          message.error({ content: `Failed to merge: ${error.message}`, key: 'mergeAudio' });
-          // Continue with last segment only if merge fails
-          console.error('Merge error:', error);
-        }
-      }
+      // No need to merge segments anymore - recording is continuous with silence during pauses
+      const finalAudioBlob = audioBlob;
+      const finalDuration = recordingDuration;
 
       // Process save recording (save files, metadata, transcription, Word doc)
-      await processSaveRecording(finalAudioBlob, finalDuration, totalRecordingStartTime, allSegments);
+      await processSaveRecording(finalAudioBlob, finalDuration, recordingStartTime);
       
-      // Clear segments and reset processing state
-      setRecordingSegments([]);
+      // Reset processing state
       setIsProcessing(false);
     } catch (error: any) {
       message.error(`Failed to stop recording: ${error.message}`);
@@ -380,12 +256,11 @@ export const RecordingControls: React.FC<Props> = ({
     }
   };
   
-  // Helper function to process saving recording (shared by handleStopRecording and handleStopFromPause)
+  // Helper function to process saving recording
   const processSaveRecording = async (
     finalAudioBlob: Blob,
     finalDuration: number,
-    totalRecordingStartTime: number,
-    allSegments: AudioSegment[]
+    totalRecordingStartTime: number
   ) => {
     // Generate folder and file names with timestamp prefix and meeting title
     const now = new Date(totalRecordingStartTime);
@@ -406,33 +281,10 @@ export const RecordingControls: React.FC<Props> = ({
       const originalHandle = fileManager.getDirHandle(); // Save original handle
       const projectDirHandle = await fileManager.createProjectDirectory(projectName);
       
-      // If multi-part recording, backup original segments
-      if (allSegments.length > 1) {
-        try {
-          // Create backup subdirectory inside project directory
-          fileManager.setDirHandle(projectDirHandle);
-          const backupDirHandle = await fileManager.createProjectDirectory('backup');
-          fileManager.setDirHandle(backupDirHandle);
-          
-          // Save individual segments to backup folder
-          for (let i = 0; i < allSegments.length; i++) {
-            const segmentFileName = `${projectName}_part${i + 1}.webm`;
-            await fileManager.saveAudioFile(
-              allSegments[i].blob, 
-              segmentFileName, 
-              undefined,
-              false
-            );
-          }
-        } catch (error) {
-          console.error('Failed to backup segments:', error);
-        }
-      }
-      
       // Set dirHandle to project directory for main files
       fileManager.setDirHandle(projectDirHandle);
       
-      // Save merged/final audio file
+      // Save audio file (no need to backup segments - recording is continuous)
       await fileManager.saveAudioFile(finalAudioBlob, audioFileName, undefined, true);
 
       // Build and save metadata
@@ -1254,19 +1106,6 @@ export const RecordingControls: React.FC<Props> = ({
                 Ghi âm
               </Button>
               
-              {/* Show Continue Recording button only if there are segments AND not processing */}
-              {recordingSegments.length > 0 && !isProcessing && (
-                <Button
-                  type="primary"
-                  icon={<AudioOutlined />}
-                  onClick={handleContinueRecording}
-                  size="large"
-                  style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}
-                >
-                  Tiếp tục ghi âm
-                </Button>
-              )}
-              
               {isProcessing && (
                 <span style={{ marginLeft: '12px', color: '#1890ff', fontWeight: 600 }}>
                   ⏳ Đang xử lý...
@@ -1358,7 +1197,7 @@ export const RecordingControls: React.FC<Props> = ({
             <Button
               icon={<SettingOutlined />}
               onClick={onShowTranscriptionConfig}
-              disabled={isRecording}
+              disabled={isRecording || isPaused}
               size="large"
               className={!transcriptionConfig ? 'blink-btn' : ''}
             >
@@ -1366,7 +1205,13 @@ export const RecordingControls: React.FC<Props> = ({
             </Button>
 
             {transcriptionConfig && (
-              <Tooltip title={isRecording ? 'Bật/tắt chuyển đổi giọng nói sang văn bản tự động' : 'Chỉ khả dụng khi đang ghi âm'}>
+              <Tooltip title={
+                (isRecording && !isPaused)
+                  ? 'Bật/tắt chuyển đổi giọng nói sang văn bản tự động' 
+                  : isPaused
+                    ? 'Thay đổi sẽ có hiệu lực khi tiếp tục ghi âm'
+                    : 'Chỉ khả dụng khi đang ghi âm'
+              }>
                 <Space>
                   <SoundOutlined style={{ fontSize: '18px', color: autoTranscribe ? '#52c41a' : '#999' }} />
                   <span style={{ fontSize: '14px' }}>Auto 🎤 → 🔠:</span>
@@ -1376,7 +1221,7 @@ export const RecordingControls: React.FC<Props> = ({
                       setAutoTranscribe(checked);
                       // Just toggle the auto-transcribe feature, don't clear existing data
                     }}
-                    disabled={isRecording}
+                    disabled={isRecording && !isPaused}
                     checkedChildren="ON"
                     unCheckedChildren="OFF"
                   />
