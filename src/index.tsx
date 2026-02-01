@@ -5,7 +5,7 @@ import { ConfigProvider, theme, App as AntdApp } from 'antd';
 import './styles/global.css';
 
 // Register service worker for caching and updates (only in production)
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
+if ('serviceWorker' in navigator && (import.meta as any).env?.PROD) {
   window.addEventListener('load', () => {
     // Add timestamp to bypass GitHub Pages cache
     const swUrl = `/sw.js?v=${Date.now()}`;

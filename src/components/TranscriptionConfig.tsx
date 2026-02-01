@@ -572,74 +572,35 @@ export const TranscriptionConfig: React.FC<Props> = ({
         <div
           style={{
             marginTop: 24,
-            padding: 16,
+            padding: 12,
             backgroundColor: '#f6ffed',
             border: '1px solid #b7eb8f',
-            borderRadius: 4
+            borderRadius: 4,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
           }}
         >
-          <div style={{ marginBottom: 16 }}>
-            <strong style={{ color: '#52c41a', fontSize: '16px' }}>🔄 Cài đặt Cập nhật Ứng dụng</strong>
-          </div>
-          
-          <Space direction="vertical" style={{ width: '100%' }} size="middle">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontWeight: 500, marginBottom: 4 }}>Tự động cập nhật</div>
-                <div style={{ fontSize: '13px', color: '#666' }}>
-                  Tự động kiểm tra và thông báo khi có phiên bản mới
-                </div>
-              </div>
-              <Switch
-                checked={localUpdateConfig.autoUpdate}
-                onChange={(checked) => {
-                  const newConfig = { ...localUpdateConfig, autoUpdate: checked };
-                  setLocalUpdateConfig(newConfig);
-                  onUpdateConfigChange?.(newConfig);
-                  UpdateManagerService.saveConfig(newConfig);
-                  message.success(
-                    checked 
-                      ? '✅ Đã bật tự động cập nhật' 
-                      : '⚠️ Đã tắt tự động cập nhật'
-                  );
-                }}
-              />
+          <div>
+            <strong style={{ color: '#52c41a', fontSize: '14px' }}>🔄 Tự động cập nhật</strong>
+            <div style={{ fontSize: '12px', color: '#666', marginTop: 2 }}>
+              Kiểm tra khi mở ứng dụng
             </div>
-
-            {localUpdateConfig.autoUpdate && (
-              <div>
-                <div style={{ fontWeight: 500, marginBottom: 8 }}>Tần suất kiểm tra</div>
-                <Select
-                  value={localUpdateConfig.checkInterval}
-                  onChange={(value) => {
-                    const newConfig = { ...localUpdateConfig, checkInterval: value };
-                    setLocalUpdateConfig(newConfig);
-                    onUpdateConfigChange?.(newConfig);
-                    UpdateManagerService.saveConfig(newConfig);
-                    message.success(`✅ Đã đặt kiểm tra mỗi ${value} phút`);
-                  }}
-                  style={{ width: '100%' }}
-                >
-                  <Select.Option value={15}>15 phút</Select.Option>
-                  <Select.Option value={30}>30 phút</Select.Option>
-                  <Select.Option value={60}>1 giờ</Select.Option>
-                  <Select.Option value={120}>2 giờ</Select.Option>
-                </Select>
-              </div>
-            )}
-          </Space>
-
-          <div style={{ 
-            fontSize: '11px', 
-            color: '#52c41a',
-            background: '#f6ffed',
-            padding: '8px',
-            borderRadius: '4px',
-            marginTop: '12px',
-            border: '1px solid #b7eb8f'
-          }}>
-            ℹ️ <strong>Lưu ý:</strong> Chỉ kiểm tra cập nhật khi có kết nối Internet để đảm bảo ứng dụng vẫn hoạt động offline
           </div>
+          <Switch
+            checked={localUpdateConfig.autoUpdate}
+            onChange={(checked) => {
+              const newConfig = { ...localUpdateConfig, autoUpdate: checked };
+              setLocalUpdateConfig(newConfig);
+              onUpdateConfigChange?.(newConfig);
+              UpdateManagerService.saveConfig(newConfig);
+              message.success(
+                checked 
+                  ? '✅ Đã bật tự động cập nhật' 
+                  : '⚠️ Đã tắt tự động cập nhật'
+              );
+            }}
+          />
         </div>
       </Form>
     </Modal>

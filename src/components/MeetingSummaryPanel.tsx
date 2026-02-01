@@ -83,16 +83,18 @@ export const MeetingSummaryPanel: React.FC<Props> = ({
           children: (
             <>
               {!summary && !isEditing ? (
-                <Empty
-                  description="Chưa có tóm tắt"
+                <div 
                   style={{ padding: '32px 0', cursor: 'pointer' }}
                   onDoubleClick={() => setIsEditing(true)}
+                  title="Double-click để chỉnh sửa"
                 >
-                  <Text type="secondary">
-                    Double-click để thêm tóm tắt thủ công<br/>
-                    hoặc sử dụng "Chuyển đổi giọng nói bằng Gemini AI" để tự động tạo
-                  </Text>
-                </Empty>
+                  <Empty description="Chưa có tóm tắt">
+                    <Text type="secondary">
+                      Double-click để thêm tóm tắt thủ công<br/>
+                      hoặc sử dụng "Chuyển đổi giọng nói bằng Gemini AI" để tự động tạo
+                    </Text>
+                  </Empty>
+                </div>
               ) : isEditing ? (
                 <TextArea
                   value={editedSummary}

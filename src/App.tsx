@@ -174,7 +174,7 @@ export const App: React.FC = () => {
     };
   }, []);
   
-  // Initialize update manager
+  // Initialize update manager - check once on app load
   useEffect(() => {
     const initUpdateManager = async () => {
       await updateManager.initialize();
@@ -185,31 +185,19 @@ export const App: React.FC = () => {
         setShowUpdateNotification(true);
       });
       
-      // Start periodic checks if auto-update is enabled and online
+      // Check for updates once on app load if enabled and online
       if (updateConfig.autoUpdate && navigator.onLine) {
-        updateManager.startPeriodicCheck(updateConfig.checkInterval);
+        await updateManager.checkForUpdates();
       }
     };
     
     initUpdateManager();
-    
-    // Cleanup on unmount
-    return () => {
-      updateManager.stopPeriodicCheck();
-    };
-  }, [updateConfig.autoUpdate, updateConfig.checkInterval]);
+  }, []); // Run once on mount
   
   // Handle auto-update config changes
   const handleUpdateConfigChange = (newConfig: typeof updateConfig) => {
     setUpdateConfig(newConfig);
     UpdateManagerService.saveConfig(newConfig);
-    
-    // Restart/stop periodic checks based on new config
-    if (newConfig.autoUpdate && navigator.onLine) {
-      updateManager.startPeriodicCheck(newConfig.checkInterval);
-    } else {
-      updateManager.stopPeriodicCheck();
-    }
   };
   
   // Function to show options modal when file is too large
