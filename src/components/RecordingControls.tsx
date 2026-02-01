@@ -900,6 +900,7 @@ export const RecordingControls: React.FC<Props> = ({
           setLastProjectName(newProjectName);
         } else {
           message.error('No save location available. Please use "Select Folder" first or load a project.');
+          return; // Don't call onSaveComplete if save failed
         }
       } else {
         // Download updated files (fallback for unsupported browsers)

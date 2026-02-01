@@ -116,9 +116,18 @@ export const MeetingSummaryPanel: React.FC<Props> = ({
                     transition: 'box-shadow 0.2s'
                   }}
                   title="Double-click để chỉnh sửa"
-                >
-                  {summary}
-                </div>
+                  dangerouslySetInnerHTML={{
+                    __html: summary
+                      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // **bold** -> <strong>
+                      .replace(/\*(.*?)\*/g, '<em>$1</em>') // *italic* -> <em>
+                      .replace(/^### (.*$)/gim, '<h3 style="font-size: 16px; font-weight: 600; margin: 12px 0 8px 0;">$1</h3>') // ### heading
+                      .replace(/^## (.*$)/gim, '<h2 style="font-size: 18px; font-weight: 600; margin: 16px 0 8px 0;">$1</h2>') // ## heading
+                      .replace(/^# (.*$)/gim, '<h1 style="font-size: 20px; font-weight: 600; margin: 16px 0 8px 0;">$1</h1>') // # heading
+                      .replace(/^[\-\*\+] (.*$)/gim, '<li style="margin-left: 20px;">$1</li>') // - bullet
+                      .replace(/^(\d+)\. (.*$)/gim, '<li style="margin-left: 20px; list-style-type: decimal;">$2</li>') // 1. numbered
+                      .replace(/\n/g, '<br>') // newline -> <br>
+                  }}
+                />
               )}
             </>
           )

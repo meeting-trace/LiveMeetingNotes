@@ -1113,6 +1113,12 @@ export const App: React.FC = () => {
         setGeminiSummary(backup.geminiSummary);
       }
       
+      // Update snapshots and unsaved changes flag
+      setHasUnsavedChanges(!backup.isSaved);
+      setSavedNotesSnapshot(backup.notes);
+      setSavedSpeakersSnapshot(new Map(backup.speakersMap));
+      setSavedTranscriptionsSnapshot(backup.transcriptions ? [...backup.transcriptions] : []);
+      
       setShowBackupDialog(false);
       console.log('✅ Backup restored successfully, speakersMap size:', backup.speakersMap.size);
     }
