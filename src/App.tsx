@@ -2016,8 +2016,8 @@ export const App: React.FC = () => {
           onMarkUnsaved={() => setHasUnsavedChanges(true)}
         />
       )}
-      {/* Transcription Panel - Only show when online and configured */}
-      {isOnline && transcriptionConfig && (
+      {/* Transcription Panel - Show when has transcriptions OR (online and configured for real-time) */}
+      {(transcriptions.length > 0 || (isOnline && transcriptionConfig)) && (
         <TranscriptionPanel
           transcriptions={transcriptions}
           isTranscribing={isRecording}
@@ -2028,8 +2028,9 @@ export const App: React.FC = () => {
           canRefineWithAI={
             !isRecording && 
             transcriptions.length > 0 && 
-            (!!transcriptionConfig.geminiApiKey || !!transcriptionConfig.apiKey) &&
-            !!transcriptionConfig.geminiModel
+            (!!transcriptionConfig?.geminiApiKey || !!transcriptionConfig?.apiKey) &&
+            !!transcriptionConfig?.geminiModel &&
+            isOnline
           }
         />
       )}

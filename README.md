@@ -15,6 +15,9 @@
 
 - 🎙️ **Audio Recording** - Ghi âm chất lượng cao WebM (Opus codec, ~140MB/2.5h)
 - 🎤 **Speech-to-Text** - Chuyển đổi giọng nói sang văn bản real-time (Web Speech API - Miễn phí)
+  - ⚠️ **Cần internet:** Audio stream đến Google servers để nhận diện (Chrome/Edge)
+  - Miễn phí, không cần API key
+  - Real-time transcription với SmartTranscriptManager
 - 🤖 **AI Text Refinement** - Chuẩn hóa và làm sạch văn bản với Google Gemini AI (Miễn phí với API Key)
   - Sửa lỗi nhận diện từ Web Speech API
   - Loại bỏ từ thừa, từ đệm (à, ừm, thì...)
@@ -30,7 +33,8 @@
 - 💾 **Local File Storage** - Lưu files trực tiếp vào folder (Chrome/Edge)
 - 🔄 **Auto-backup & Recovery** - Tự động backup mỗi 3s, khôi phục khi crash
 - 📂 **Load Project** - Load lại project cũ để chỉnh sửa, bao gồm cả raw transcripts cho AI refinement
-- 📴 **Offline Support** - Hoạt động 100% offline sau lần load đầu (trừ AI refinement cần internet)
+- 📴 **Offline Support** - Hoạt động offline sau lần load đầu (xem/chỉnh sửa notes, audio playback)
+  - ⚠️ Speech-to-Text và AI Refinement cần internet
 - 🌐 **Cross-Platform** - Tương thích Chrome, Edge, Firefox, Safari
 - 📄 **Word Export** - Export file .docx để chia sẻ
 

@@ -91,10 +91,23 @@ Tất cả dữ liệu được lưu **100% trên máy tính của bạn**, khô
 - Download HTML, CSS, JavaScript từ GitHub Pages
 - Download external libraries (WaveSurfer.js, Quill.js, RecordRTC, Ant Design)
 
-#### Sau khi đã load:
-- **🚫 KHÔNG có kết nối nào**
-- Hoạt động 100% offline
-- Service Worker cache đã có sẵn tất cả assets
+#### Khi sử dụng Speech-to-Text:
+- **Web Speech API** (Chrome/Edge) stream audio đến Google servers
+- Miễn phí, không cần API key
+- Audio được xử lý real-time và trả về kết quả
+
+#### Khi sử dụng AI Refinement:
+- Gửi transcripts đến Google Gemini API
+- Cần API key (miễn phí)
+- Nhận văn bản đã chuẩn hóa và tóm tắt cuộc họp
+
+#### Chế độ offline (sau khi đã load):
+- ✅ Xem/chỉnh sửa notes
+- ✅ Phát audio
+- ✅ Load/save projects
+- ✅ Export Word
+- ❌ KHÔNG thể Speech-to-Text mới
+- ❌ KHÔNG thể AI Refinement
 
 ### Không có third-party services:
 - ❌ Google Analytics
@@ -114,7 +127,9 @@ Tất cả dữ liệu được lưu **100% trên máy tính của bạn**, khô
 
 **In Transit:**
 - HTTPS cho lần đầu load app từ GitHub Pages
-- Không có data transmission sau đó
+- ⚠️ **Web Speech API:** Audio stream được mã hóa HTTPS gửi đến Google servers
+- ⚠️ **Gemini API:** Transcripts được mã hóa HTTPS gửi đến Google servers
+- **Khuyến cáo:** Không sử dụng với thông tin nhạy cảm, mật, bảo mật cao
 
 ### 2. Code Integrity
 - **Open Source:** Source code công khai tại GitHub
