@@ -54,7 +54,7 @@ export class WordExporter {
             
             // Meeting information
             new Paragraph({
-              text: 'THÔNG TIN CUỘC HỌP',
+              text: 'THÔNG TIN CHUNG',
               heading: HeadingLevel.HEADING_2,
               spacing: { before: 200, after: 200 }
             }),

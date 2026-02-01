@@ -1903,6 +1903,15 @@ export const App: React.FC = () => {
 
       <MetadataPanel meetingInfo={meetingInfo} onChange={setMeetingInfo} />
 
+      {/* Meeting Summary Panel - Show when summary is available */}
+      {geminiSummary && (
+        <MeetingSummaryPanel
+          summary={geminiSummary}
+          onSummaryChange={setGeminiSummary}
+          onMarkUnsaved={() => setHasUnsavedChanges(true)}
+        />
+      )}
+
       <RecordingControls
         folderPath={folderPath}
         onFolderSelect={setFolderPath}
@@ -1947,14 +1956,6 @@ export const App: React.FC = () => {
             (!!transcriptionConfig.geminiApiKey || !!transcriptionConfig.apiKey) &&
             !!transcriptionConfig.geminiModel
           }
-        />
-      )}
-
-      {/* Meeting Summary Panel - Show when summary is available */}
-      {geminiSummary && (
-        <MeetingSummaryPanel
-          summary={geminiSummary}
-          onSummaryChange={setGeminiSummary}
         />
       )}
 

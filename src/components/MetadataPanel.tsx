@@ -44,7 +44,7 @@ export const MetadataPanel: React.FC<Props> = ({ meetingInfo, onChange }) => {
       items={[
         {
           key: '1',
-          label: '📋 Thông tin cuộc họp',
+          label: '📋 Thông tin chung',
           children: (
             <div className="metadata-form">
               <div className="form-row">
