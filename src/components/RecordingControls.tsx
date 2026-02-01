@@ -1196,25 +1196,26 @@ export const RecordingControls: React.FC<Props> = ({
             </Button>
           )}
 
-          {/* Speech-to-Text Config Button */}
-          {navigator.onLine && (
-            <Button
-              icon={<SettingOutlined />}
-              onClick={onShowTranscriptionConfig}
-              disabled={isRecording || isPaused}
-              size="large"
-              className={!transcriptionConfig ? 'blink-btn' : ''}
-            >
-              Cấu hình Speech-to-Text
-            </Button>
+          {/* Folder path display */}
+          {folderPath && (
+            <span style={{ fontSize: '13px', color: '#666' }}>
+              📁 <strong>{folderPath}</strong>
+            </span>
           )}
         </Space>
 
-        {/* Folder path display */}
-        {folderPath && (
-          <span style={{ fontSize: '13px', color: '#666', marginLeft: 'auto' }}>
-            📁 <strong>{folderPath}</strong>
-          </span>
+        {/* Speech-to-Text Config Button */}
+        {navigator.onLine && (
+          <Button
+            icon={<SettingOutlined />}
+            onClick={onShowTranscriptionConfig}
+            disabled={isRecording || isPaused}
+            size="large"
+            className={!transcriptionConfig ? 'blink-btn' : ''}
+            style={{ marginLeft: 'auto' }}
+          >
+            Cấu hình Speech-to-Text
+          </Button>
         )}
       </div>
 
