@@ -55,6 +55,7 @@ interface Props {
   transcriptions: TranscriptionResult[];
   onSpeakerChange?: (lineIndex: number, speaker: string) => void; // Add handler for speaker changes
   geminiSummary?: string; // Add geminiSummary prop
+  onFileManagerReady?: (fileManager: FileManagerService) => void; // Pass fileManager instance to parent
 }
 
 export const RecordingControls: React.FC<Props> = ({
@@ -78,7 +79,8 @@ export const RecordingControls: React.FC<Props> = ({
   transcriptionConfig,
   onNewTranscription,
   transcriptions,
-  geminiSummary
+  geminiSummary,
+  onFileManagerReady
 }) => {
   const { message } = App.useApp();
   const [duration, setDuration] = useState<number>(0);
@@ -87,6 +89,13 @@ export const RecordingControls: React.FC<Props> = ({
   const [lastProjectName, setLastProjectName] = useState<string>('');
   const [lastRecordingDuration, setLastRecordingDuration] = useState<number>(0);
   const [autoTranscribe, setAutoTranscribe] = useState<boolean>(true);
+
+  // Notify parent about fileManager instance on mount
+  useEffect(() => {
+    if (onFileManagerReady) {
+      onFileManagerReady(fileManager);
+    }
+  }, [fileManager, onFileManagerReady]);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false); // Track save operations

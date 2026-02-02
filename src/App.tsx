@@ -22,6 +22,7 @@ export const App: React.FC = () => {
   const [folderPath, setFolderPath] = useState<string>('');
   const [isRecording, setIsRecording] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const fileManagerRef = useRef<FileManagerService | undefined>(undefined); // Shared fileManager instance
   const [meetingInfo, setMeetingInfo] = useState<MeetingInfo>({
     title: '',
     date: new Date().toISOString().split('T')[0],
@@ -600,7 +601,8 @@ export const App: React.FC = () => {
         requestDelaySeconds,
         maxDurationMinutes,
         meetingStartTime,
-        config.summaryPrompt
+        config.summaryPrompt,
+        fileManagerRef.current // Pass fileManager for debug logs
       );
 
       progressModal.destroy();
@@ -726,7 +728,8 @@ export const App: React.FC = () => {
             false,
             maxFileSizeMB,
             meetingStartTime,
-            config.summaryPrompt
+            config.summaryPrompt,
+            fileManagerRef.current // Pass fileManager for debug logs
           );
 
           // Adjust timestamps to match original audio
@@ -1029,7 +1032,8 @@ export const App: React.FC = () => {
               false,
               maxFileSizeMB,
               meetingStartTime,
-              config?.summaryPrompt
+              config?.summaryPrompt,
+              fileManagerRef.current // Pass fileManager for debug logs
             );
 
             // Save summary if available
@@ -1949,7 +1953,8 @@ export const App: React.FC = () => {
         transcriptions, // Primary data
         rawData, // Supplementary data
         selectedModel, // Pass required model name
-        updateProgress
+        updateProgress,
+        fileManagerRef.current // Pass fileManager for debug logs
       );
 
       // Convert to TranscriptionResult format
@@ -2136,6 +2141,7 @@ export const App: React.FC = () => {
         onNewTranscription={handleNewTranscription}
         transcriptions={transcriptions}
         geminiSummary={geminiSummary}
+        onFileManagerReady={(fm) => { fileManagerRef.current = fm; }}
       />
       {/* Meeting Summary Panel - Always show to allow manual input */}
       <MeetingSummaryPanel

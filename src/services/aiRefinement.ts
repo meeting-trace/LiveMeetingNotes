@@ -1,4 +1,5 @@
 import type { TranscriptionResult } from '../types/types';
+import type { FileManagerService } from './fileManager';
 
 export interface RawTranscriptData {
   text: string;
@@ -45,6 +46,84 @@ export class AIRefinementService {
     // Use 3 as average + reduced overhead for optimized prompt
     const estimatedTokens = Math.ceil(totalChars / 3) + 500; // +500 for compact prompt overhead (reduced from 1000)
     return estimatedTokens;
+  }
+
+  /**
+   * Save Gemini API request and response to file for debugging
+   * Only saves prompt text and response, excludes large binary data (audio base64)
+   * Saves to project folder's debug-logs/ directory when folder is selected
+   */
+  private static async saveGeminiDebugLog(
+    requestBody: any,
+    responseData: any,
+    metadata: { type: 'text' | 'audio'; timestamp: string; error?: string },
+    fileManager?: FileManagerService
+  ): Promise<void> {
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `gemini-debug-${metadata.type}-${timestamp}.json`;
+      
+      // Extract only prompt text from request (exclude base64 audio data)
+      let requestSummary: any = {
+        generationConfig: requestBody.generationConfig,
+        safetySettings: requestBody.safetySettings
+      };
+
+      // Extract prompt text based on request type
+      if (requestBody.contents && Array.isArray(requestBody.contents)) {
+        requestSummary.contents = requestBody.contents.map((content: any) => {
+          if (content.parts && Array.isArray(content.parts)) {
+            return {
+              parts: content.parts.map((part: any) => {
+                // Keep text prompts, exclude base64 audio data
+                if (part.text) {
+                  return { text: part.text };
+                } else if (part.inline_data) {
+                  // Replace large base64 data with summary info
+                  return {
+                    inline_data: {
+                      mime_type: part.inline_data.mime_type,
+                      data: `[EXCLUDED: ${part.inline_data.mime_type} data, size: ${part.inline_data.data?.length || 0} chars]`
+                    }
+                  };
+                }
+                return part;
+              })
+            };
+          }
+          return content;
+        });
+      }
+      
+      const debugData = {
+        metadata: {
+          ...metadata,
+          savedAt: new Date().toISOString(),
+          note: 'Audio base64 data excluded to reduce file size'
+        },
+        request: requestSummary,
+        response: responseData
+      };
+
+      // Save to project folder's debug-logs/ if fileManager has folder selected
+      if (fileManager) {
+        try {
+          await fileManager.saveMetadataFile(debugData, filename, 'debug-logs', true);
+          console.log(`📁 Gemini debug log saved to project: debug-logs/${filename}`);
+        } catch (error: any) {
+          // If no folder selected, log info (don't save)
+          if (error.message === 'No folder selected') {
+            console.log(`ℹ️ Debug log not saved (no project folder selected): ${filename}`);
+          } else {
+            console.error('Failed to save debug log to project folder:', error);
+          }
+        }
+      } else {
+        console.log(`ℹ️ Debug log not saved (fileManager not available): ${filename}`);
+      }
+    } catch (error) {
+      console.error('Failed to prepare debug log:', error);
+    }
   }
 
   /**
@@ -278,7 +357,8 @@ export class AIRefinementService {
     transcriptions: TranscriptionResult[], // Primary data source
     rawData: RawTranscriptData[], // Optional: supplementary raw data
     modelName: string, // REQUIRED: specific Gemini model (e.g., "models/gemini-2.5-flash")
-    onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void,
+    fileManager?: FileManagerService // Optional: for saving debug logs to project folder
   ): Promise<RefinedSegment[]> {
     // Check quota estimate first
     const quotaCheck = this.checkQuotaEstimate(transcriptions);
@@ -287,11 +367,11 @@ export class AIRefinementService {
     // If estimated tokens exceed limit, use batch processing
     if (quotaCheck.estimatedTokens > this.FREE_TIER_LIMITS.TPD * 0.8) { // 80% threshold
       console.log('🔄 Using batch processing to avoid quota limits...');
-      return this.refineTranscriptsInBatches(apiKey, transcriptions, rawData, modelName, onProgress);
+      return this.refineTranscriptsInBatches(apiKey, transcriptions, rawData, modelName, onProgress, fileManager);
     }
 
     // Otherwise, process normally
-    return this.refineWithGemini(apiKey, transcriptions, rawData, modelName, onProgress);
+    return this.refineWithGemini(apiKey, transcriptions, rawData, modelName, onProgress, fileManager);
   }
 
   /**
@@ -302,7 +382,8 @@ export class AIRefinementService {
     transcriptions: TranscriptionResult[],
     rawData: RawTranscriptData[],
     modelName: string,
-    onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void,
+    fileManager?: FileManagerService
   ): Promise<RefinedSegment[]> {
     const batches = this.splitIntoBatches(transcriptions, this.BATCH_SIZE);
     const allRefinedSegments: RefinedSegment[] = [];
@@ -331,7 +412,8 @@ export class AIRefinementService {
               const totalProgress = batchProgress + (subProgress / batches.length);
               onProgress(Math.min(totalProgress, 99));
             }
-          }
+          },
+          fileManager
         );
 
         allRefinedSegments.push(...refinedBatch);
@@ -370,7 +452,8 @@ export class AIRefinementService {
     transcriptions: TranscriptionResult[], // Primary data
     rawData: RawTranscriptData[], // Supplementary data
     modelName: string, // REQUIRED: specific model like "models/gemini-2.5-flash"
-    onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void,
+    fileManager?: FileManagerService
   ): Promise<RefinedSegment[]> {
     if (!apiKey || apiKey.trim().length === 0) {
       throw new Error('API Key is required for AI refinement');
@@ -420,42 +503,44 @@ export class AIRefinementService {
       console.log(`📡 Endpoint: ${endpoint}`);
 
       // Call Gemini API
+      const requestBody = {
+        contents: [{
+          parts: [{
+            text: prompt
+          }]
+        }],
+        generationConfig: {
+          temperature: 0.2,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 8192,
+        },
+        safetySettings: [
+          {
+            category: "HARM_CATEGORY_HARASSMENT",
+            threshold: "BLOCK_NONE"
+          },
+          {
+            category: "HARM_CATEGORY_HATE_SPEECH",
+            threshold: "BLOCK_NONE"
+          },
+          {
+            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            threshold: "BLOCK_NONE"
+          },
+          {
+            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+            threshold: "BLOCK_NONE"
+          }
+        ]
+      };
+
       const response = await fetch(`${endpoint}?key=${apiKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: prompt
-            }]
-          }],
-          generationConfig: {
-            temperature: 0.2,
-            topK: 40,
-            topP: 0.95,
-            maxOutputTokens: 8192,
-          },
-          safetySettings: [
-            {
-              category: "HARM_CATEGORY_HARASSMENT",
-              threshold: "BLOCK_NONE"
-            },
-            {
-              category: "HARM_CATEGORY_HATE_SPEECH",
-              threshold: "BLOCK_NONE"
-            },
-            {
-              category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-              threshold: "BLOCK_NONE"
-            },
-            {
-              category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-              threshold: "BLOCK_NONE"
-            }
-          ]
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (onProgress) onProgress(70);
@@ -526,6 +611,13 @@ export class AIRefinementService {
       const result = await response.json();
       
       if (onProgress) onProgress(90);
+
+      // 💾 Save debug log with request and response
+      await this.saveGeminiDebugLog(requestBody, result, {
+        type: 'text',
+        timestamp: new Date().toISOString(),
+        error: result.error ? result.error.message : undefined
+      }, fileManager);
 
       // Parse AI response
       const refinedSegments = this.parseAIResponse(result);
@@ -698,7 +790,8 @@ Giữ timestamp/audioTimeMs gốc. Chỉ trả về JSON array.`;
     skipSizeCheck: boolean = false, // Skip size check when called from auto-split flow
     maxFileSizeMB: number = 20, // Maximum file size in MB (from config)
     meetingStartTime?: Date, // Meeting start time for accurate timestamp calculation
-    summaryPrompt?: string // OPTIONAL: user-provided prompt text for the summary field
+    summaryPrompt?: string, // OPTIONAL: user-provided prompt text for the summary field
+    fileManager?: FileManagerService // Optional: for saving debug logs to project folder
   ): Promise<{ results: TranscriptionResult[], summary?: string }> {
     if (!apiKey || apiKey.trim().length === 0) {
       throw new Error('Gemini API Key is required');
@@ -848,6 +941,13 @@ CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu g�
 
       const data = await response.json();
       if (onProgress) onProgress(90);
+
+      // 💾 Save debug log with request and response
+      await this.saveGeminiDebugLog(requestBody, data, {
+        type: 'audio',
+        timestamp: new Date().toISOString(),
+        error: data.error ? data.error.message : undefined
+      }, fileManager);
 
       // Parse response (now returns { results, summary })
       const parsed = this.parseGeminiAudioTranscription(data, meetingStartTime);
@@ -1136,7 +1236,8 @@ CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu g�
     requestDelaySeconds: number = 5,
     maxDurationMinutes: number = 60,
     meetingStartTime?: Date, // Meeting start time for accurate timestamp calculation
-    summaryPrompt?: string // OPTIONAL: user-provided prompt text for the summary field
+    summaryPrompt?: string, // OPTIONAL: user-provided prompt text for the summary field
+    fileManager?: FileManagerService // Optional: for saving debug logs to project folder
   ): Promise<{ results: TranscriptionResult[], summary?: string }> {
     const maxSizeMB = maxFileSizeMB;
 
@@ -1198,7 +1299,8 @@ CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu g�
           true, // skipSizeCheck = true (chunks already validated)
           maxSizeMB, // Pass maxFileSizeMB to child call
           meetingStartTime, // Pass meeting start time for accurate timestamps
-          summaryPrompt // Pass user-provided summary prompt through
+          summaryPrompt, // Pass user-provided summary prompt through
+          fileManager // Pass fileManager for debug logs
         );
 
         // Adjust timestamps for this chunk
@@ -1321,20 +1423,9 @@ CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu g�
         console.log('✂️ Extracted JSON from markdown code block');
       }
 
-      // Clean control characters and invalid escape sequences
-      // Remove control characters except \n, \r, \t which are valid in JSON strings
+      // Clean control characters ONLY (keep valid JSON whitespace)
+      // Remove only control characters that are invalid in JSON (0x00-0x1F except \t, \n, \r)
       jsonText = jsonText.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
-      
-      // Fix common issues with escape sequences
-      jsonText = jsonText
-        .replace(/\\\\/g, '\\') // Fix double backslashes
-        .replace(/\\n/g, ' ')    // Replace \n with space in text content
-        .replace(/\\r/g, '')     // Remove \r
-        .replace(/\\t/g, ' ')    // Replace \t with space
-        .replace(/\n/g, ' ')     // Replace actual newlines with space
-        .replace(/\r/g, '')      // Remove actual carriage returns
-        .replace(/\t/g, ' ')     // Replace actual tabs with space
-        .replace(/\s+/g, ' ');   // Collapse multiple spaces
 
       console.log('🧹 Cleaned JSON length:', jsonText.length, 'characters');
       console.log('📄 JSON to parse (first 500):', jsonText.substring(0, 500) + '...');
@@ -1379,7 +1470,12 @@ CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu g�
       // Extract summary if available
       const summary = parsed.summary || undefined;
       if (summary) {
-        console.log('📋 Summary:', summary);
+        console.log('📋 Summary extracted successfully');
+        console.log('📋 Summary length:', summary.length, 'characters');
+        console.log('📋 Summary preview:', summary.substring(0, 200) + (summary.length > 200 ? '...' : ''));
+      } else {
+        console.warn('⚠️ No summary found in Gemini response');
+        console.log('📋 Response structure:', Object.keys(parsed));
       }
       
       // Log first few segments for debugging
