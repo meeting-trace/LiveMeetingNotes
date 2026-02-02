@@ -133,9 +133,9 @@ export class SpeechToTextService {
           const result = event.results[i];
           const isFinal = result.isFinal;
           
-          // 🔍 DEBUG: Log chi tiết từng result
-          console.log(`\n🎯 Result[${i}] (${isFinal ? 'FINAL' : 'INTERIM'}):`);  
-          console.log('  📝 Alternatives count:', result.length);
+          // // 🔍 DEBUG: Log chi tiết từng result
+          // console.log(`\n🎯 Result[${i}] (${isFinal ? 'FINAL' : 'INTERIM'}):`);  
+          // console.log('  📝 Alternatives count:', result.length);
           
           // ✨ Tìm alternative có confidence cao nhất VÀ ngắn nhất (nếu là interim)
           let bestAlternative = result[0];
@@ -167,9 +167,9 @@ export class SpeechToTextService {
           // ⚡ Đánh dấu kết quả ngắn để ưu tiên tích lũy (≤10 từ)
           const isShortChunk = wordCount <= 10;
           
-          console.log(`  ✅ SELECTED (Best): "${transcript}" (${(confidence * 100).toFixed(2)}%, ${wordCount} words)`);
-          console.log(`  🎬 Action: PROCESS (${isShortChunk ? 'SHORT - good for accumulation' : 'LONG - use as fallback'})`);
-          console.log('================================\n');
+          // console.log(`  ✅ SELECTED (Best): "${transcript}" (${(confidence * 100).toFixed(2)}%, ${wordCount} words)`);
+          // console.log(`  🎬 Action: PROCESS (${isShortChunk ? 'SHORT - good for accumulation' : 'LONG - use as fallback'})`);
+          // console.log('================================\n');
 
           // ✨ Luôn process để hiển thị, nhưng đánh dấu kết quả ngắn
           this.smartManager.processResult({

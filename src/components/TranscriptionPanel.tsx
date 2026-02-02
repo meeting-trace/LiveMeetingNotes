@@ -24,8 +24,10 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
   canRefineWithAI
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState<number>(100);
-  const [isExpanded, setIsExpanded] = useState<boolean>(false);
+  const [isResizing, setIsResizing] = useState<boolean>(false);
+  const [isManuallyResized, setIsManuallyResized] = useState<boolean>(false);
 
   // Auto-scroll to bottom when new transcription arrives
   useEffect(() => {
@@ -34,10 +36,12 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
     }
   }, [transcriptions]);
 
-  // Auto-expand height based on content
+  // Auto-expand height based on content (only if not manually resized)
   useEffect(() => {
+    if (isManuallyResized) return; // Skip auto-resize if user manually resized
+    
     const updateHeight = () => {
-      if (scrollRef.current && transcriptions.length > 0 && isExpanded) {
+      if (scrollRef.current && transcriptions.length > 0) {
         const scrollHeight = scrollRef.current.scrollHeight;
         const newHeight = Math.min(scrollHeight + 80, 500);
         const calculatedHeight = Math.max(newHeight, 100);
@@ -49,7 +53,43 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
     };
 
     updateHeight();
-  }, [transcriptions, isExpanded]);
+  }, [transcriptions, isManuallyResized]);
+
+  // Handle resize dragging
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing || !containerRef.current) return;
+      
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const newHeight = e.clientY - containerRect.top;
+      const clampedHeight = Math.max(100, Math.min(newHeight, window.innerHeight - 100));
+      setContentHeight(clampedHeight);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'nwse-resize';
+      document.body.style.userSelect = 'none';
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+    setIsManuallyResized(true); // Mark as manually resized
+  }, []);
 
   const formatTime = (isoTime: string): string => {
     const date = new Date(isoTime);
@@ -129,9 +169,8 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
     return 'Thấp';
   }, []);
 
-  const handleCollapseChange = (keys: string | string[]) => {
-    const activeKeys = Array.isArray(keys) ? keys : [keys];
-    setIsExpanded(activeKeys.includes('1'));
+  const handleCollapseChange = (_keys: string | string[]) => {
+    // Collapse change handler
   };
 
   return (
@@ -188,12 +227,15 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
             </div>
           ),
           children: (
-            <div style={{ 
-              height: `${contentHeight}px`,
-              display: 'flex',
-              flexDirection: 'column',
-              transition: 'height 0.3s ease'
-            }}>
+            <div 
+              ref={containerRef}
+              style={{ 
+                height: `${contentHeight}px`,
+                display: 'flex',
+                flexDirection: 'column',
+                transition: isResizing ? 'none' : 'height 0.3s ease',
+                position: 'relative'
+              }}>
               {transcriptions.length === 0 ? (
                 <div style={{ 
                   height: '100%', 
@@ -243,6 +285,31 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
                   </div>
                 </>
               )}
+              
+              {/* Resize handle - góc dưới bên phải */}
+              <div
+                onMouseDown={handleResizeStart}
+                style={{
+                  position: 'absolute',
+                  bottom: 0,
+                  right: 0,
+                  width: '20px',
+                  height: '20px',
+                  cursor: 'nwse-resize',
+                  background: 'linear-gradient(135deg, transparent 0%, transparent 50%, #d9d9d9 50%, #d9d9d9 100%)',
+                  opacity: 0.6,
+                  transition: 'opacity 0.2s',
+                  zIndex: 10
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.opacity = '1';
+                }}
+                onMouseLeave={(e) => {
+                  if (!isResizing) {
+                    e.currentTarget.style.opacity = '0.6';
+                  }
+                }}
+              />
             </div>
           )
         }

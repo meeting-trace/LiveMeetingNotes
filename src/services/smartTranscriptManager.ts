@@ -268,11 +268,11 @@ export class SmartTranscriptManager {
     }
     
     // Text thực sự khác → Ghép vào cuối
-    console.log('ℹ️ Text seems different, APPENDING:', {
-      old: this.interimText.substring(0, 50) + '...',
-      new: newText.substring(0, 50) + '...',
-      matchRatio: (matchRatio * 100).toFixed(1) + '%'
-    });
+    // console.log('ℹ️ Text seems different, APPENDING:', {
+    //   old: this.interimText.substring(0, 50) + '...',
+    //   new: newText.substring(0, 50) + '...',
+    //   matchRatio: (matchRatio * 100).toFixed(1) + '%'
+    // });
     return this.interimText + ' ' + newText;
   }
 
