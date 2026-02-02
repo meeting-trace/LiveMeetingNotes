@@ -67,8 +67,7 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
   useEffect(() => {
     if (isManuallyResized) return; // Skip auto-resize if user manually resized
     
-    // Debounce to avoid too frequent updates
-    const timer = setTimeout(() => {
+    const calculateHeight = () => {
       if (scrollRef.current && transcriptions.length > 0) {
         const scrollHeight = scrollRef.current.scrollHeight;
         const newHeight = Math.min(scrollHeight + 80, 500);
@@ -79,9 +78,18 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
       } else if (transcriptions.length === 0) {
         setContentHeight(prev => prev === 100 ? prev : 100);
       }
-    }, 100);
+    };
+    
+    // Initial calculation (debounced for real-time updates)
+    const timer1 = setTimeout(calculateHeight, 100);
+    
+    // Recalculate after DOM fully renders (for batch loads like load project)
+    const timer2 = setTimeout(calculateHeight, 250);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
   }, [transcriptions, isManuallyResized]);
 
   // Handle resize dragging
