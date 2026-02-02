@@ -119,11 +119,6 @@ export class SpeechToTextService {
         onTranscription(result);
       });
       
-      // ✨ Set idle callback để restart recognition khi phát hiện idle
-      this.smartManager.setIdleCallback(() => {
-        this.restartRecognition();
-      });
-
       // const browserInfo = this.smartManager.getBrowserInfo();
       console.log(`🌐 Using Web Speech API`);
 
@@ -516,42 +511,6 @@ export class SpeechToTextService {
     console.log('🛑 Transcription stopped');
   }
   
-  /**
-   * ✨ Restart recognition (dùng khi phát hiện idle để "đánh thức" nhận diện)
-   */
-  private restartRecognition(): void {
-    if (!this.isTranscribing || !this.recognition) {
-      console.warn('⚠️ Cannot restart: not transcribing or no recognition instance');
-      return;
-    }
-    
-    try {
-      console.log('🔄 Restarting speech recognition to wake it up...');
-      
-      // Stop và start lại để "đánh thức"
-      this.recognition.stop();
-      
-      // Đợi một chút rồi start lại
-      setTimeout(() => {
-        if (this.recognition && this.isTranscribing) {
-          try {
-            this.recognition.start();
-            console.log('✅ Speech recognition restarted successfully');
-          } catch (e) {
-            // Nếu đang chạy rồi thì bỏ qua
-            if ((e as any).message?.includes('already started')) {
-              console.log('ℹ️ Recognition already running, skip restart');
-            } else {
-              console.error('❌ Failed to restart recognition:', e);
-            }
-          }
-        }
-      }, 200);
-    } catch (e) {
-      console.error('❌ Error during restart:', e);
-    }
-  }
-
   /**
    * Transcribe entire audio file (for loaded projects)
    */

@@ -39,21 +39,10 @@ export class SmartTranscriptManager {
   // ✨ Lưu timestamp khi bắt đầu tích lũy (dùng cho segment chính thức)
   private accumulationStartTime: string = '';
   private accumulationStartAudioTimeMs: number = 0;
-  
-  // ✨ Idle detection: tự động commit khi không có text mới trong 2s
-  private idleTimer: any = null;
-  private lastUpdateTime: number = 0;
-  private idleTimeout: number = 2000; // 2 giây
-  private onIdleCommit: (() => void) | null = null;
 
   constructor() {
     this.browserBehavior = this.detectBrowser();
     console.log('🌐 Using SmartTranscriptManager:', this.browserBehavior.name);
-  }
-
-  // ✨ Set callback để restart recognition khi idle
-  setIdleCallback(callback: () => void) {
-    this.onIdleCommit = callback;
   }
 
   initialize(cb: (r: TranscriptionResult) => void) {
@@ -66,9 +55,7 @@ export class SmartTranscriptManager {
     this.transcriptionStartTime = Date.now();
     this.accumulationStartTime = '';
     this.accumulationStartAudioTimeMs = 0;
-    this.lastUpdateTime = Date.now();
     this.clearSilenceTimer();
-    this.clearIdleTimer();
   }
 
   processResult(r: { transcript: string; confidence: number; isFinal: boolean; speaker?: string; isShortChunk?: boolean }) {
@@ -134,10 +121,6 @@ export class SmartTranscriptManager {
         
         this.interimText = accumulatedText;
         displayText = accumulatedText;
-        
-        // ⚡ Cập nhật thời gian update cuối và restart idle timer
-        this.lastUpdateTime = Date.now();
-        this.startIdleTimer(audioTimeMs, timestamp, r.confidence, speaker);
         
         // console.log('🔄 INTERIM (SHORT chunk - accumulated):', {
         //   newChunk: text,
@@ -414,69 +397,11 @@ export class SmartTranscriptManager {
     this.emitFinal(seg);
   }
 
-  // ================== IDLE DETECTION ==================
-
-  private startIdleTimer(_audioTimeMs: number, _timestamp: string, confidence: number, speaker: string) {
-    this.clearIdleTimer();
-    
-    // Nếu có text tích lũy, bắt đầu check định kỳ mỗi 1s
-    if (this.interimText) {
-      // ⚡ Dùng setInterval để check liên tục mỗi 1 giây
-      this.idleTimer = setInterval(() => {
-        const timeSinceLastUpdate = Date.now() - this.lastUpdateTime;
-        
-        // Nếu thực sự không có update trong 2s VÀ vẫn có text
-        if (timeSinceLastUpdate >= this.idleTimeout && this.interimText) {
-          // console.log('🚨 IDLE DETECTED: No new text for 2s, auto-committing:', {
-          //   idleTime: timeSinceLastUpdate + 'ms',
-          //   text: this.interimText.substring(0, 80) + '...',
-          //   words: this.interimText.split(/\s+/).length
-          // });
-          
-          // Clear timer trước khi commit
-          this.clearIdleTimer();
-          
-          // Commit segment hiện tại với flag isIdleCommit=true
-          this.finalLongest = this.interimText;
-          this.commitFinal(
-            this.accumulationStartAudioTimeMs,
-            this.accumulationStartTime,
-            confidence,
-            speaker,
-            true // ⚡ isIdleCommit = true → tạo segment riêng, không merge
-          );
-          
-          // Reset
-          this.interimText = '';
-          this.finalLongest = '';
-          this.accumulationStartTime = '';
-          this.accumulationStartAudioTimeMs = 0;
-          this.clearInterim();
-          
-          // ⚡ Gọi callback để restart recognition
-          if (this.onIdleCommit) {
-            console.log('🔄 Triggering speech recognition restart...');
-            setTimeout(() => {
-              this.onIdleCommit?.();
-            }, 100);
-          }
-        }
-      }, 1000); // Check mỗi 1 giây
-    }
-  }
-
-  private clearIdleTimer() {
-    if (this.idleTimer) {
-      clearInterval(this.idleTimer); // Đổi từ clearTimeout sang clearInterval
-      this.idleTimer = null;
-    }
-  }
-
   // ================== SILENCE ==================
 
   private startSilenceTimer(audioTimeMs: number, timestamp: string, confidence: number, speaker: string) {
     this.silenceTimer = setTimeout(() => {
-      this.commitFinal(audioTimeMs, timestamp, confidence, speaker, false); // Silence commit - có thể merge
+      this.commitFinal(audioTimeMs, timestamp, confidence, speaker, true); // ⚡ Silence commit - cũng không merge (kết thúc ý)
       this.clearInterim();
     }, this.browserBehavior.silenceTimeout);
   }
