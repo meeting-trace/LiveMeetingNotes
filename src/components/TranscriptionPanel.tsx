@@ -28,48 +28,93 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
   const [contentHeight, setContentHeight] = useState<number>(100);
   const [isResizing, setIsResizing] = useState<boolean>(false);
   const [isManuallyResized, setIsManuallyResized] = useState<boolean>(false);
+  const [isUserScrolling, setIsUserScrolling] = useState<boolean>(false);
+  const [showScrollToBottom, setShowScrollToBottom] = useState<boolean>(false);
 
-  // Auto-scroll to bottom when new transcription arrives
+  // Auto-scroll to bottom when new transcription arrives (only if user is at bottom)
   useEffect(() => {
-    if (scrollRef.current) {
+    if (scrollRef.current && !isUserScrolling) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [transcriptions]);
+  }, [transcriptions, isUserScrolling]);
+
+  // Handle user scroll detection
+  const handleScroll = useCallback(() => {
+    if (!scrollRef.current) return;
+    
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 50; // 50px threshold
+    
+    if (isNearBottom) {
+      setIsUserScrolling(false);
+      setShowScrollToBottom(false);
+    } else {
+      setIsUserScrolling(true);
+      setShowScrollToBottom(true);
+    }
+  }, []);
+
+  // Scroll to bottom manually
+  const scrollToBottom = useCallback(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      setIsUserScrolling(false);
+      setShowScrollToBottom(false);
+    }
+  }, []);
 
   // Auto-expand height based on content (only if not manually resized)
   useEffect(() => {
     if (isManuallyResized) return; // Skip auto-resize if user manually resized
     
-    const updateHeight = () => {
+    // Debounce to avoid too frequent updates
+    const timer = setTimeout(() => {
       if (scrollRef.current && transcriptions.length > 0) {
         const scrollHeight = scrollRef.current.scrollHeight;
         const newHeight = Math.min(scrollHeight + 80, 500);
         const calculatedHeight = Math.max(newHeight, 100);
         
+        // Only update if different to avoid unnecessary re-renders
         setContentHeight(prev => prev === calculatedHeight ? prev : calculatedHeight);
       } else if (transcriptions.length === 0) {
         setContentHeight(prev => prev === 100 ? prev : 100);
       }
-    };
+    }, 100);
 
-    updateHeight();
+    return () => clearTimeout(timer);
   }, [transcriptions, isManuallyResized]);
 
   // Handle resize dragging
   useEffect(() => {
+    let rafId: number | null = null;
+    
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing || !containerRef.current) return;
       
-      const containerRect = containerRef.current.getBoundingClientRect();
-      const newHeight = e.clientY - containerRect.top;
-      const clampedHeight = Math.max(100, Math.min(newHeight, window.innerHeight - 100));
-      setContentHeight(clampedHeight);
+      // Use requestAnimationFrame to throttle updates
+      if (rafId !== null) return;
+      
+      rafId = requestAnimationFrame(() => {
+        if (!containerRef.current) return;
+        
+        const containerRect = containerRef.current.getBoundingClientRect();
+        const newHeight = e.clientY - containerRect.top;
+        const clampedHeight = Math.max(100, Math.min(newHeight, window.innerHeight - 100));
+        setContentHeight(clampedHeight);
+        
+        rafId = null;
+      });
     };
 
     const handleMouseUp = () => {
       setIsResizing(false);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
+      
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
     };
 
     if (isResizing) {
@@ -82,6 +127,10 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
     };
   }, [isResizing]);
 
@@ -257,6 +306,7 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
                 <>
                   <div
                     ref={scrollRef}
+                    onScroll={handleScroll}
                     style={{
                       flex: 1,
                       overflowY: 'auto',
@@ -283,6 +333,28 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
                       />
                     ))}
                   </div>
+                  
+                  {/* Scroll to bottom button */}
+                  {showScrollToBottom && (
+                    <div style={{
+                      position: 'absolute',
+                      bottom: '30px',
+                      right: '20px',
+                      zIndex: 100
+                    }}>
+                      <Tooltip title="Cuộn xuống cuối cùng">
+                        <Button
+                          type="primary"
+                          shape="circle"
+                          icon={<span style={{ fontSize: '16px' }}>↓</span>}
+                          onClick={scrollToBottom}
+                          style={{
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+                          }}
+                        />
+                      </Tooltip>
+                    </div>
+                  )}
                 </>
               )}
               

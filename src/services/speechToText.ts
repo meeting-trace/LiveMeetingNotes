@@ -124,10 +124,10 @@ export class SpeechToTextService {
 
       this.recognition.onresult = (event: any) => {
         // 🔍 DEBUG: Log toàn bộ event để quan sát
-        console.log('📊 === WEB SPEECH API RESULT ===');
-        console.log('🕒 Timestamp:', new Date().toISOString());
-        console.log('📍 ResultIndex:', event.resultIndex);
-        console.log('📦 Total Results:', event.results.length);
+        // console.log('📊 === WEB SPEECH API RESULT ===');
+        // console.log('🕒 Timestamp:', new Date().toISOString());
+        // console.log('📍 ResultIndex:', event.resultIndex);
+        // console.log('📦 Total Results:', event.results.length);
 
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
@@ -146,12 +146,12 @@ export class SpeechToTextService {
           for (let j = 0; j < result.length; j++) {
             const alt = result[j];
             const altConfidence = alt.confidence || 0;
-            const wordCount = alt.transcript.trim().split(/\s+/).length;
+            // const wordCount = alt.transcript.trim().split(/\s+/).length;
             
-            console.log(`  └─ Alternative[${j}]:`);
-            console.log(`     • Text: "${alt.transcript}"`);
-            console.log(`     • Words: ${wordCount}`);
-            console.log(`     • Confidence: ${(altConfidence * 100).toFixed(2)}%`);
+            // console.log(`  └─ Alternative[${j}]:`);
+            // console.log(`     • Text: "${alt.transcript}"`);
+            // console.log(`     • Words: ${wordCount}`);
+            // console.log(`     • Confidence: ${(altConfidence * 100).toFixed(2)}%`);
             
             // Chọn alternative tốt nhất
             if (altConfidence > bestConfidence) {
