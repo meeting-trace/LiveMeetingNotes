@@ -40,6 +40,7 @@ export class SmartTranscriptManager {
   private accumulationStartTime: string = '';
   private accumulationStartAudioTimeMs: number = 0;
 
+
   constructor() {
     this.browserBehavior = this.detectBrowser();
     console.log('🌐 Using SmartTranscriptManager:', this.browserBehavior.name);
@@ -401,7 +402,17 @@ export class SmartTranscriptManager {
 
   private startSilenceTimer(audioTimeMs: number, timestamp: string, confidence: number, speaker: string) {
     this.silenceTimer = setTimeout(() => {
-      this.commitFinal(audioTimeMs, timestamp, confidence, speaker, true); // ⚡ Silence commit - cũng không merge (kết thúc ý)
+      // ⚡ Set finalLongest từ interimText trước khi commit
+      if (this.interimText) {
+        this.finalLongest = this.interimText;
+        this.commitFinal(audioTimeMs, timestamp, confidence, speaker, true); // Silence commit
+        
+        // Reset sau khi commit
+        this.interimText = '';
+        this.finalLongest = '';
+        this.accumulationStartTime = '';
+        this.accumulationStartAudioTimeMs = 0;
+      }
       this.clearInterim();
     }, this.browserBehavior.silenceTimeout);
   }
