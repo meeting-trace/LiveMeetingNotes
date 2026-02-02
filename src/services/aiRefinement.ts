@@ -359,7 +359,7 @@ export class AIRefinementService {
     modelName: string, // REQUIRED: specific Gemini model (e.g., "models/gemini-2.5-flash")
     onProgress?: (progress: number) => void,
     fileManager?: FileManagerService // Optional: for saving debug logs to project folder
-  ): Promise<RefinedSegment[]> {
+  ): Promise<{ segments: RefinedSegment[], summary?: string }> {
     // Check quota estimate first
     const quotaCheck = this.checkQuotaEstimate(transcriptions);
     console.log('📊 Quota Check:', quotaCheck.message);
@@ -384,9 +384,10 @@ export class AIRefinementService {
     modelName: string,
     onProgress?: (progress: number) => void,
     fileManager?: FileManagerService
-  ): Promise<RefinedSegment[]> {
+  ): Promise<{ segments: RefinedSegment[], summary?: string }> {
     const batches = this.splitIntoBatches(transcriptions, this.BATCH_SIZE);
     const allRefinedSegments: RefinedSegment[] = [];
+    const allSummaries: string[] = [];
 
     console.log(`📦 Processing ${transcriptions.length} segments in ${batches.length} batches...`);
 
@@ -402,7 +403,7 @@ export class AIRefinementService {
         const batchRawData = rawData.slice(batchStartIndex, batchStartIndex + batch.length);
 
         // Process this batch
-        const refinedBatch = await this.refineWithGemini(
+        const batchResult = await this.refineWithGemini(
           apiKey,
           batch,
           batchRawData,
@@ -416,7 +417,10 @@ export class AIRefinementService {
           fileManager
         );
 
-        allRefinedSegments.push(...refinedBatch);
+        allRefinedSegments.push(...batchResult.segments);
+        if (batchResult.summary) {
+          allSummaries.push(batchResult.summary);
+        }
 
         // Add delay between batches to avoid rate limiting (except for last batch)
         if (i < batches.length - 1) {
@@ -441,7 +445,13 @@ export class AIRefinementService {
 
     if (onProgress) onProgress(100);
     console.log(`✅ Batch processing complete: ${allRefinedSegments.length} segments refined`);
-    return allRefinedSegments;
+    
+    // Combine all batch summaries into one
+    const combinedSummary = allSummaries.length > 0 
+      ? allSummaries.join('\n\n---\n\n')
+      : undefined;
+    
+    return { segments: allRefinedSegments, summary: combinedSummary };
   }
 
   /**
@@ -454,7 +464,7 @@ export class AIRefinementService {
     modelName: string, // REQUIRED: specific model like "models/gemini-2.5-flash"
     onProgress?: (progress: number) => void,
     fileManager?: FileManagerService
-  ): Promise<RefinedSegment[]> {
+  ): Promise<{ segments: RefinedSegment[], summary?: string }> {
     if (!apiKey || apiKey.trim().length === 0) {
       throw new Error('API Key is required for AI refinement');
     }
@@ -619,13 +629,16 @@ export class AIRefinementService {
         error: result.error ? result.error.message : undefined
       }, fileManager);
 
-      // Parse AI response
-      const refinedSegments = this.parseAIResponse(result);
+      // Parse AI response (now returns { segments, summary })
+      const parsed = this.parseAIResponse(result);
 
       if (onProgress) onProgress(100);
 
-      console.log(`✅ Successfully refined ${refinedSegments.length} segments`);
-      return refinedSegments;
+      console.log(`✅ Successfully refined ${parsed.segments.length} segments`);
+      if (parsed.summary) {
+        console.log(`📝 Summary generated (${parsed.summary.length} characters)`);
+      }
+      return parsed;
 
     } catch (error: any) {
       console.error('AI Refinement Error:', error);
@@ -653,21 +666,25 @@ Nhiệm vụ: Chuẩn hóa văn bản speech-to-text:
 3. Thêm dấu câu, viết hoa danh từ riêng
 4. Gộp các đoạn liên tiếp thành câu hoàn chỉnh
 5. Giữ nguyên nội dung, không thêm bớt ý
+6. Tóm tắt toàn bộ nội dung cuộc họp dựa trên các segment
 
-Output: CHỈ JSON array, KHÔNG markdown/giải thích
-Format: [{"timestamp":"...","audioTimeMs":123,"text":"..."},...]
+Output: CHỈ JSON object, KHÔNG markdown/giải thích
+Format: {
+  "segments": [{"timestamp":"...","audioTimeMs":123,"text":"..."},...],
+  "summary": "Tóm tắt nội dung cuộc họp dạng văn xuôi, bao gồm các chủ đề chính, quyết định quan trọng, kết luận."
+}
 
 === DỮ LIỆU CHÍNH ===
 ${dataJson}
 ${hasRawData ? `\n=== DỮ LIỆU BỔ TRỢ (tham khảo) ===\n${rawDataJson}` : ''}
 
-Giữ timestamp/audioTimeMs gốc. Chỉ trả về JSON array.`;
+Giữ timestamp/audioTimeMs gốc. Trả về JSON object với segments và summary.`;
   }
 
   /**
-   * Parse AI response and create refined segments
+   * Parse AI response and create refined segments with summary
    */
-  private static parseAIResponse(apiResponse: any): RefinedSegment[] {
+  private static parseAIResponse(apiResponse: any): { segments: RefinedSegment[], summary?: string } {
     try {
       // Extract text from Gemini response
       const candidates = apiResponse.candidates;
@@ -688,11 +705,11 @@ Giữ timestamp/audioTimeMs gốc. Chỉ trả về JSON array.`;
       // Log raw response for debugging
       console.log('🔍 Raw AI response (first 500 chars):', responseText.substring(0, 500));
 
-      // Try to extract JSON if there's additional text
-      const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+      // Try to extract JSON if there's additional text (both array and object)
+      const jsonMatch = responseText.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
       if (jsonMatch) {
         responseText = jsonMatch[0];
-        console.log('✂️ Extracted JSON array from response');
+        console.log('✂️ Extracted JSON from response');
       }
 
       // Parse JSON with better error handling
@@ -706,12 +723,12 @@ Giữ timestamp/audioTimeMs gốc. Chỉ trả về JSON array.`;
         // Try to fix common JSON issues
         let fixedText = responseText
           // Fix unescaped newlines in strings
-          .replace(/"text"\s*:\s*"([^"]*?)"/g, (_match: string, text: string) => {
+          .replace(/("text"|"summary")\s*:\s*"([^"]*?)"/g, (_match: string, field: string, text: string) => {
             const escaped = text
               .replace(/\n/g, '\\n')
               .replace(/\r/g, '\\r')
               .replace(/\t/g, '\\t');
-            return `"text": "${escaped}"`;
+            return `${field}: "${escaped}"`;
           });
 
         console.log('🔧 Attempting to fix JSON...');
@@ -724,12 +741,26 @@ Giữ timestamp/audioTimeMs gốc. Chỉ trả về JSON array.`;
         }
       }
 
-      if (!Array.isArray(refinedData)) {
-        throw new Error('AI response is not an array');
+      // Handle both old format (array) and new format (object with segments + summary)
+      let segmentsArray: any[];
+      let summary: string | undefined;
+
+      if (Array.isArray(refinedData)) {
+        // Old format: just array of segments
+        console.log('📦 Received old format (array only)');
+        segmentsArray = refinedData;
+        summary = undefined;
+      } else if (refinedData && typeof refinedData === 'object') {
+        // New format: object with segments and summary
+        console.log('📦 Received new format (object with segments + summary)');
+        segmentsArray = refinedData.segments || [];
+        summary = refinedData.summary || undefined;
+      } else {
+        throw new Error('AI response is neither an array nor an object');
       }
 
       // Validate and map to RefinedSegment
-      const segments: RefinedSegment[] = refinedData
+      const segments: RefinedSegment[] = segmentsArray
         .filter(item => item.text && item.text.trim().length > 0)
         .map(item => ({
           text: item.text.trim(),
@@ -737,7 +768,7 @@ Giữ timestamp/audioTimeMs gốc. Chỉ trả về JSON array.`;
           audioTimeMs: item.audioTimeMs
         }));
 
-      return segments;
+      return { segments, summary };
 
     } catch (error: any) {
       console.error('Failed to parse AI response:', error);

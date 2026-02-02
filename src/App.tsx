@@ -1948,7 +1948,7 @@ export const App: React.FC = () => {
       // Call AI refinement service with model selection
       // Primary data: transcriptions (user-edited, highest reliability)
       // Supplementary data: rawTranscripts (original Web Speech API output for reference)
-      const refinedSegments = await AIRefinementService.refineTranscripts(
+      const refinedResult = await AIRefinementService.refineTranscripts(
         apiKeyToUse,
         transcriptions, // Primary data
         rawData, // Supplementary data
@@ -1959,18 +1959,28 @@ export const App: React.FC = () => {
 
       // Convert to TranscriptionResult format
       const refinedResults = AIRefinementService.convertToTranscriptionResults(
-        refinedSegments,
+        refinedResult.segments,
         'Person1'
       );
 
       // Update transcriptions
       setTranscriptions(refinedResults);
+      
+      // Update summary if generated
+      if (refinedResult.summary) {
+        setGeminiSummary(refinedResult.summary);
+        console.log('📝 Summary updated from AI refinement');
+      }
+      
       setHasUnsavedChanges(true);
 
       // Remove progress dialog
       progressDiv.remove();
 
-      message.success(`✅ Đã chuẩn hóa thành công ${refinedResults.length} đoạn văn bản!`);
+      const summaryMsg = refinedResult.summary 
+        ? ` và tóm tắt nội dung!`
+        : `!`;
+      message.success(`✅ Đã chuẩn hóa thành công ${refinedResults.length} đoạn văn bản${summaryMsg}`);
 
     } catch (error: any) {
       const progressDiv = document.getElementById('ai-refine-progress');
