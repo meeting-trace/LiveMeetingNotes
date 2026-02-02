@@ -226,8 +226,21 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
     return 'Thấp';
   }, []);
 
-  const handleCollapseChange = (_keys: string | string[]) => {
-    // Collapse change handler
+  const handleCollapseChange = (keys: string | string[]) => {
+    // When panel expands, recalculate height after DOM renders
+    const isExpanded = Array.isArray(keys) ? keys.includes('1') : keys === '1';
+    
+    if (isExpanded && !isManuallyResized) {
+      // Wait for collapse animation to complete, then recalculate
+      setTimeout(() => {
+        if (scrollRef.current && transcriptions.length > 0) {
+          const scrollHeight = scrollRef.current.scrollHeight;
+          const newHeight = Math.min(scrollHeight + 80, 500);
+          const calculatedHeight = Math.max(newHeight, 100);
+          setContentHeight(calculatedHeight);
+        }
+      }, 300); // Wait for animation
+    }
   };
 
   return (
