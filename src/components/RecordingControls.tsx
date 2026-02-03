@@ -283,7 +283,7 @@ export const RecordingControls: React.FC<Props> = ({
       // Show detailed error modal for system audio failures
       if (error.message.includes('audio') || error.message.includes('Share')) {
         Modal.error({
-          title: '❌ Không ghi được âm thanh',
+          title: '❌ Không nhận được được âm thanh',
           content: (
             <div>
               <p style={{ marginBottom: '12px', fontWeight: 600 }}>{error.message}</p>
