@@ -48,6 +48,13 @@ export interface AudioRecorderState {
   error: string | null;
 }
 
+// Audio source types for recording
+export enum AudioSourceType {
+  MICROPHONE = 'microphone',        // Record from microphone only
+  SYSTEM_AUDIO = 'system',          // Record system/tab audio only
+  BOTH = 'both'                     // Mix microphone + system audio
+}
+
 export interface FileSystemSupport {
   hasFileSystemAccess: boolean;
   hasFallback: boolean;

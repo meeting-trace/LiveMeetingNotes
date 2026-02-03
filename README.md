@@ -14,6 +14,10 @@
 ## ✨ Features
 
 - 🎙️ **Audio Recording** - Ghi âm chất lượng cao WebM (Opus codec, ~140MB/2.5h)
+  - 🎤 **Microphone** - Ghi âm từ microphone của bạn (mặc định)
+  - 🔊 **System Audio** - Ghi âm từ cuộc họp online (Zoom, Teams, Meet...)
+  - 🎤+🔊 **Cả hai** - Mix cả microphone và system audio trong 1 file
+  - ⚠️ **Lưu ý:** Khi chọn System Audio, cần check "Share audio" khi chọn tab/màn hình
 - 🎤 **Speech-to-Text** - Chuyển đổi giọng nói sang văn bản real-time (Web Speech API - Miễn phí)
   - ⚠️ **Cần internet:** Audio stream đến Google servers để nhận diện (Chrome/Edge)
   - Miễn phí, không cần API key

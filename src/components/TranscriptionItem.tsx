@@ -306,7 +306,7 @@ const TranscriptionItemComponent: React.FC<Props> = ({
                 fontStyle: 'italic'
               }}
             >
-              ⏳ Đang nhận dạng...
+              ⏳ Đang nhận dạng (chỉ hỗ trợ âm thanh từ Microphone)...
             </div>
           )}
         </>

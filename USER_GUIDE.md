@@ -16,16 +16,47 @@
 
 ### 1. 🎙️ Ghi âm cuộc họp
 
-- **Định dạng:** WAV chất lượng cao (44.1kHz stereo)
+- **Định dạng:** WebM (Opus codec) chất lượng cao (~140MB/2.5h)
 - **Thời lượng:** Không giới hạn
 - **Hiển thị:** Real-time duration counter
-- **Microphone:** Tự động chọn microphone mặc định của hệ thống
 
-**Cách sử dụng:**
-1. Click nút **"Record"** (màu đỏ)
-2. Cho phép truy cập microphone khi trình duyệt yêu cầu
-3. Bắt đầu nói và ghi chép
-4. Click **"Stop"** để kết thúc ghi âm
+**🎯 Chọn nguồn âm thanh (Audio Source):**
+
+Trước khi bấm "Ghi âm", bạn có 3 tùy chọn nguồn:
+
+1. **🎤 Microphone** (Mặc định)
+   - Ghi âm từ microphone của bạn
+   - Phù hợp cho: Ghi chú cá nhân, cuộc họp trực tiếp
+
+2. **🔊 System Audio**
+   - Ghi âm trực tiếp từ cuộc họp online (Zoom, Teams, Meet, Google Meet...)
+   - **Chỉ ghi âm người khác**, không bao gồm microphone của bạn
+   - Phù hợp cho: Nghe và ghi chép từ cuộc họp online
+
+3. **🎤+🔊 Cả hai** (Khuyến nghị cho cuộc họp online)
+   - Mix cả microphone của bạn + âm thanh từ cuộc họp
+   - Ghi được cả 2 bên (bạn nói + người khác nói)
+   - Phù hợp cho: Tham gia tích cực vào cuộc họp online
+
+**Cách sử dụng System Audio:**
+1. Chọn **System Audio** hoặc **Cả hai** từ dropdown
+2. Click nút **"Ghi âm"**
+3. Trình duyệt sẽ hỏi bạn muốn share màn hình/tab nào
+4. **QUAN TRỌNG:** Chọn tab cuộc họp (Zoom/Teams/Meet) và **tick vào ô "Share audio"** (hoặc "Share tab audio")
+5. Click **"Share"** để bắt đầu
+
+⚠️ **Lưu ý:**
+- Tính năng này chỉ hoạt động trên **Chrome/Edge** (Chrome 74+, Edge 79+)
+- Firefox hỗ trợ hạn chế
+- Safari chưa hỗ trợ
+- Nếu quên tick "Share audio", bạn sẽ không ghi được âm thanh
+
+**Cách sử dụng thông thường:**
+1. Chọn nguồn âm thanh phù hợp
+2. Click nút **"Ghi âm"** (màu đỏ)
+3. Cho phép truy cập microphone/screen sharing khi trình duyệt yêu cầu
+4. Bắt đầu nói và ghi chép
+5. Click **"Dừng"** để kết thúc ghi âm
 
 ### 2. ⏱️ Timestamp tự động
 

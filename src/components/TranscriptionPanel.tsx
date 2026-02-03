@@ -263,7 +263,7 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
                 <span>Kết quả chuyển đổi giọng nói sang văn bản</span>
                 {isTranscribing && (
                   <Tag color="processing" icon={<AudioOutlined />}>
-                    Đang nhận dạng...
+                    Đang nhận dạng (chỉ hỗ trợ âm thanh từ Microphone)...
                   </Tag>
                 )}
                 {!isOnline && (

@@ -244,8 +244,13 @@ export class SpeechToTextService {
 
       this.recognition.start();
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to initialize Web Speech API:', error);
+      // Handle microphone permission error gracefully (e.g., when using system audio only)
+      if (error.message && error.message.includes('not-allowed')) {
+        console.warn('⚠️ Microphone not available for Web Speech API');
+        return false; // Silently fail, don't alert user
+      }
       alert('Trình duyệt của bạn không hỗ trợ Web Speech API.');
       return false;
     }

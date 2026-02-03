@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Space, Switch, Tooltip, App, Select } from 'antd';
+import { Button, Space, Switch, Tooltip, App, Select, Modal } from 'antd';
 import {
   FolderOpenOutlined,
   AudioOutlined,
@@ -10,7 +10,8 @@ import {
   SoundOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
-  GlobalOutlined
+  GlobalOutlined,
+  ExclamationCircleOutlined
 } from '@ant-design/icons';
 import { AudioRecorderService } from '../services/audioRecorder';
 import { FileManagerService, FileDownloadService } from '../services/fileManager';
@@ -18,7 +19,7 @@ import { MetadataBuilder } from '../services/metadataBuilder';
 import { WordExporter } from '../services/wordExporter';
 import { speechToTextService, SpeechToTextService } from '../services/speechToText';
 import type { RawTranscriptData } from '../services/aiRefinement';
-import type { MeetingInfo, SpeechToTextConfig, TranscriptionResult } from '../types/types';
+import type { MeetingInfo, SpeechToTextConfig, TranscriptionResult, AudioSourceType } from '../types/types';
 
 interface Props {
   folderPath: string;
@@ -100,6 +101,7 @@ export const RecordingControls: React.FC<Props> = ({
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false); // Track save operations
   const [selectedLanguage, setSelectedLanguage] = useState<string>('vi-VN'); // Language selector
+  const [audioSource, setAudioSource] = useState<AudioSourceType>('microphone' as AudioSourceType); // Audio source selector
 
   // Initialize language from config
   useEffect(() => {
@@ -152,8 +154,40 @@ export const RecordingControls: React.FC<Props> = ({
   };
 
   const handleStartRecording = async () => {
+    // Show warning modal for System Audio to ensure user knows to tick "Also share system audio"
+    if (audioSource === 'system' as AudioSourceType || audioSource === 'both' as AudioSourceType) {
+      Modal.confirm({
+        title: '⚠️ Quan trọng: Also share system audio!',
+        icon: <ExclamationCircleOutlined />,
+        content: (
+          <div>
+            <p style={{ marginBottom: '12px', fontWeight: 600, color: '#d4380d' }}>
+              Khi chọn tab/màn hình, BẮT BUỘC phải tick vào ô "Also share system audio" (hoặc "Đồng thời chia sẻ âm thanh hệ thống")!
+            </p>
+            <p style={{ marginBottom: '8px' }}>
+              ✅ <strong>Chrome/Edge:</strong> Chọn tab → Tick "Also share system audio"<br/>
+              ✅ <strong>Entire screen:</strong> Tick "Also share system audio"
+            </p>
+            <p style={{ color: '#cf1322', marginTop: '12px' }}>
+              ❌ Nếu không tick, bạn sẽ KHÔNG ghi được âm thanh!
+            </p>
+          </div>
+        ),
+        okText: 'Đã hiểu, tiếp tục',
+        cancelText: 'Hủy',
+        onOk: async () => {
+          await startRecordingWithSource();
+        }
+      });
+    } else {
+      // Microphone only - start directly
+      await startRecordingWithSource();
+    }
+  };
+
+  const startRecordingWithSource = async () => {
     try {
-      await recorder.startRecording();
+      await recorder.startRecording(audioSource);
       const startTime = Date.now();
       onRecordingStartTimeChange(startTime);
       
@@ -166,9 +200,38 @@ export const RecordingControls: React.FC<Props> = ({
       onRecordingChange(true);
       setDuration(0);
       setIsPaused(false);
-      message.success('Bắt đầu ghi âm');
+      
+      // Show appropriate message based on audio source
+      const sourceMessages: Record<string, string> = {
+        'microphone': '🎤 Bắt đầu ghi âm từ microphone',
+        'system': '🔊 Bắt đầu ghi âm từ system audio (cuộc họp)',
+        'both': '🎤+🔊 Bắt đầu ghi âm từ cả microphone và system audio'
+      };
+      message.success(sourceMessages[audioSource] || 'Bắt đầu ghi âm');
     } catch (error: any) {
-      message.error(error.message);
+      // Show detailed error modal for system audio failures
+      if (error.message.includes('audio') || error.message.includes('Share')) {
+        Modal.error({
+          title: '❌ Không ghi được âm thanh',
+          content: (
+            <div>
+              <p style={{ marginBottom: '12px', fontWeight: 600 }}>{error.message}</p>
+              <p style={{ marginTop: '12px' }}>
+                <strong>Cách khắc phục:</strong>
+              </p>
+              <ol style={{ paddingLeft: '20px', marginTop: '8px' }}>
+                <li>Click nút "Ghi âm" lại</li>
+                <li>Khi dialog hiện ra, chọn tab cuộc họp (Zoom/Teams/Meet ...)</li>
+                <li><strong style={{ color: '#d4380d' }}>Nhớ TICK vào ô "Also share system audio"</strong></li>
+                <li>Click "Share"</li>
+              </ol>
+            </div>
+          ),
+          okText: 'Đã hiểu'
+        });
+      } else {
+        message.error(error.message);
+      }
     }
   };
 
@@ -1245,6 +1308,27 @@ export const RecordingControls: React.FC<Props> = ({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
         {/* Left: Recording Controls */}
         <Space size="middle" wrap>
+          {/* Audio Source Selector - Always show, disabled when recording */}
+          <Tooltip title={(isRecording || isPaused) ? 'Không thể đổi nguồn khi đang ghi âm. Dừng hẳn để chọn nguồn khác.' : ''}>
+            <Select
+              value={audioSource}
+              onChange={(value) => setAudioSource(value)}
+              disabled={isRecording || isPaused || isProcessing || audioBlob !== null}
+              size="large"
+              style={{ width: 200 }}
+            >
+              <Select.Option value={'microphone' as AudioSourceType}>
+                🎤 Microphone
+              </Select.Option>
+              <Select.Option value={'system' as AudioSourceType}>
+                🔊 Nguồn khác
+              </Select.Option>
+              <Select.Option value={'both' as AudioSourceType}>
+                🎤+🔊 Kết hợp
+              </Select.Option>
+            </Select>
+          </Tooltip>
+          
           {!isRecording ? (
             <>
               <Button
@@ -1316,7 +1400,9 @@ export const RecordingControls: React.FC<Props> = ({
           <span className="duration-display">⏱ {formatDuration(duration)}</span>
           
           {isRecording && !isPaused && (
-            <span className="recording-indicator">🔴 Đang ghi âm...</span>
+            <span className="recording-indicator">
+              🔴 Đang ghi âm {audioSource === 'Mic' as AudioSourceType ? 'từ Mic' : audioSource === 'system' as AudioSourceType ? 'từ Nguồn khác' : 'từ Mic và Nguồn khác'}...
+            </span>
           )}
           
           {isPaused && (

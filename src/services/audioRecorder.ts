@@ -1,22 +1,106 @@
+import type { AudioSourceType } from '../types/types';
+
 export class AudioRecorderService {
   private mediaRecorder: MediaRecorder | null = null;
   private stream: MediaStream | null = null;
+  private micStream: MediaStream | null = null;
+  private systemStream: MediaStream | null = null;
   private startTime: number = 0;
   private audioChunks: Blob[] = [];
   private currentChunkSize = 0;
   private isPausedState: boolean = false; // Track pause state for UI
+  private audioSourceType: AudioSourceType = 'microphone' as AudioSourceType; // Default to microphone
 
-  async startRecording(): Promise<void> {
+  /**
+   * Start recording with specified audio source
+   * @param sourceType - Type of audio source (microphone, system, or both)
+   */
+  async startRecording(sourceType: AudioSourceType = 'microphone' as AudioSourceType): Promise<void> {
+    this.audioSourceType = sourceType;
     try {
-      // Request microphone permission
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          sampleRate: 48000,
-          channelCount: 1 // Mono
+      // Get audio streams based on selected source type
+      const streams: MediaStream[] = [];
+
+      // Get microphone stream if needed
+      if (sourceType === 'microphone' as AudioSourceType || sourceType === 'both' as AudioSourceType) {
+        try {
+          this.micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              sampleRate: 48000,
+              channelCount: 1 // Mono
+            }
+          });
+          streams.push(this.micStream);
+        } catch (error: any) {
+          if (error.name === 'NotAllowedError') {
+            throw new Error('Microphone permission denied. Please allow access in browser settings.');
+          } else if (error.name === 'NotFoundError') {
+            throw new Error('No microphone found. Please connect a microphone and try again.');
+          } else {
+            throw new Error(`Microphone access failed: ${error.message}`);
+          }
         }
-      });
+      }
+
+      // Get system audio stream if needed
+      if (sourceType === 'system' as AudioSourceType || sourceType === 'both' as AudioSourceType) {
+        try {
+          // @ts-ignore - getDisplayMedia is supported in modern browsers
+          this.systemStream = await navigator.mediaDevices.getDisplayMedia({
+            video: true, // Required by some browsers, will be removed later
+            audio: {
+              echoCancellation: false, // Don't cancel echo for system audio
+              noiseSuppression: false, // Don't suppress noise for system audio
+              sampleRate: 48000
+            }
+          });
+          
+          // Remove video tracks (we only need audio)
+          this.systemStream.getVideoTracks().forEach(track => track.stop());
+          
+          // Check if audio track exists
+          const audioTracks = this.systemStream.getAudioTracks();
+          if (audioTracks.length === 0) {
+            throw new Error('❌ Không phát hiện audio! Bạn quên tick "Also share system audio" khi chọn tab/màn hình. Vui lòng thử lại!');
+          }
+          
+          streams.push(this.systemStream);
+        } catch (error: any) {
+          // Clean up microphone stream if system audio fails
+          if (this.micStream) {
+            this.micStream.getTracks().forEach(track => track.stop());
+            this.micStream = null;
+          }
+          
+          if (error.name === 'NotAllowedError') {
+            throw new Error('❌ Bạn đã từ chối chia sẻ màn hình. Vui lòng cho phép và nhớ tick "Also share system audio".');
+          } else if (error.message.includes('audio')) {
+            throw new Error(error.message); // Already has detailed message
+          } else {
+            throw new Error(`Không thể ghi âm từ system: ${error.message}`);
+          }
+        }
+      }
+
+      // Mix streams if we have multiple sources
+      if (streams.length === 0) {
+        throw new Error('No audio source selected');
+      } else if (streams.length === 1) {
+        this.stream = streams[0];
+      } else {
+        // Mix microphone + system audio
+        const audioContext = new AudioContext();
+        const mixedOutput = audioContext.createMediaStreamDestination();
+        
+        streams.forEach(stream => {
+          const source = audioContext.createMediaStreamSource(stream);
+          source.connect(mixedOutput);
+        });
+        
+        this.stream = mixedOutput.stream;
+      }
 
       // Try to use WebM with Opus codec (much better compression than WAV)
       const mimeTypes = [
@@ -69,18 +153,36 @@ export class AudioRecorderService {
       
       // console.log('Recording started with MediaRecorder');
     } catch (error: any) {
-      if (error.name === 'NotAllowedError') {
-        throw new Error('Microphone permission denied. Please allow access in browser settings.');
-      } else if (error.name === 'NotFoundError') {
-        throw new Error('No microphone found. Please connect a microphone and try again.');
-      } else {
-        throw new Error(`Recording failed: ${error.message}`);
+      // Clean up any streams that were created
+      if (this.micStream) {
+        this.micStream.getTracks().forEach(track => track.stop());
+        this.micStream = null;
       }
+      if (this.systemStream) {
+        this.systemStream.getTracks().forEach(track => track.stop());
+        this.systemStream = null;
+      }
+      if (this.stream) {
+        this.stream.getTracks().forEach(track => track.stop());
+        this.stream = null;
+      }
+      
+      // Re-throw the error if it's already a custom error message
+      if (error.message) {
+        throw error;
+      }
+      
+      // Generic fallback
+      throw new Error(`Recording failed: ${error}`);
     }
   }
 
   getStream(): MediaStream | null {
     return this.stream;
+  }
+
+  getAudioSourceType(): AudioSourceType {
+    return this.audioSourceType;
   }
 
   async stopRecording(): Promise<Blob> {
@@ -103,9 +205,17 @@ export class AudioRecorderService {
         if (this.stream) {
           this.stream.getTracks().forEach(track => track.stop());
         }
+        if (this.micStream) {
+          this.micStream.getTracks().forEach(track => track.stop());
+        }
+        if (this.systemStream) {
+          this.systemStream.getTracks().forEach(track => track.stop());
+        }
 
         this.mediaRecorder = null;
         this.stream = null;
+        this.micStream = null;
+        this.systemStream = null;
         this.audioChunks = [];
         this.currentChunkSize = 0;
         this.isPausedState = false; // Reset pause state
@@ -149,8 +259,21 @@ export class AudioRecorderService {
       throw new Error('No audio stream available');
     }
 
-    // Mute all audio tracks instead of pausing MediaRecorder
-    // This way MediaRecorder continues recording silence
+    // Mute all audio tracks from original streams
+    // This ensures both mic and system audio are muted
+    if (this.micStream) {
+      this.micStream.getAudioTracks().forEach(track => {
+        track.enabled = false;
+      });
+    }
+    
+    if (this.systemStream) {
+      this.systemStream.getAudioTracks().forEach(track => {
+        track.enabled = false;
+      });
+    }
+    
+    // Also mute the main stream (for single-source mode)
     this.stream.getAudioTracks().forEach(track => {
       track.enabled = false;
     });
@@ -174,7 +297,20 @@ export class AudioRecorderService {
       throw new Error('Recording is not paused');
     }
 
-    // Unmute all audio tracks
+    // Unmute all audio tracks from original streams
+    if (this.micStream) {
+      this.micStream.getAudioTracks().forEach(track => {
+        track.enabled = true;
+      });
+    }
+    
+    if (this.systemStream) {
+      this.systemStream.getAudioTracks().forEach(track => {
+        track.enabled = true;
+      });
+    }
+    
+    // Also unmute the main stream (for single-source mode)
     this.stream.getAudioTracks().forEach(track => {
       track.enabled = true;
     });
