@@ -160,8 +160,11 @@ export const RecordingControls: React.FC<Props> = ({
   // Start/stop transcription when recording state or autoTranscribe changes
   useEffect(() => {
     const startTranscription = async () => {
+      // Get actual audio source type from recorder (may differ from selected if mic not available)
+      const actualSourceType = recorder.getAudioSourceType();
+      
       // Skip transcription for system audio only (Web Speech API only works with microphone)
-      if (audioSource === 'system' as AudioSourceType) {
+      if (actualSourceType === 'system' as AudioSourceType) {
         // console.warn('⚠️ Web Speech API chỉ nghe microphone, không nghe system audio. Bỏ qua transcription.');
         // Always stop transcription if it's running to prevent microphone permission request
         speechToTextService.stopTranscription();
@@ -173,15 +176,18 @@ export const RecordingControls: React.FC<Props> = ({
           // Use the shared audio stream from recorder
           await speechToTextService.startTranscription(audioStream, onNewTranscription);
           
-          // Show appropriate message based on audio source
-          if (audioSource === 'both' as AudioSourceType) {
+          // Show appropriate message based on actual audio source
+          if (actualSourceType === 'both' as AudioSourceType) {
             message.success('🎤 Bắt đầu chuyển đổi giọng nói từ microphone sang văn bản (chỉ ghi nhận giọng nói của bạn)');
           } else {
             message.success('🎤 Bắt đầu chuyển đổi giọng nói sang văn bản');
           }
         } catch (error: any) {
           console.error('Failed to start transcription:', error);
-          message.error('Không thể bắt đầu chuyển đổi: ' + error.message);
+          // Don't show error message if we already warned user about no mic
+          if (audioSource !== 'both' || actualSourceType !== 'system') {
+            message.error('Không thể bắt đầu chuyển đổi: ' + error.message);
+          }
         }
       } else if (!isRecording || !autoTranscribe || isPaused) {
         // Stop transcription (but don't stop the stream - recorder owns it)
@@ -252,13 +258,27 @@ export const RecordingControls: React.FC<Props> = ({
       setDuration(0);
       setIsPaused(false);
       
+      // Check if we actually got the expected audio sources
+      const actualSourceType = recorder.getAudioSourceType();
+      
       // Show appropriate message based on audio source
       const sourceMessages: Record<string, string> = {
         'microphone': '🎤 Bắt đầu ghi âm từ microphone',
         'system': '🔊 Bắt đầu ghi âm từ Nguồn khác (cuộc họp)',
         'both': '🎤+🔊 Bắt đầu ghi âm từ cả microphone và Nguồn khác'
       };
+      
       message.success(sourceMessages[audioSource] || 'Bắt đầu ghi âm');
+      
+      // Warn if user selected 'both' but only got system audio (no mic available)
+      if (audioSource === 'both' && actualSourceType === 'system') {
+        setTimeout(() => {
+          message.warning({
+            content: '⚠️ Không phát hiện microphone. Chỉ ghi âm từ Nguồn khác (system audio). Nếu kết nối mic sau, vui lòng dừng và ghi âm lại.',
+            duration: 6
+          });
+        }, 500);
+      }
     } catch (error: any) {
       // Show detailed error modal for system audio failures
       if (error.message.includes('audio') || error.message.includes('Share')) {
@@ -1452,7 +1472,7 @@ export const RecordingControls: React.FC<Props> = ({
           
           {isRecording && !isPaused && (
             <span className="recording-indicator">
-              🔴 Đang ghi âm {audioSource === 'Mic' as AudioSourceType ? 'từ Mic' : audioSource === 'system' as AudioSourceType ? 'từ Nguồn khác' : 'từ Mic và Nguồn khác'} ...
+              🔴 Đang ghi âm {recorder.getAudioSourceType() === 'microphone' as AudioSourceType ? 'từ Mic' : recorder.getAudioSourceType() === 'system' as AudioSourceType ? 'từ Nguồn khác' : 'từ Mic và Nguồn khác'} ...
             </span>
           )}
           

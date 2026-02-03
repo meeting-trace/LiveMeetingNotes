@@ -35,12 +35,19 @@ export class AudioRecorderService {
           });
           streams.push(this.micStream);
         } catch (error: any) {
-          if (error.name === 'NotAllowedError') {
-            throw new Error('Microphone permission denied. Please allow access in browser settings.');
-          } else if (error.name === 'NotFoundError') {
-            throw new Error('No microphone found. Please connect a microphone and try again.');
+          // If microphone fails when using 'both' mode, just warn and continue with system audio
+          if (sourceType === 'both' as AudioSourceType) {
+            console.warn('⚠️ Microphone not available, will record system audio only:', error.message);
+            // Don't throw error, continue to get system audio
           } else {
-            throw new Error(`Microphone access failed: ${error.message}`);
+            // For microphone-only mode, throw error
+            if (error.name === 'NotAllowedError') {
+              throw new Error('Microphone permission denied. Please allow access in browser settings.');
+            } else if (error.name === 'NotFoundError') {
+              throw new Error('No microphone found. Please connect a microphone and try again.');
+            } else {
+              throw new Error(`Microphone access failed: ${error.message}`);
+            }
           }
         }
       }
@@ -90,6 +97,15 @@ export class AudioRecorderService {
         throw new Error('No audio source selected');
       } else if (streams.length === 1) {
         this.stream = streams[0];
+        // Update actual source type based on what we got
+        if (sourceType === 'both' as AudioSourceType) {
+          // User wanted both, but only got one - update to reflect reality
+          if (this.micStream && !this.systemStream) {
+            this.audioSourceType = 'microphone' as AudioSourceType;
+          } else if (this.systemStream && !this.micStream) {
+            this.audioSourceType = 'system' as AudioSourceType;
+          }
+        }
       } else {
         // Mix microphone + system audio
         const audioContext = new AudioContext();
