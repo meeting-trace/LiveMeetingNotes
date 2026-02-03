@@ -110,6 +110,25 @@ export const RecordingControls: React.FC<Props> = ({
     }
   }, [transcriptionConfig]);
 
+  // Setup callback for when user stops screen sharing
+  useEffect(() => {
+    recorder.setOnStreamEndedCallback(() => {
+      if (isRecording && (audioSource === 'system' as AudioSourceType || audioSource === 'both' as AudioSourceType)) {
+        Modal.warning({
+          title: '⚠️ Đã dừng chia sẻ màn hình',
+          content: (
+            <div>
+              <p style={{ marginBottom: '12px' }}>
+                Bạn đã dừng chia sẻ màn hình/tab. Việc ghi âm từ system audio sẽ không còn hoạt động.
+              </p>
+            </div>
+          ),
+          okText: 'Đã hiểu'
+        });
+      }
+    });
+  }, [isRecording, audioSource]);
+
   useEffect(() => {
     if (!isRecording && !isPaused) return;
 

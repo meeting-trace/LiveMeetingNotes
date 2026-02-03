@@ -10,6 +10,7 @@ export class AudioRecorderService {
   private currentChunkSize = 0;
   private isPausedState: boolean = false; // Track pause state for UI
   private audioSourceType: AudioSourceType = 'microphone' as AudioSourceType; // Default to microphone
+  private onStreamEndedCallback: (() => void) | null = null; // Callback when stream ends
 
   /**
    * Start recording with specified audio source
@@ -102,6 +103,18 @@ export class AudioRecorderService {
         this.stream = mixedOutput.stream;
       }
 
+      // Add event listener for when system audio sharing stops
+      if (this.systemStream) {
+        this.systemStream.getTracks().forEach(track => {
+          track.onended = () => {
+            console.warn('⚠️ System audio sharing stopped by user');
+            if (this.onStreamEndedCallback) {
+              this.onStreamEndedCallback();
+            }
+          };
+        });
+      }
+
       // Try to use WebM with Opus codec (much better compression than WAV)
       const mimeTypes = [
         'audio/webm;codecs=opus',
@@ -183,6 +196,13 @@ export class AudioRecorderService {
 
   getAudioSourceType(): AudioSourceType {
     return this.audioSourceType;
+  }
+
+  /**
+   * Set callback for when stream ends (e.g., user stops screen sharing)
+   */
+  setOnStreamEndedCallback(callback: () => void): void {
+    this.onStreamEndedCallback = callback;
   }
 
   async stopRecording(): Promise<Blob> {
