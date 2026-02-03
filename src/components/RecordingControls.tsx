@@ -223,7 +223,7 @@ export const RecordingControls: React.FC<Props> = ({
             </p>
             <p style={{ marginBottom: '8px' }}>
               ✅ <strong>Chrome:</strong> Chọn tab → CHỌN "Also share tab audio"<br/>
-              ✅ <strong>Entire screen:</strong> CHỌN "Also share system audio"
+              ✅ <strong>Window/Entire screen:</strong> CHỌN "Also share system audio"
             </p>
             <p style={{ color: '#cf1322', marginTop: '12px' }}>
               ❌ Nếu không CHỌN, bạn sẽ KHÔNG nhận được âm thanh từ nguồn khác!
