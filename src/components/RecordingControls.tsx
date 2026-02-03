@@ -360,8 +360,21 @@ export const RecordingControls: React.FC<Props> = ({
     const projectName = `${timePrefix}_${sanitizedTitle}`;
     const audioFileName = `${projectName}.webm`;
 
+    // Check if folder is selected
+    let hasFolder: boolean = !!(folderPath || fileManager.getDirHandle());
+    if (FileManagerService.isSupported() && !hasFolder) {
+      // No folder selected, prompt user
+      const folder = await fileManager.selectFolder();
+      if (!folder) {
+        message.info('Vui lòng chọn thư mục để lưu ghi âm.');
+        return; // User cancelled
+      }
+      onFolderSelect(folder);
+      hasFolder = true; // Folder now selected
+    }
+
     // Save files
-    if (FileManagerService.isSupported() && folderPath) {
+    if (FileManagerService.isSupported() && hasFolder) {
       // Create project subdirectory and get its handle
       const originalHandle = fileManager.getDirHandle(); // Save original handle
       const projectDirHandle = await fileManager.createProjectDirectory(projectName);
