@@ -63,7 +63,7 @@ export class AudioRecorderService {
           // Check if audio track exists
           const audioTracks = this.systemStream.getAudioTracks();
           if (audioTracks.length === 0) {
-            throw new Error('❌ Không phát hiện audio! Bạn quên tick "Also share system audio" khi chọn tab/màn hình. Vui lòng thử lại!');
+            throw new Error('❌ Không phát hiện audio! Bạn quên chọn "Also share system audio" khi chọn tab/màn hình. Vui lòng thử lại!');
           }
           
           streams.push(this.systemStream);
@@ -75,7 +75,7 @@ export class AudioRecorderService {
           }
           
           if (error.name === 'NotAllowedError') {
-            throw new Error('❌ Bạn đã từ chối chia sẻ màn hình. Vui lòng cho phép và nhớ tick "Also share system audio".');
+            throw new Error('❌ Bạn đã từ chối chia sẻ màn hình. Vui lòng cho phép và nhớ chọn "Also share system audio".');
           } else if (error.message.includes('audio')) {
             throw new Error(error.message); // Already has detailed message
           } else {

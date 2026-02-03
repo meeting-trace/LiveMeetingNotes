@@ -162,14 +162,14 @@ export const RecordingControls: React.FC<Props> = ({
         content: (
           <div>
             <p style={{ marginBottom: '12px', fontWeight: 600, color: '#d4380d' }}>
-              Khi chọn tab/màn hình, BẮT BUỘC phải tick vào ô "Also share system audio" (hoặc "Đồng thời chia sẻ âm thanh hệ thống")!
+              Khi chọn tab/màn hình, BẮT BUỘC phải chọn "Also share system audio" (hoặc "Đồng thời chia sẻ âm thanh hệ thống")!
             </p>
             <p style={{ marginBottom: '8px' }}>
-              ✅ <strong>Chrome/Edge:</strong> Chọn tab → Tick "Also share system audio"<br/>
-              ✅ <strong>Entire screen:</strong> Tick "Also share system audio"
+              ✅ <strong>Chrome/Edge:</strong> Chọn tab → CHỌN "Also share system audio"<br/>
+              ✅ <strong>Entire screen:</strong> CHỌN "Also share system audio"
             </p>
             <p style={{ color: '#cf1322', marginTop: '12px' }}>
-              ❌ Nếu không tick, bạn sẽ KHÔNG ghi được âm thanh!
+              ❌ Nếu không CHỌN, bạn sẽ KHÔNG ghi được âm thanh!
             </p>
           </div>
         ),
@@ -222,7 +222,7 @@ export const RecordingControls: React.FC<Props> = ({
               <ol style={{ paddingLeft: '20px', marginTop: '8px' }}>
                 <li>Click nút "Ghi âm" lại</li>
                 <li>Khi dialog hiện ra, chọn tab cuộc họp (Zoom/Teams/Meet ...)</li>
-                <li><strong style={{ color: '#d4380d' }}>Nhớ TICK vào ô "Also share system audio"</strong></li>
+                <li><strong style={{ color: '#d4380d' }}>Nhớ CHỌN "Also share system audio"</strong></li>
                 <li>Click "Share"</li>
               </ol>
             </div>
