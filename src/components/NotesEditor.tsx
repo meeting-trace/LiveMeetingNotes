@@ -54,10 +54,17 @@ export const NotesEditor: React.FC<Props> = ({
   // Use line-index-based timestamps (lineIndex → dateTimeMs) as source of truth
   const BLOCK_SEPARATOR = '§§§';
   
+  // Track if user is actively editing to prevent sync conflicts
+  const isEditingRef = useRef<boolean>(false);
+  const editingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
   // Sync localNotes when notes prop changes (e.g., load project, undo/redo from parent)
+  // But only if user is not actively editing to avoid overwriting their changes
   React.useEffect(() => {
-    setLocalNotes(notes);
-  }, [notes]);
+    if (!isEditingRef.current && notes !== localNotes) {
+      setLocalNotes(notes);
+    }
+  }, [notes, localNotes]);
   
   const [lineTimestamps, setLineTimestamps] = useState<Map<number, number>>(() => {
     // Initialize from parent's timestampMap only once on mount
@@ -550,6 +557,15 @@ export const NotesEditor: React.FC<Props> = ({
     const lines = localNotes.split(BLOCK_SEPARATOR);
     const oldLine = lines[index];
     
+    // Mark as actively editing
+    isEditingRef.current = true;
+    if (editingTimeoutRef.current) {
+      clearTimeout(editingTimeoutRef.current);
+    }
+    editingTimeoutRef.current = setTimeout(() => {
+      isEditingRef.current = false;
+    }, 500); // Consider editing stopped after 500ms of inactivity
+    
     // Don't auto-delete line when it becomes empty
     // Let user explicitly delete via Backspace/Delete keys (handled in handleKeyDown)
     // Just update the content
@@ -559,6 +575,10 @@ export const NotesEditor: React.FC<Props> = ({
     // Update local state immediately for responsive UI
     setLocalNotes(newNotes);
     
+    // Use short debounce (100ms) to reduce re-renders while maintaining responsiveness
+    // This balances between autosave functionality and performance
+    debouncedNotesChange(newNotes);
+    
     // Auto-create timestamp: Only in Live Mode when line goes from empty to having content
     if (isLiveMode) {
       const oldLineEmpty = oldLine.trim().length === 0;
@@ -567,22 +587,21 @@ export const NotesEditor: React.FC<Props> = ({
       if (oldLineEmpty && newLineHasContent && !lineTimestamps.has(index)) {
         // Save datetime with delay offset (định gõ note thường chậm hơn người nói)
         const currentDatetime = Date.now() - (timestampDelay * 1000);
-        console.log('✅ Creating timestamp:', { index, currentDatetime, delay: timestampDelay });
+        // console.log('✅ Creating timestamp:', { index, currentDatetime, delay: timestampDelay });
         
         const newLineTimestamps = new Map(lineTimestamps);
         newLineTimestamps.set(index, currentDatetime);
         setLineTimestamps(newLineTimestamps);
         
         // Immediate sync for timestamp creation
-        onNotesChange(newNotes);
+        onNotesChange(newNotes); // Call immediately for timestamp creation
         syncToParentTimestampMap(lines, newLineTimestamps);
         return;
       }
     }
     // In Loaded Mode: Never auto-create timestamp, user must use right-click on waveform
     
-    // Use debounced callbacks for regular text edits to improve performance
-    debouncedNotesChange(newNotes); // Debounced parent update
+    // Use debounced callbacks for heavy operations to improve performance
     debouncedSyncToParent(lines, lineTimestamps); // Debounced sync
     debouncedSaveToHistory(); // Auto-save after typing
   };
@@ -602,28 +621,28 @@ export const NotesEditor: React.FC<Props> = ({
     }
     setLineSpeakers(newSpeakers);
     
-    console.log('📝 Updated lineSpeakers:', { 
-      size: newSpeakers.size, 
-      entries: Array.from(newSpeakers.entries()) 
-    });
+    // console.log('📝 Updated lineSpeakers:', { 
+    //   size: newSpeakers.size, 
+    //   entries: Array.from(newSpeakers.entries()) 
+    // });
     
     // Auto-create timestamp: Only in Live Mode when speaker goes from empty to having content
     if (isLiveMode) {
       const oldSpeakerEmpty = oldSpeaker.trim().length === 0;
       const newSpeakerHasContent = value.trim().length > 0;
       
-      console.log('⏰ Auto-timestamp check (Speaker):', { 
-        index, 
-        oldSpeakerEmpty, 
-        newSpeakerHasContent, 
-        hasTimestamp: lineTimestamps.has(index),
-        isLiveMode 
-      });
+      // console.log('⏰ Auto-timestamp check (Speaker):', { 
+      //   index, 
+      //   oldSpeakerEmpty, 
+      //   newSpeakerHasContent, 
+      //   hasTimestamp: lineTimestamps.has(index),
+      //   isLiveMode 
+      // });
       
       if (oldSpeakerEmpty && newSpeakerHasContent && !lineTimestamps.has(index)) {
         // Save datetime with delay offset
         const currentDatetime = Date.now() - (timestampDelay * 1000);
-        console.log('✅ Creating timestamp (Speaker):', { index, currentDatetime, delay: timestampDelay });
+        // console.log('✅ Creating timestamp (Speaker):', { index, currentDatetime, delay: timestampDelay });
         
         const newLineTimestamps = new Map(lineTimestamps);
         newLineTimestamps.set(index, currentDatetime);
@@ -666,7 +685,8 @@ export const NotesEditor: React.FC<Props> = ({
     }, 300); // 300ms debounce - reduces updates while typing
   }, [syncToParentTimestampMap]);
   
-  // Debounced onNotesChange to reduce App re-renders
+  // Debounced onNotesChange with short delay (100ms) to balance responsiveness and performance
+  // Shorter than original 300ms to ensure autosave triggers promptly while reducing re-renders
   const debouncedNotesChange = useCallback((newNotes: string) => {
     if (notesDebounceRef.current) {
       clearTimeout(notesDebounceRef.current);
@@ -674,7 +694,7 @@ export const NotesEditor: React.FC<Props> = ({
     
     notesDebounceRef.current = setTimeout(() => {
       onNotesChange(newNotes);
-    }, 300); // 300ms debounce
+    }, 100); // 100ms debounce - optimal balance
   }, [onNotesChange]);
   
   // Helper to get current lines from localNotes

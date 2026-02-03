@@ -1129,14 +1129,15 @@ export const App: React.FC = () => {
                     speakersModified || 
                     transcriptionsModified;
     
-    // console.log('🔍 hasUnsavedChanges check:', { 
-    //   isSaved, 
-    //   speakersModified, 
-    //   notesModified, 
-    //   speakersMapSize: speakersMap.size, 
-    //   savedSpeakersSnapshotSize: savedSpeakersSnapshot.size,
-    //   hasData 
-    // });
+    console.log('🔍 hasUnsavedChanges check:', { 
+      isSaved, 
+      speakersModified, 
+      notesModified, 
+      notesLength: notes.length,
+      speakersMapSize: speakersMap.size, 
+      savedSpeakersSnapshotSize: savedSpeakersSnapshot.size,
+      hasData 
+    });
     
     setHasUnsavedChanges(hasData);
   }, [isRecording, audioBlob, notes, speakersMap, transcriptions, isSaved, savedNotesSnapshot, savedSpeakersSnapshot, savedTranscriptionsSnapshot]);
@@ -1166,7 +1167,7 @@ export const App: React.FC = () => {
   }
   
   // Auto-save to localStorage with debounce (every 3 seconds after changes)
-  // Optimized: Only trigger on hasUnsavedChanges, reducing unnecessary dependencies
+  // Must include all backup data dependencies to ensure latest state is saved
   useEffect(() => {
     // Auto-save whenever there are unsaved changes (including after first save)
     // Backup will be cleared only when user explicitly saves
@@ -1182,10 +1183,12 @@ export const App: React.FC = () => {
           participants: meetingInfo.attendees
         };
         
-        // console.log('💾 Auto-backup saving with speakersMap:', { 
-        //   size: speakersMap.size, 
-        //   entries: Array.from(speakersMap.entries()) 
-        // });
+        console.log('💾 Auto-backup saving:', { 
+          notesLength: notes.length,
+          speakersMapSize: speakersMap.size, 
+          timestampMapSize: timestampMap.size,
+          entries: Array.from(speakersMap.entries()) 
+        });
         
         saveBackup(
           meetingInfoForBackup,
@@ -1207,7 +1210,7 @@ export const App: React.FC = () => {
         clearTimeout(autoSaveTimeoutRef.current);
       }
     };
-  }, [hasUnsavedChanges]); // Optimized: Only depend on hasUnsavedChanges flag
+  }, [hasUnsavedChanges, notes, speakersMap, timestampMap, meetingInfo, audioBlob, isSaved, transcriptions, rawTranscripts, geminiSummary, recordingStartTime]);
 
   // Switch to live mode when starting a new recording
   useEffect(() => {
