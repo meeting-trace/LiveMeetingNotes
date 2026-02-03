@@ -163,6 +163,8 @@ export const RecordingControls: React.FC<Props> = ({
       // Skip transcription for system audio only (Web Speech API only works with microphone)
       if (audioSource === 'system' as AudioSourceType) {
         // console.warn('⚠️ Web Speech API chỉ nghe microphone, không nghe system audio. Bỏ qua transcription.');
+        // Always stop transcription if it's running to prevent microphone permission request
+        speechToTextService.stopTranscription();
         return;
       }
 
