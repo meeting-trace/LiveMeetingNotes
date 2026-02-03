@@ -33,8 +33,17 @@ self.addEventListener('install', (event) => {
         return cache.addAll(urlsToCache);
       })
       .then(() => {
-        console.log('[SW] Skip waiting on install - activating new version immediately');
-        return self.skipWaiting();
+        // DON'T skip waiting automatically - let user decide
+        console.log('[SW] Install complete, waiting for activation command');
+        // Notify clients about new version
+        self.clients.matchAll().then((clients) => {
+          clients.forEach((client) => {
+            client.postMessage({
+              type: 'NEW_VERSION_AVAILABLE',
+              version: CACHE_NAME
+            });
+          });
+        });
       })
       .catch((error) => {
         console.error('[SW] Cache failed:', error);

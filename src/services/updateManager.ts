@@ -24,23 +24,53 @@ export class UpdateManagerService {
     }
 
     try {
-      // Listen for VitePWA update events
-      window.addEventListener('sw-update-available', () => {
-        console.log('✨ New version detected from VitePWA!');
-        this.updateAvailable = true;
-        
-        if (this.onUpdateCallback) {
-          // Get registration to pass to callback
-          navigator.serviceWorker.ready.then((registration) => {
-            if (this.onUpdateCallback) {
-              this.onUpdateCallback(registration);
-            }
-          });
+      // Listen for messages from service worker
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'NEW_VERSION_AVAILABLE') {
+          console.log('✨ New version detected from Service Worker:', event.data.version);
+          this.updateAvailable = true;
+          
+          if (this.onUpdateCallback && this.registration) {
+            this.onUpdateCallback(this.registration);
+          }
         }
+      });
+
+      // Listen for service worker updates
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        console.log('🔄 Controller changed - new version activated');
       });
 
       // Get existing registration
       this.registration = await navigator.serviceWorker.ready;
+      
+      // Check if there's a waiting service worker
+      if (this.registration.waiting) {
+        console.log('⚠️ Update already waiting to be activated');
+        this.updateAvailable = true;
+        if (this.onUpdateCallback) {
+          this.onUpdateCallback(this.registration);
+        }
+      }
+      
+      // Listen for new service worker installation
+      this.registration.addEventListener('updatefound', () => {
+        const newWorker = this.registration!.installing;
+        console.log('🔄 New service worker installing...');
+        
+        if (newWorker) {
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              console.log('✨ New version installed and waiting');
+              this.updateAvailable = true;
+              if (this.onUpdateCallback && this.registration) {
+                this.onUpdateCallback(this.registration);
+              }
+            }
+          });
+        }
+      });
+      
       console.log('✅ Service Worker ready for update checks');
     } catch (error) {
       console.error('Failed to initialize update manager:', error);
