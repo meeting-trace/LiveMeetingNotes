@@ -214,7 +214,7 @@ export const RecordingControls: React.FC<Props> = ({
     // Show warning modal for System Audio to ensure user knows to tick "Also share system audio"
     if (audioSource === 'system' as AudioSourceType || audioSource === 'both' as AudioSourceType) {
       Modal.confirm({
-        title: '⚠️ Quan trọng: Also share system audio!',
+        title: '⚠️ Lưu ý khi thao tác chọn nguồn âm thanh khác để ghi âm!',
         icon: <ExclamationCircleOutlined />,
         content: (
           <div>
@@ -222,11 +222,11 @@ export const RecordingControls: React.FC<Props> = ({
               Khi chọn tab/màn hình, BẮT BUỘC phải chọn "Also share system audio" (hoặc "Đồng thời chia sẻ âm thanh hệ thống")!
             </p>
             <p style={{ marginBottom: '8px' }}>
-              ✅ <strong>Chrome/Edge:</strong> Chọn tab → CHỌN "Also share system audio"<br/>
+              ✅ <strong>Chrome:</strong> Chọn tab → CHỌN "Also share tab audio"<br/>
               ✅ <strong>Entire screen:</strong> CHỌN "Also share system audio"
             </p>
             <p style={{ color: '#cf1322', marginTop: '12px' }}>
-              ❌ Nếu không CHỌN, bạn sẽ KHÔNG ghi được âm thanh!
+              ❌ Nếu không CHỌN, bạn sẽ KHÔNG nhận được âm thanh từ nguồn khác!
             </p>
           </div>
         ),
@@ -1391,9 +1391,9 @@ export const RecordingControls: React.FC<Props> = ({
               <Select.Option value={'microphone' as AudioSourceType}>
                 🎤 Microphone
               </Select.Option>
-              <Select.Option value={'system' as AudioSourceType}>
+              {/* <Select.Option value={'system' as AudioSourceType}>
                 🔊 Nguồn khác
-              </Select.Option>
+              </Select.Option> */}
               <Select.Option value={'both' as AudioSourceType}>
                 🎤+🔊 Kết hợp
               </Select.Option>
