@@ -3,6 +3,7 @@ import { MetadataPanel } from './components/MetadataPanel';
 import { RecordingControls } from './components/RecordingControls';
 import { NotesEditor } from './components/NotesEditor';
 import { AudioPlayer, AudioPlayerRef } from './components/AudioPlayer';
+import { LiveWaveform } from './components/LiveWaveform';
 import { HelpButton } from './components/HelpButton';
 import { TranscriptionConfig } from './components/TranscriptionConfig';
 import { TranscriptionPanel } from './components/TranscriptionPanel';
@@ -53,6 +54,8 @@ export const App: React.FC = () => {
   const [rawTranscripts, setRawTranscripts] = useState<RawTranscriptData[]>([]); // Raw data from Web Speech API
   const [geminiSummary, setGeminiSummary] = useState<string | undefined>(undefined); // Summary from Gemini AI
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [audioStream, setAudioStream] = useState<MediaStream | null>(null); // Live audio stream for waveform
+  const [audioSourceType, setAudioSourceType] = useState<import('./types/types').AudioSourceType>('microphone' as import('./types/types').AudioSourceType); // Audio source type for waveform
   
   // Update manager states
   const [showUpdateNotification, setShowUpdateNotification] = useState(false);
@@ -2155,7 +2158,17 @@ export const App: React.FC = () => {
         transcriptions={transcriptions}
         geminiSummary={geminiSummary}
         onFileManagerReady={(fm) => { fileManagerRef.current = fm; }}
+        onAudioStreamChange={setAudioStream}
+        onAudioSourceChange={setAudioSourceType}
       />
+      
+      {/* Live Waveform - Show when recording */}
+      <LiveWaveform 
+        audioStream={audioStream} 
+        isRecording={isRecording} 
+        audioSourceType={audioSourceType}
+      />
+      
       {/* Meeting Summary Panel - Always show to allow manual input */}
       <MeetingSummaryPanel
         summary={geminiSummary || ''}

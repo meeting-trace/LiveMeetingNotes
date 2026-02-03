@@ -57,6 +57,8 @@ interface Props {
   onSpeakerChange?: (lineIndex: number, speaker: string) => void; // Add handler for speaker changes
   geminiSummary?: string; // Add geminiSummary prop
   onFileManagerReady?: (fileManager: FileManagerService) => void; // Pass fileManager instance to parent
+  onAudioStreamChange?: (stream: MediaStream | null) => void; // Callback for audio stream changes
+  onAudioSourceChange?: (source: AudioSourceType) => void; // Callback for audio source changes
 }
 
 export const RecordingControls: React.FC<Props> = ({
@@ -81,7 +83,9 @@ export const RecordingControls: React.FC<Props> = ({
   onNewTranscription,
   transcriptions,
   geminiSummary,
-  onFileManagerReady
+  onFileManagerReady,
+  onAudioStreamChange,
+  onAudioSourceChange
 }) => {
   const { message } = App.useApp();
   const [duration, setDuration] = useState<number>(0);
@@ -102,6 +106,20 @@ export const RecordingControls: React.FC<Props> = ({
   const [isProcessing, setIsProcessing] = useState<boolean>(false); // Track save operations
   const [selectedLanguage, setSelectedLanguage] = useState<string>('vi-VN'); // Language selector
   const [audioSource, setAudioSource] = useState<AudioSourceType>('microphone' as AudioSourceType); // Audio source selector
+
+  // Notify parent when audioStream changes
+  useEffect(() => {
+    if (onAudioStreamChange) {
+      onAudioStreamChange(audioStream);
+    }
+  }, [audioStream, onAudioStreamChange]);
+
+  // Notify parent when audioSource changes
+  useEffect(() => {
+    if (onAudioSourceChange) {
+      onAudioSourceChange(audioSource);
+    }
+  }, [audioSource, onAudioSourceChange]);
 
   // Initialize language from config
   useEffect(() => {
@@ -142,16 +160,19 @@ export const RecordingControls: React.FC<Props> = ({
   // Start/stop transcription when recording state or autoTranscribe changes
   useEffect(() => {
     const startTranscription = async () => {
+      // Skip transcription for system audio only (Web Speech API only works with microphone)
+      if (audioSource === 'system' as AudioSourceType) {
+        // console.warn('⚠️ Web Speech API chỉ nghe microphone, không nghe system audio. Bỏ qua transcription.');
+        return;
+      }
+
       if (isRecording && !isPaused && autoTranscribe && transcriptionConfig && navigator.onLine && audioStream) {
         try {
           // Use the shared audio stream from recorder
           await speechToTextService.startTranscription(audioStream, onNewTranscription);
           
           // Show appropriate message based on audio source
-          if (audioSource === 'system' as AudioSourceType) {
-            // System audio only - Web Speech API won't work, but don't show message
-            console.warn('⚠️ Web Speech API chỉ nghe microphone, không nghe system audio');
-          } else if (audioSource === 'both' as AudioSourceType) {
+          if (audioSource === 'both' as AudioSourceType) {
             message.success('🎤 Bắt đầu chuyển đổi giọng nói từ microphone sang văn bản (chỉ ghi nhận giọng nói của bạn)');
           } else {
             message.success('🎤 Bắt đầu chuyển đổi giọng nói sang văn bản');
