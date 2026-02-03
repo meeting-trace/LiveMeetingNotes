@@ -127,7 +127,16 @@ export const RecordingControls: React.FC<Props> = ({
         try {
           // Use the shared audio stream from recorder
           await speechToTextService.startTranscription(audioStream, onNewTranscription);
-          message.success('🎤 Bắt đầu chuyển đổi giọng nói sang văn bản');
+          
+          // Show appropriate message based on audio source
+          if (audioSource === 'system' as AudioSourceType) {
+            // System audio only - Web Speech API won't work, but don't show message
+            console.warn('⚠️ Web Speech API chỉ nghe microphone, không nghe system audio');
+          } else if (audioSource === 'both' as AudioSourceType) {
+            message.success('🎤 Bắt đầu chuyển đổi giọng nói từ microphone sang văn bản (chỉ ghi nhận giọng nói của bạn)');
+          } else {
+            message.success('🎤 Bắt đầu chuyển đổi giọng nói sang văn bản');
+          }
         } catch (error: any) {
           console.error('Failed to start transcription:', error);
           message.error('Không thể bắt đầu chuyển đổi: ' + error.message);
@@ -139,7 +148,7 @@ export const RecordingControls: React.FC<Props> = ({
     };
 
     startTranscription();
-  }, [isRecording, isPaused, autoTranscribe, transcriptionConfig, audioStream]);
+  }, [isRecording, isPaused, autoTranscribe, transcriptionConfig, audioStream, audioSource]);
 
   const handleSelectFolder = async () => {
     try {
@@ -204,8 +213,8 @@ export const RecordingControls: React.FC<Props> = ({
       // Show appropriate message based on audio source
       const sourceMessages: Record<string, string> = {
         'microphone': '🎤 Bắt đầu ghi âm từ microphone',
-        'system': '🔊 Bắt đầu ghi âm từ system audio (cuộc họp)',
-        'both': '🎤+🔊 Bắt đầu ghi âm từ cả microphone và system audio'
+        'system': '🔊 Bắt đầu ghi âm từ Nguồn khác (cuộc họp)',
+        'both': '🎤+🔊 Bắt đầu ghi âm từ cả microphone và Nguồn khác'
       };
       message.success(sourceMessages[audioSource] || 'Bắt đầu ghi âm');
     } catch (error: any) {
@@ -1401,7 +1410,7 @@ export const RecordingControls: React.FC<Props> = ({
           
           {isRecording && !isPaused && (
             <span className="recording-indicator">
-              🔴 Đang ghi âm {audioSource === 'Mic' as AudioSourceType ? 'từ Mic' : audioSource === 'system' as AudioSourceType ? 'từ Nguồn khác' : 'từ Mic và Nguồn khác'}...
+              🔴 Đang ghi âm {audioSource === 'Mic' as AudioSourceType ? 'từ Mic' : audioSource === 'system' as AudioSourceType ? 'từ Nguồn khác' : 'từ Mic và Nguồn khác'} ...
             </span>
           )}
           
