@@ -519,7 +519,35 @@ export const App: React.FC = () => {
 
     let progressModal: any = null;
     let currentProgress = 0;
-    let currentMessage = '';
+    let currentMessage = '🚀 Đang bắt đầu...';
+
+    // Create a container div that we'll update
+    const progressContainer = document.createElement('div');
+    
+    const updateProgressUI = () => {
+      progressContainer.innerHTML = `
+        <div style="margin-top: 16px;">
+          <div style="padding: 16px; background: linear-gradient(135deg, #667eea22 0%, #764ba222 100%); border-radius: 8px; margin-bottom: 16px;">
+            <div style="margin-bottom: 12px; font-size: 14px; font-weight: bold; color: #333;">
+              ${currentMessage}
+            </div>
+            <div style="width: 100%; height: 24px; background: #f0f0f0; border-radius: 12px; overflow: hidden;">
+              <div style="width: ${currentProgress}%; height: 100%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); transition: width 0.3s ease; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: bold;">
+                ${currentProgress > 5 ? `${currentProgress.toFixed(0)}%` : ''}
+              </div>
+            </div>
+          </div>
+          <div style="font-size: 13px; color: #666; line-height: 1.6;">
+            💡 <strong>Lưu ý:</strong><br />
+            • Hệ thống đang tự động chia file và xử lý từng phần<br />
+            • Có delay ${requestDelaySeconds}s giữa các phần để tuân thủ rate limit<br />
+            • Vui lòng không đóng trình duyệt
+          </div>
+        </div>
+      `;
+    };
+
+    updateProgressUI();
 
     try {
       // Show progress modal
@@ -529,51 +557,7 @@ export const App: React.FC = () => {
         closable: false,
         maskClosable: false,
         okButtonProps: { style: { display: 'none' } },
-        content: (
-          <div style={{ marginTop: 16 }}>
-            <div style={{ 
-              padding: '16px', 
-              background: 'linear-gradient(135deg, #667eea22 0%, #764ba222 100%)',
-              borderRadius: '8px',
-              marginBottom: '16px'
-            }}>
-              <div style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 'bold' }}>
-                <span id="progress-message">{currentMessage}</span>
-              </div>
-              <div style={{ 
-                width: '100%', 
-                height: '24px', 
-                background: '#f0f0f0', 
-                borderRadius: '12px',
-                overflow: 'hidden'
-              }}>
-                <div 
-                  id="progress-bar"
-                  style={{ 
-                    width: `${currentProgress}%`, 
-                    height: '100%', 
-                    background: 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)',
-                    transition: 'width 0.3s ease',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'white',
-                    fontSize: '12px',
-                    fontWeight: 'bold'
-                  }}
-                >
-                  {currentProgress > 5 ? `${currentProgress.toFixed(0)}%` : ''}
-                </div>
-              </div>
-            </div>
-            <div style={{ fontSize: '13px', color: '#666', lineHeight: '1.6' }}>
-              💡 <strong>Lưu ý:</strong><br />
-              • Hệ thống đang tự động chia file và xử lý từng phần<br />
-              • Có delay {requestDelaySeconds}s giữa các phần để tuân thủ rate limit<br />
-              • Vui lòng không đóng trình duyệt
-            </div>
-          </div>
-        )
+        content: progressContainer
       });
 
       // Start transcription with progress callback and config values
@@ -587,18 +571,10 @@ export const App: React.FC = () => {
         config.geminiModel,
         (progress, msg) => {
           currentProgress = progress;
-          currentMessage = msg;
+          currentMessage = msg || '⏳ Đang xử lý...';
           
-          // Update UI
-          const progressBar = document.getElementById('progress-bar');
-          const progressMessage = document.getElementById('progress-message');
-          if (progressBar) {
-            progressBar.style.width = `${progress}%`;
-            progressBar.textContent = progress > 5 ? `${progress.toFixed(0)}%` : '';
-          }
-          if (progressMessage) {
-            progressMessage.textContent = msg;
-          }
+          // Update UI by re-rendering the container
+          updateProgressUI();
         },
         maxFileSizeMB,
         requestDelaySeconds,
@@ -1028,9 +1004,10 @@ export const App: React.FC = () => {
               apiKey,
               audioBlob,
               modelName,
-              (progress) => {
-                // Update progress (could enhance with progress modal later)
-                console.log(`Transcription progress: ${progress.toFixed(0)}%`);
+              (progress, message) => {
+                // Update progress with message
+                const displayMsg = message || `Xử lý: ${progress.toFixed(0)}%`;
+                console.log(`Transcription progress: ${progress.toFixed(0)}% - ${displayMsg}`);
               },
               false,
               maxFileSizeMB,

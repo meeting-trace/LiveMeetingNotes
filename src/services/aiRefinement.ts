@@ -64,35 +64,39 @@ export class AIRefinementService {
       const filename = `gemini-debug-${metadata.type}-${timestamp}.json`;
       
       // Extract only prompt text from request (exclude base64 audio data)
-      let requestSummary: any = {
-        generationConfig: requestBody.generationConfig,
-        safetySettings: requestBody.safetySettings
-      };
+      let requestSummary: any = null;
+      
+      if (requestBody) {
+        requestSummary = {
+          generationConfig: requestBody.generationConfig,
+          safetySettings: requestBody.safetySettings
+        };
 
-      // Extract prompt text based on request type
-      if (requestBody.contents && Array.isArray(requestBody.contents)) {
-        requestSummary.contents = requestBody.contents.map((content: any) => {
-          if (content.parts && Array.isArray(content.parts)) {
-            return {
-              parts: content.parts.map((part: any) => {
-                // Keep text prompts, exclude base64 audio data
-                if (part.text) {
-                  return { text: part.text };
-                } else if (part.inline_data) {
-                  // Replace large base64 data with summary info
-                  return {
-                    inline_data: {
-                      mime_type: part.inline_data.mime_type,
-                      data: `[EXCLUDED: ${part.inline_data.mime_type} data, size: ${part.inline_data.data?.length || 0} chars]`
-                    }
-                  };
-                }
-                return part;
-              })
-            };
-          }
-          return content;
-        });
+        // Extract prompt text based on request type
+        if (requestBody.contents && Array.isArray(requestBody.contents)) {
+          requestSummary.contents = requestBody.contents.map((content: any) => {
+            if (content.parts && Array.isArray(content.parts)) {
+              return {
+                parts: content.parts.map((part: any) => {
+                  // Keep text prompts, exclude base64 audio data
+                  if (part.text) {
+                    return { text: part.text };
+                  } else if (part.inline_data) {
+                    // Replace large base64 data with summary info
+                    return {
+                      inline_data: {
+                        mime_type: part.inline_data.mime_type,
+                        data: `[EXCLUDED: ${part.inline_data.mime_type} data, size: ${part.inline_data.data?.length || 0} chars]`
+                      }
+                    };
+                  }
+                  return part;
+                })
+              };
+            }
+            return content;
+          });
+        }
       }
       
       const debugData = {
@@ -357,7 +361,7 @@ export class AIRefinementService {
     transcriptions: TranscriptionResult[], // Primary data source
     rawData: RawTranscriptData[], // Optional: supplementary raw data
     modelName: string, // REQUIRED: specific Gemini model (e.g., "models/gemini-2.5-flash")
-    onProgress?: (progress: number) => void,
+    onProgress?: (progress: number, message?: string) => void,
     fileManager?: FileManagerService // Optional: for saving debug logs to project folder
   ): Promise<{ segments: RefinedSegment[], summary?: string }> {
     // Check quota estimate first
@@ -382,7 +386,7 @@ export class AIRefinementService {
     transcriptions: TranscriptionResult[],
     rawData: RawTranscriptData[],
     modelName: string,
-    onProgress?: (progress: number) => void,
+    onProgress?: (progress: number, message?: string) => void,
     fileManager?: FileManagerService
   ): Promise<{ segments: RefinedSegment[], summary?: string }> {
     const batches = this.splitIntoBatches(transcriptions, this.BATCH_SIZE);
@@ -462,7 +466,7 @@ export class AIRefinementService {
     transcriptions: TranscriptionResult[], // Primary data
     rawData: RawTranscriptData[], // Supplementary data
     modelName: string, // REQUIRED: specific model like "models/gemini-2.5-flash"
-    onProgress?: (progress: number) => void,
+    onProgress?: (progress: number, message?: string) => void,
     fileManager?: FileManagerService
   ): Promise<{ segments: RefinedSegment[], summary?: string }> {
     if (!apiKey || apiKey.trim().length === 0) {
@@ -553,7 +557,7 @@ export class AIRefinementService {
         body: JSON.stringify(requestBody)
       });
 
-      if (onProgress) onProgress(70);
+      if (onProgress) onProgress(70, '📥 Đang nhận kết quả từ Gemini...');
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -817,7 +821,7 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với segments và sum
     apiKey: string,
     audioBlob: Blob,
     modelName: string, // e.g., "models/gemini-1.5-flash" or "models/gemini-2.0-flash-exp"
-    onProgress?: (progress: number) => void,
+    onProgress?: (progress: number, message?: string) => void,
     skipSizeCheck: boolean = false, // Skip size check when called from auto-split flow
     maxFileSizeMB: number = 20, // Maximum file size in MB (from config)
     meetingStartTime?: Date, // Meeting start time for accurate timestamp calculation
@@ -849,92 +853,154 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với segments và sum
       }
     }
 
-    if (onProgress) onProgress(10);
+    if (onProgress) onProgress(10, '🔍 Đang kiểm tra file...');
+
+    // Declare requestBody outside try block for error logging
+    let requestBody: any = null;
 
     try {
-      // Convert to WAV if needed
       // Gemini API officially supports: WAV and MP3 only
-      // All other formats need conversion to WAV
+      // Convert to optimized WAV (mono, 16kHz) for smaller file size
       let processedAudio = audioBlob;
       const audioType = audioBlob.type.toLowerCase();
       const isWavOrMp3 = audioType.includes('wav') || audioType.includes('mpeg') || audioType.includes('mp3');
       const needsConversion = !isWavOrMp3;
       
       if (needsConversion) {
-        console.log(`🔄 Converting ${audioType} to WAV (Gemini requires WAV or MP3)...`);
-        if (onProgress) onProgress(15);
+        console.log(`🔄 Converting ${audioType} to optimized WAV (mono, 16kHz)...`);
+        if (onProgress) onProgress(15, `🔄 Đang chuyển đổi sang WAV tối ưu...`);
         
         const originalSizeMB = audioBlob.size / (1024 * 1024);
         
-        // Convert with lower sample rate if file is large
-        const targetSampleRate = audioBlob.size > 10 * 1024 * 1024 ? 16000 : 44100;
-        processedAudio = await this.convertToWav(audioBlob, targetSampleRate);
+        // ✨ Convert to WAV with mono + 16kHz to reduce file size dramatically
+        // 16kHz is optimal for speech recognition (telephony quality)
+        // Mono reduces size by 50%, 16kHz reduces by ~70% → total ~85% reduction
+        processedAudio = await this.convertToWav(audioBlob, 16000);
         
         const newSizeMB = processedAudio.size / (1024 * 1024);
-        console.log(`✅ Converted: ${originalSizeMB.toFixed(2)}MB → ${newSizeMB.toFixed(2)}MB`);
+        const reduction = ((1 - newSizeMB / originalSizeMB) * 100).toFixed(1);
+        console.log(`✅ Converted to WAV: ${originalSizeMB.toFixed(2)}MB → ${newSizeMB.toFixed(2)}MB (${reduction}% reduction)`);
+        
+        // Display conversion result on UI
+        if (onProgress) {
+          const sizeChange = newSizeMB > originalSizeMB ? '📈 Tăng' : '📉 Giảm';
+          onProgress(20, `${sizeChange}: ${originalSizeMB.toFixed(1)}MB → ${newSizeMB.toFixed(1)}MB`);
+        }
         
         // Check again after conversion (only if not skipping size check)
+        // Note: WAV can be LARGER than original compressed format (WebM, MP4, etc.)
         if (!skipSizeCheck) {
           const MAX_FILE_SIZE = maxFileSizeMB * 1024 * 1024;
           
           if (processedAudio.size > MAX_FILE_SIZE) {
-            throw new Error(
-              `❌ Sau chuyển đổi, file vẫn quá lớn: ${newSizeMB.toFixed(2)} MB\n\n` +
-              `Vui lòng giảm thời lượng ghi âm hoặc giảm chất lượng.`
+            // Still too large after WAV optimization - use auto-split
+            console.warn(`⚠️ File sau WAV conversion vẫn quá lớn (${newSizeMB.toFixed(2)}MB > ${maxFileSizeMB}MB)`);
+            console.log(`🔄 Tự động chia nhỏ file và xử lý từng phần...`);
+            
+            if (onProgress) onProgress(30, '📦 File lớn, đang chia nhỏ và xử lý...');
+            
+            // Auto-split into chunks
+            const result = await this.transcribeEntireAudioWithGemini(
+              apiKey,
+              processedAudio,
+              modelName,
+              onProgress,
+              maxFileSizeMB,
+              5, // requestDelaySeconds
+              60, // maxDurationMinutes
+              meetingStartTime,
+              summaryPrompt,
+              fileManager
             );
+            
+            return result;
           }
         }
         
-        if (onProgress) onProgress(25);
+        if (onProgress) onProgress(25, `✅ Đã tối ưu: ${newSizeMB.toFixed(2)}MB`);
       }
 
-      // Convert audio blob to base64
-      const base64Audio = await this.blobToBase64(processedAudio);
-      if (onProgress) onProgress(30);
+      // Calculate audio duration for adaptive prompting
+      if (onProgress) onProgress(30, '⏱️ Đang phân tích thời lượng audio...');
+      const audioDuration = await this.getAudioDuration(processedAudio);
+      const durationMinutes = Math.ceil(audioDuration / 60);
+      
+      console.log(`⏱️ Audio duration: ${durationMinutes} minutes (${audioDuration}s)`);
 
       // Get MIME type (use WAV if converted)
       const mimeType = processedAudio.type || 'audio/wav';
+
+      // Convert audio blob to base64
+      if (onProgress) onProgress(38, '💾 Đang mã hóa audio...');
+      const base64Audio = await this.blobToBase64(processedAudio);
 
       // Debug logging before sending
       const audioSizeMB = processedAudio.size / (1024 * 1024);
       const base64SizeKB = (base64Audio.length * 0.75) / 1024; // Approximate size in KB
       console.log('📤 Sending to Gemini:');
       console.log('  • Audio size:', audioSizeMB.toFixed(2), 'MB');
+      console.log('  • Duration:', durationMinutes, 'minutes');
       console.log('  • MIME type:', mimeType);
       console.log('  • Base64 size:', base64SizeKB.toFixed(2), 'KB');
       console.log('  • Model:', modelName);
+      
+      // Display audio info on UI before sending
+      if (onProgress) {
+        onProgress(39, `📊 ${audioSizeMB.toFixed(1)}MB • ${durationMinutes} phút • ${mimeType.split('/')[1].toUpperCase()}`);
+      }
+
+      // Adaptive instruction based on duration
+      const adaptiveInstruction = durationMinutes <= 60
+        ? `AUDIO NGẮN (${durationMinutes} phút): Hãy phiên âm CHI TIẾT từng câu nói, giữ nguyên wording và ngữ điệu.`
+        : durationMinutes <= 90
+        ? `AUDIO VỪA (${durationMinutes} phút): Hãy tóm tắt NHÓM CÂU liên quan thành đoạn văn ngắn, vẫn giữ đầy đủ ý chính.`
+        : `AUDIO DÀI (${durationMinutes} phút): Chỉ ghi lại Ý CHÍNH của mỗi lượt nói, cô đọng tối đa để tránh vượt giới hạn output.
+        
+⚠️ QUAN TRỌNG: Nếu cảm thấy output sắp vượt quá giới hạn, hãy tự động chuyển sang chế độ tóm tắt ngắn gọn hơn.`;
 
       // Prepare request
       const endpoint = `https://generativelanguage.googleapis.com/${this.GEMINI_API_VERSION}/${modelName}:generateContent?key=${apiKey}`;
 
-      const requestBody = {
+      requestBody = {
         contents: [{
           parts: [
             {
-              text: `BẠN LÀ THÀNH VIÊN THAM GIA CUỘC HỌP. NHIỆM VỤ: Phiên âm file âm thanh và tóm tắt nội dung cuộc họp.
+              text: `BẠN LÀ CHUYÊN GIA GHI CHÉP CUỘC HỌP (AI SCRIBE).
+NHIỆM VỤ: Xử lý file âm thanh đầu vào để tạo ra bản ghi chép và tóm tắt điều hành.
 
-PHẦN 1: PHIÊN ÂM (TRANSCRIPTION)
-- Nghe kỹ file âm thanh và chuyển thành văn bản CHÍNH XÁC những gì được nói.
-- Chia văn bản thành các đoạn hội thoại tự nhiên (khi có người khác nói hoặc tạm dừng).
-- Gắn thời gian [mm:ss] vào đầu mỗi đoạn dựa trên vị trí trong file âm thanh (bắt đầu từ 0:00).
-- Nếu có nhiều người nói, phân biệt bằng 'Người nói 1:', 'Người nói 2:', v.v.
-- Làm sạch văn bản (loại bỏ từ đệm không cần thiết, sửa lỗi chính tả).
-- CHỈ phiên âm những gì nghe được trong audio. KHÔNG thêm thông tin từ kiến thức của bạn.
-- Nếu không nghe rõ một đoạn, ghi "[không rõ]".
+${adaptiveInstruction}
 
-PHẦN 2: TÓM TẮT (SUMMARY)
-Sau khi phiên âm xong, hãy tóm tắt nội dung cuộc họp dựa trên yêu cầu sau:
+HƯỚNG DẪN XỬ LÝ:
+
+PHẦN 1: PHIÊN ÂM/TÓM TẮT (tùy độ dài audio)
+1.  Nghe toàn bộ file âm thanh.
+2.  Trích xuất nội dung chính xác (hoặc tóm tắt nếu cần).
+3.  Phân đoạn hội thoại dựa trên sự thay đổi người nói.
+4.  Gán nhãn người nói nhất quán (Speaker 1, Speaker 2...). Cố gắng nhận diện tên nếu họ tự giới thiệu.
+5.  Gắn Timestamp [h:mm:ss] chính xác tại thời điểm bắt đầu câu nói (ví dụ: 0:30, 1:05:30, 2:15:45).
+6.  Lược bỏ các từ thừa (à, ừ, ờ) nhưng giữ nguyên ý nghĩa.
+7.  Nếu âm thanh không rõ, đánh dấu là "[không rõ]".
+
+🎯 BẮT BUỘC GIỮ LẠI (dù có tóm tắt): 
+   • Số liệu chính xác
+   • Ngày tháng, deadline
+   • Tên riêng (người, công ty, dự án)
+   • Quyết định quan trọng
+   • Yêu cầu hành động (action items)
+
+PHẦN 2: TÓM TẮT TỔNG QUAN (SUMMARY)
+Sau khi xử lý xong, hãy tóm tắt nội dung cuộc họp dựa trên yêu cầu sau:
 ${summaryPrompt || 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'}
 
 CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu gạch đầu dòng.
 
-ĐỊNH DẠNG ĐẦU RA (CHỈ TRẢ VỀ JSON, KHÔNG CÓ TEXT GIẢI THÍCH THÊM):
+Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, không có lời dẫn. Cấu trúc như sau:
 {
   "segments": [
     {
       "timestamp": "0:00",
       "speaker": "Người nói 1",
-      "text": "nội dung chính xác từ audio"
+      "text": "nội dung (chi tiết hoặc tóm tắt tùy độ dài audio)"
     }
   ],
   "summary": "Nội dung tóm tắt chi tiết về cuộc họp dựa trên yêu cầu ở trên. Viết thành văn xuôi liền mạch."
@@ -947,10 +1013,31 @@ CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu g�
               }
             }
           ]
-        }]
+        }],
+        // 🛡️ Safety Settings: Disable all filters to prevent blocking transcription
+        // Audio meetings may contain loud noises, debates, or sensitive words
+        // that could be misinterpreted as harmful content
+        safetySettings: [
+          {
+            category: "HARM_CATEGORY_HARASSMENT",
+            threshold: "BLOCK_NONE"
+          },
+          {
+            category: "HARM_CATEGORY_HATE_SPEECH",
+            threshold: "BLOCK_NONE"
+          },
+          {
+            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            threshold: "BLOCK_NONE"
+          },
+          {
+            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+            threshold: "BLOCK_NONE"
+          }
+        ]
       };
 
-      if (onProgress) onProgress(40);
+      if (onProgress) onProgress(40, '📤 Đang gửi request tới Gemini AI...');
 
       // Make API request
       const response = await fetch(endpoint, {
@@ -961,7 +1048,7 @@ CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu g�
         body: JSON.stringify(requestBody)
       });
 
-      if (onProgress) onProgress(70);
+      if (onProgress) onProgress(70, '📥 Đã nhận response từ Gemini...');
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -971,7 +1058,33 @@ CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu g�
       }
 
       const data = await response.json();
-      if (onProgress) onProgress(90);
+      if (onProgress) onProgress(90, '📝 Đang phân tích kết quả...');
+
+      // Debug: Log response structure
+      console.log('🔍 Response keys:', Object.keys(data));
+      console.log('🔍 Has candidates?', !!data.candidates);
+      console.log('🔍 Has promptFeedback?', !!data.promptFeedback);
+      console.log('🔍 Has error?', !!data.error);
+
+      // 🛡️ Check if blocked by safety filter
+      if (data.promptFeedback?.blockReason) {
+        console.error('❌ Bị chặn bởi Google Safety Filter:', data.promptFeedback);
+        console.log('🔍 Block reason:', data.promptFeedback.blockReason);
+        console.log('🔍 Safety ratings:', data.promptFeedback.safetyRatings);
+        throw new Error(`Gemini Safety Filter chặn nội dung: ${data.promptFeedback.blockReason}. Vui lòng kiểm tra file audio.`);
+      }
+
+      // Check for API errors in response
+      if (data.error) {
+        console.error('❌ Gemini API returned error:', data.error);
+        throw new Error(data.error.message || 'Unknown Gemini API error');
+      }
+      
+      // Check if candidates exist before parsing
+      if (!data.candidates || !Array.isArray(data.candidates) || data.candidates.length === 0) {
+        console.error('❌ No candidates in response. Full response:', JSON.stringify(data, null, 2));
+        throw new Error('No transcription results from Gemini API. The response may have been blocked or empty.');
+      }
 
       // 💾 Save debug log with request and response
       await this.saveGeminiDebugLog(requestBody, data, {
@@ -982,12 +1095,28 @@ CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu g�
 
       // Parse response (now returns { results, summary })
       const parsed = this.parseGeminiAudioTranscription(data, meetingStartTime);
-      if (onProgress) onProgress(100);
+      if (onProgress) onProgress(100, '✅ Hoàn thành!');
 
       return parsed;
 
     } catch (error: any) {
-      console.error('Gemini audio transcription error:', error);
+      console.error('❌ Gemini audio transcription error:', error);
+      
+      // Save error log
+      try {
+        await this.saveGeminiDebugLog(requestBody, null, {
+          type: 'audio',
+          timestamp: new Date().toISOString(),
+          error: error.message
+        }, fileManager);
+      } catch (logError) {
+        console.error('Failed to save error log:', logError);
+      }
+      
+      // Don't nest "Failed to transcribe audio" messages
+      if (error.message?.startsWith('Failed to transcribe audio:')) {
+        throw error;
+      }
       throw new Error(`Failed to transcribe audio: ${error.message}`);
     }
   }
@@ -1004,6 +1133,39 @@ CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu g�
       };
       reader.onerror = reject;
       reader.readAsDataURL(blob);
+    });
+  }
+
+  /**
+   * Get audio duration in seconds from Blob
+   */
+  private static async getAudioDuration(audioBlob: Blob): Promise<number> {
+    return new Promise((resolve) => {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const reader = new FileReader();
+
+      reader.onload = async (e) => {
+        try {
+          const arrayBuffer = e.target?.result as ArrayBuffer;
+          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+          const duration = audioBuffer.duration; // in seconds
+          await audioContext.close(); // Clean up
+          resolve(duration);
+        } catch (error) {
+          // Fallback: estimate from file size (very rough)
+          console.warn('Cannot decode audio for duration, estimating from size');
+          const estimatedDuration = audioBlob.size / (16000 * 2); // Assume 16kHz mono 16-bit
+          resolve(estimatedDuration);
+        }
+      };
+
+      reader.onerror = () => {
+        // Fallback
+        const estimatedDuration = audioBlob.size / (16000 * 2);
+        resolve(estimatedDuration);
+      };
+      
+      reader.readAsArrayBuffer(audioBlob);
     });
   }
 
@@ -1262,7 +1424,7 @@ CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu g�
     apiKey: string,
     audioBlob: Blob,
     modelName: string,
-    onProgress?: (progress: number, message: string) => void,
+    onProgress?: (progress: number, message?: string) => void,
     maxFileSizeMB: number = 20,
     requestDelaySeconds: number = 5,
     maxDurationMinutes: number = 60,
@@ -1427,13 +1589,18 @@ CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu g�
    */
   private static parseGeminiAudioTranscription(apiResponse: any, meetingStartTime?: Date): { results: TranscriptionResult[], summary?: string } {
     try {
-      const candidates = apiResponse.candidates;
-      if (!candidates || candidates.length === 0) {
+      // Debug log full API response structure
+      console.log('🔍 Full Gemini API response:', JSON.stringify(apiResponse, null, 2));
+      
+      const candidates = apiResponse?.candidates;
+      if (!candidates || !Array.isArray(candidates) || candidates.length === 0) {
+        console.error('❌ No candidates in response:', apiResponse);
         throw new Error('No response from Gemini API');
       }
 
-      const content = candidates[0].content;
-      if (!content || !content.parts || content.parts.length === 0) {
+      const content = candidates[0]?.content;
+      if (!content || !content.parts || !Array.isArray(content.parts) || content.parts.length === 0) {
+        console.error('❌ No content/parts in first candidate:', candidates[0]);
         throw new Error('Empty response from Gemini');
       }
 
@@ -1573,12 +1740,19 @@ CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu g�
   }
 
   /**
-   * Parse timestamp string (mm:ss or m:ss) to milliseconds
+   * Parse timestamp string (h:mm:ss, mm:ss, or m:ss) to milliseconds
+   * Supports: "0:30" (30s), "5:45" (5m45s), "1:23:45" (1h23m45s)
    */
   private static parseTimestampToMs(timestamp: string): number {
     try {
       const parts = timestamp.split(':').map(p => parseInt(p.trim(), 10));
-      if (parts.length === 2) {
+      
+      if (parts.length === 3) {
+        // h:mm:ss format
+        const [hours, minutes, seconds] = parts;
+        return (hours * 3600 + minutes * 60 + seconds) * 1000;
+      } else if (parts.length === 2) {
+        // mm:ss format
         const [minutes, seconds] = parts;
         return (minutes * 60 + seconds) * 1000;
       }
