@@ -676,6 +676,7 @@ export const App: React.FC = () => {
             undefined,
             false,
             maxFileSizeMB,
+            config.maxAudioDurationMinutes || 60, // Add duration limit
             meetingStartTime,
             config.summaryPrompt,
             fileManagerRef.current // Pass fileManager for debug logs
@@ -965,23 +966,61 @@ export const App: React.FC = () => {
         },
         cancelButtonProps: { size: 'large', style: { height: '40px' } },
         onOk: async () => {
-          // Check file size FIRST before starting transcription
+          // CRITICAL: Check BOTH size and duration, using WAV size estimate
           const config = speechToTextService.getConfig();
           const maxFileSizeMB = config?.maxFileSizeMB || 20;
-          const MAX_FILE_SIZE = maxFileSizeMB * 1024 * 1024; // Convert to bytes
-          const fileSizeMB = audioBlob.size / (1024 * 1024);
+          const maxDurationMinutes = config?.maxAudioDurationMinutes || 60;
           
-          // If file exceeds limit, show segment selection modal immediately
-          if (audioBlob.size > MAX_FILE_SIZE) {
-            console.log(`⚠️ File quá lớn: ${fileSizeMB.toFixed(2)}MB > ${maxFileSizeMB}MB`);
-            showSegmentSelectionModal(fileSizeMB, maxFileSizeMB);
-            return; // Stop execution
-          }
-          
-          // File size OK, proceed with transcription
           let hideLoading: (() => void) | null = null;
 
           try {
+            // Step 1: Get audio duration
+            hideLoading = message.loading('⏱️ Đang phân tích file audio...', 0);
+            
+            const audioDuration = await AIRefinementService.getAudioDuration(audioBlob);
+            const durationMinutes = Math.ceil(audioDuration / 60);
+            
+            // Step 2: Estimate WAV size if conversion needed
+            const audioType = audioBlob.type.toLowerCase();
+            const isWavOrMp3 = audioType.includes('wav') || audioType.includes('mpeg') || audioType.includes('mp3');
+            const needsConversion = !isWavOrMp3;
+            
+            let estimatedProcessedSizeMB = audioBlob.size / (1024 * 1024);
+            
+            if (needsConversion) {
+              // Estimate WAV size after 16kHz mono conversion
+              // Create temporary AudioContext to get sample rate
+              const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+              const arrayBuffer = await audioBlob.arrayBuffer();
+              const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+              await audioContext.close();
+              
+              // WAV 16kHz mono size = 16000 Hz × 1 channel × 16 bit × duration / 8
+              estimatedProcessedSizeMB = (16000 * 1 * 16 * audioDuration) / (8 * 1024 * 1024);
+            }
+            
+            if (hideLoading) hideLoading();
+            
+            console.log(`📊 Audio analysis:`);
+            console.log(`  • Original: ${(audioBlob.size / (1024 * 1024)).toFixed(2)}MB, ${durationMinutes} minutes`);
+            console.log(`  • Estimated after processing: ${estimatedProcessedSizeMB.toFixed(2)}MB`);
+            console.log(`  • Limits: ${maxFileSizeMB}MB, ${maxDurationMinutes} minutes`);
+            
+            // Step 3: Check if exceeds EITHER limit
+            const exceedsSize = estimatedProcessedSizeMB > maxFileSizeMB;
+            const exceedsDuration = durationMinutes > maxDurationMinutes;
+            
+            if (exceedsSize || exceedsDuration) {
+              console.log(`⚠️ File vượt giới hạn:`);
+              if (exceedsSize) console.log(`  • Size: ${estimatedProcessedSizeMB.toFixed(2)}MB > ${maxFileSizeMB}MB`);
+              if (exceedsDuration) console.log(`  • Duration: ${durationMinutes} phút > ${maxDurationMinutes} phút`);
+              
+              showSegmentSelectionModal(estimatedProcessedSizeMB, maxFileSizeMB);
+              return; // Stop execution
+            }
+            
+            // File OK, proceed with transcription
+            hideLoading = null;
             const meetingStartTime = getValidMeetingStartTime();
             
             // Show loading message
@@ -1005,6 +1044,7 @@ export const App: React.FC = () => {
               },
               false,
               maxFileSizeMB,
+              config?.maxAudioDurationMinutes || 60, // Add duration limit from config
               meetingStartTime,
               config?.summaryPrompt,
               fileManagerRef.current // Pass fileManager for debug logs

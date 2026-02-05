@@ -824,6 +824,7 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với segments và sum
     onProgress?: (progress: number, message?: string) => void,
     skipSizeCheck: boolean = false, // Skip size check when called from auto-split flow
     maxFileSizeMB: number = 20, // Maximum file size in MB (from config)
+    maxDurationMinutes: number = 60, // Maximum duration in minutes (from config)
     meetingStartTime?: Date, // Meeting start time for accurate timestamp calculation
     summaryPrompt?: string, // OPTIONAL: user-provided prompt text for the summary field
     fileManager?: FileManagerService // Optional: for saving debug logs to project folder
@@ -920,12 +921,50 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với segments và sum
         if (onProgress) onProgress(25, `✅ Đã tối ưu: ${newSizeMB.toFixed(2)}MB`);
       }
 
-      // Calculate audio duration for adaptive prompting
-      if (onProgress) onProgress(30, '⏱️ Đang phân tích thời lượng audio...');
-      const audioDuration = await this.getAudioDuration(processedAudio);
-      const durationMinutes = Math.ceil(audioDuration / 60);
+      // Calculate audio duration for adaptive prompting (skip decode if already validated chunks)
+      let audioDuration: number;
+      let durationMinutes: number;
       
-      console.log(`⏱️ Audio duration: ${durationMinutes} minutes (${audioDuration}s)`);
+      if (skipSizeCheck) {
+        // For chunks: Use time range from split (passed via chunk metadata would be better)
+        // Fallback: estimate from WAV size formula
+        // WAV size = sampleRate × channels × bitDepth × duration / 8
+        // Assume 16kHz mono 16-bit (standard for converted audio in transcribeEntireAudioWithGemini)
+        audioDuration = (processedAudio.size * 8) / (16000 * 1 * 16);
+        durationMinutes = Math.ceil(audioDuration / 60);
+        console.log(`⏱️ Estimated chunk duration: ${durationMinutes} minutes (from WAV size, assuming 16kHz mono)`);
+      } else {
+        if (onProgress) onProgress(30, '⏱️ Đang phân tích thời lượng audio...');
+        audioDuration = await this.getAudioDuration(processedAudio);
+        durationMinutes = Math.ceil(audioDuration / 60);
+        
+        console.log(`⏱️ Audio duration: ${durationMinutes} minutes (${audioDuration}s)`);
+        console.log(`📊 Duration limit: ${maxDurationMinutes} minutes`);
+
+        // Check duration limit (only if not skipping checks)
+        if (durationMinutes > maxDurationMinutes) {
+          console.warn(`⚠️ Audio quá dài: ${durationMinutes} phút > ${maxDurationMinutes} phút`);
+          console.log(`🔄 Tự động chia nhỏ file và xử lý từng phần...`);
+          
+          if (onProgress) onProgress(35, `📦 Audio quá dài (${durationMinutes}p), đang chia nhỏ...`);
+          
+          // Auto-split into chunks by both size AND duration
+          const result = await this.transcribeEntireAudioWithGemini(
+            apiKey,
+            processedAudio,
+            modelName,
+            onProgress,
+            maxFileSizeMB,
+            5, // requestDelaySeconds
+            maxDurationMinutes,
+            meetingStartTime,
+            summaryPrompt,
+            fileManager
+          );
+          
+          return result;
+        }
+      }
 
       // Get MIME type (use WAV if converted)
       const mimeType = processedAudio.type || 'audio/wav';
@@ -950,13 +989,11 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với segments và sum
       }
 
       // Adaptive instruction based on duration
-      const adaptiveInstruction = durationMinutes <= 45
-        ? `AUDIO NGẮN (${durationMinutes} phút): Hãy phiên âm CHI TIẾT từng câu nói, giữ nguyên wording và ngữ điệu.`
-        : durationMinutes <= 60
-        ? `AUDIO VỪA (${durationMinutes} phút): Hãy tóm tắt NHÓM CÂU liên quan thành đoạn văn ngắn, vẫn giữ đầy đủ ý chính.`
-        : `AUDIO DÀI (${durationMinutes} phút): Chỉ ghi lại Ý CHÍNH của mỗi lượt nói, cô đọng tối đa để tránh vượt giới hạn output.
-        
-⚠️ QUAN TRỌNG: Nếu cảm thấy output sắp vượt quá giới hạn, hãy tự động chuyển sang chế độ tóm tắt ngắn gọn hơn.`;
+      const adaptiveInstruction = durationMinutes <= 60
+        ? `AUDIO NGẮN (${durationMinutes} phút): Hãy phiên âm CHI TIẾT từng câu nói, giữ nguyên wording và ngữ điệu. QUAN TRỌNG: Gộp TẤT CẢ các câu nói liên tiếp của cùng 1 người thành 1 segment duy nhất.`
+        : durationMinutes <= 90
+        ? `AUDIO VỪA (${durationMinutes} phút): Hãy tóm tắt NHÓM CÂU liên quan thành đoạn văn ngắn, vẫn giữ đầy đủ ý chính. QUAN TRỌNG: Gộp TẤT CẢ các câu nói liên tiếp của cùng 1 người thành 1 segment duy nhất.`
+        : `AUDIO DÀI (${durationMinutes} phút): Chỉ ghi lại Ý CHÍNH của mỗi lượt nói, cô đọng tối đa để tránh vượt giới hạn output. QUAN TRỌNG: Gộp TẤT CẢ các câu nói liên tiếp của cùng 1 người thành 1 segment duy nhất.`;
 
       // Prepare request
       const endpoint = `https://generativelanguage.googleapis.com/${this.GEMINI_API_VERSION}/${modelName}:generateContent?key=${apiKey}`;
@@ -975,9 +1012,9 @@ HƯỚNG DẪN XỬ LÝ:
 PHẦN 1: PHIÊN ÂM/TÓM TẮT (tùy độ dài audio)
 1.  Nghe toàn bộ file âm thanh.
 2.  Trích xuất nội dung chính xác (hoặc tóm tắt nếu cần).
-3.  Phân đoạn hội thoại dựa trên sự thay đổi người nói.
+3.  🎯 GOM NHÓM SEGMENT: Gộp TẤT CẢ các câu nói liên tiếp của cùng 1 người thành 1 SEGMENT DUY NHẤT. CHỈ tạo segment mới khi người nói thay đổi.
 4.  Gán nhãn người nói nhất quán (Speaker 1, Speaker 2...). Cố gắng nhận diện tên nếu họ tự giới thiệu.
-5.  Gắn Timestamp [h:mm:ss] chính xác tại thời điểm bắt đầu câu nói (ví dụ: 0:30, 1:05:30, 2:15:45).
+5.  Gắn Timestamp [h:mm:ss] chính xác tại thời điểm bắt đầu câu nói của người đó (ví dụ: 0:30, 1:05:30, 2:15:45).
 6.  Lược bỏ các từ thừa (à, ừ, ờ) nhưng giữ nguyên ý nghĩa.
 7.  Nếu âm thanh không rõ, đánh dấu là "[không rõ]".
 
@@ -994,14 +1031,41 @@ ${summaryPrompt || 'Tóm tắt cụ thể các nội dung chính của từng ng
 
 CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu gạch đầu dòng.
 
-🚨 YÊU CẦU ĐỊNH DẠNG OUTPUT:
-• Trả về DUY NHẤT object JSON thuần túy
-• KHÔNG được thêm markdown code block hay backticks
-• KHÔNG có lời giải thích, lời dẫn, hay text thừa
-• Bắt đầu bằng { và kết thúc bằng }
-• Đảm bảo JSON hợp lệ và HOÀN CHỈNH (không bị cắt giữa chừng)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚨 CỰC KỲ QUAN TRỌNG - YÊU CẦU ĐỊNH DẠNG OUTPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Cấu trúc JSON:
+⚠️ CẢNH BÁO: Output SAI định dạng sẽ gây lỗi hệ thống!
+
+✅ ĐÚNG - Chỉ trả về JSON thuần:
+{
+  "segments": [...],
+  "summary": "..."
+}
+
+❌ SAI - Có text/markdown/backticks:
+json
+{...}
+
+\`\`\`json
+{...}
+\`\`\`
+
+Here is the JSON:
+{...}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+QUY TẮC BẮT BUỘC:
+1. Ký tự ĐẦU TIÊN phải là dấu mở ngoặc nhọn {
+2. Ký tự CUỐI CÙNG phải là dấu đóng ngoặc nhọn }
+3. KHÔNG có bất kỳ text nào trước hoặc sau JSON
+4. KHÔNG dùng markdown code blocks (\`\`\`json hoặc \`\`\`)
+5. KHÔNG dùng backticks đơn (\`)
+6. KHÔNG có lời giới thiệu như "Here is", "json", "Output"
+7. Đảm bảo JSON đúng syntax (có đủ dấu ngoặc, dấu phẩy)
+
+Cấu trúc JSON YÊU CẦU:
 {
   "segments": [
     {
@@ -1013,7 +1077,9 @@ Cấu trúc JSON:
   "summary": "Nội dung tóm tắt chi tiết về cuộc họp dựa trên yêu cầu ở trên. Viết thành văn xuôi liền mạch."
 }
 
-⚠️ NẾU SẮP HẾT TOKEN: Ưu tiên giữ đủ thông tin quan trọng, rút ngắn phần mô tả, nhưng BẮT BUỘC phải đóng JSON đúng cấu trúc (có đủ dấu ngoặc cuối).`
+⚠️ NẾU SẮP HẾT TOKEN: Ưu tiên giữ đủ thông tin quan trọng, rút ngắn phần mô tả, nhưng BẮT BUỘC phải đóng JSON đúng cấu trúc (có đủ dấu ngoặc cuối).
+
+BẮT ĐẦU OUTPUT TỪ DÂU { NGAY BÂY GIỜ:`
             },
             {
               inline_data: {
@@ -1034,8 +1100,8 @@ Cấu trúc JSON:
               Math.ceil(durationMinutes * 150) // 150 tokens/min with buffer
             )
           ),
-          temperature: 0.1, // Low temperature for factual transcription
-          topP: 0.95,
+          temperature: 0.0, // ZERO temperature for strict JSON format compliance
+          topP: 1.0, // Deterministic output
           topK: 40
         },
         // 🛡️ Safety Settings: Disable all filters to prevent blocking transcription
@@ -1162,8 +1228,9 @@ Cấu trúc JSON:
 
   /**
    * Get audio duration in seconds from Blob
+   * PUBLIC: Can be called from App.tsx to check duration before transcription
    */
-  private static async getAudioDuration(audioBlob: Blob): Promise<number> {
+  public static async getAudioDuration(audioBlob: Blob): Promise<number> {
     return new Promise((resolve) => {
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       const reader = new FileReader();
@@ -1332,8 +1399,13 @@ Cấu trúc JSON:
           const totalDurationMinutes = totalDurationMs / (60 * 1000);
           const totalSizeMB = audioBlob.size / (1024 * 1024);
 
+          console.log(`📊 Input audio: ${totalSizeMB.toFixed(2)}MB, ${totalDurationMinutes.toFixed(1)} minutes`);
+          console.log(`📊 Format: ${audioBlob.type || 'unknown'}, ${audioBuffer.sampleRate}Hz, ${audioBuffer.numberOfChannels} channels`);
+
           // Calculate number of chunks needed based on BOTH constraints
-          // 1. Chunks needed based on size
+          // IMPORTANT: audioBlob is already WAV/MP3 (converted in transcribeEntireAudioWithGemini if needed)
+          // Split based on actual size + duration
+          // 1. Chunks needed based on actual input size
           const chunksBySizeCount = Math.ceil(totalSizeMB / maxChunkSizeMB);
           
           // 2. Chunks needed based on duration
@@ -1344,7 +1416,6 @@ Cấu trúc JSON:
           const chunkDurationMs = totalDurationMs / numberOfChunks;
           const chunkDurationMinutes = chunkDurationMs / (60 * 1000);
 
-          console.log(`📏 Audio info: ${totalSizeMB.toFixed(2)}MB, ${totalDurationMinutes.toFixed(1)} minutes`);
           console.log(`📊 Constraints: maxSize=${maxChunkSizeMB}MB, maxDuration=${maxDurationMinutes} minutes`);
           console.log(`📦 Splitting into ${numberOfChunks} chunks (by size: ${chunksBySizeCount}, by duration: ${chunksByDurationCount})`);
           console.log(`⏱️ Each chunk: ~${chunkDurationMinutes.toFixed(1)} minutes, ~${(totalSizeMB / numberOfChunks).toFixed(2)}MB`);
@@ -1504,10 +1575,11 @@ Cấu trúc JSON:
       }
 
       try {
-        // Transcribe this chunk (skip size check - already validated and split)
+        // Transcribe this chunk directly (skip all checks - already validated and split)
+        // No need to check size again - chunks were calculated to be < maxSizeMB
         const parsed = await this.transcribeAudioWithGemini(
           apiKey,
-          chunk.blob,
+          chunk.blob, // Use chunk directly
           modelName,
           (subProgress, subMessage) => {
             if (onProgress) {
@@ -1520,6 +1592,7 @@ Cấu trúc JSON:
           },
           true, // skipSizeCheck = true (chunks already validated)
           maxSizeMB, // Pass maxFileSizeMB to child call
+          maxDurationMinutes, // Pass maxDurationMinutes to child call
           meetingStartTime, // Pass meeting start time for accurate timestamps
           summaryPrompt, // Pass user-provided summary prompt through
           fileManager // Pass fileManager for debug logs
@@ -1822,26 +1895,44 @@ Hãy trả về MỘT đoạn văn xuôi tổng hợp, KHÔNG có tiêu đề, K
       // Debug logging
       console.log('🔍 Raw Gemini response text:', textResponse);
       console.log('🔍 Response length:', textResponse.length, 'characters');
+      console.log('🔍 First 200 chars:', textResponse.substring(0, 200));
 
-      // Extract JSON from response (handle markdown code blocks)
+      // AGGRESSIVE JSON extraction with multiple fallbacks
       let jsonText = textResponse.trim();
       
-      // Try multiple patterns to extract JSON from markdown code blocks
-      // Pattern 1: ```json ... ```
-      // Pattern 2: ``` ... ```
-      // Pattern 3: Look for { ... } if wrapped text
+      // Step 1: Try markdown code blocks
       const jsonMatch = 
         jsonText.match(/```json\s*([\s\S]*?)```/) || 
         jsonText.match(/```\s*([\s\S]*?)```/) ||
-        jsonText.match(/^`+([\s\S]*?)`+$/);  // Handle single/multiple backticks
+        jsonText.match(/^`+([\s\S]*?)`+$/);
       
       if (jsonMatch) {
         jsonText = jsonMatch[1].trim();
         console.log('✂️ Extracted JSON from markdown code block');
-      } else if (jsonText.startsWith('`') || jsonText.includes('```')) {
-        // Fallback: strip all backticks if they exist but don't match patterns
-        console.warn('⚠️ Found backticks but no match - stripping all backticks');
-        jsonText = jsonText.replace(/`+/g, '').trim();
+      }
+      
+      // Step 2: Remove any leading text before first {
+      const firstBrace = jsonText.indexOf('{');
+      if (firstBrace > 0) {
+        const prefix = jsonText.substring(0, firstBrace).trim();
+        console.warn(`⚠️ Found prefix before JSON: "${prefix}" - removing`);
+        jsonText = jsonText.substring(firstBrace);
+      }
+      
+      // Step 3: Remove any trailing text after last }
+      const lastBrace = jsonText.lastIndexOf('}');
+      if (lastBrace !== -1 && lastBrace < jsonText.length - 1) {
+        const suffix = jsonText.substring(lastBrace + 1).trim();
+        if (suffix) {
+          console.warn(`⚠️ Found suffix after JSON: "${suffix}" - removing`);
+          jsonText = jsonText.substring(0, lastBrace + 1);
+        }
+      }
+      
+      // Step 4: Strip all backticks if any remain
+      if (jsonText.includes('`')) {
+        console.warn('⚠️ Found remaining backticks - stripping');
+        jsonText = jsonText.replace(/`+/g, '');
       }
 
       // Clean control characters ONLY (keep valid JSON whitespace)
