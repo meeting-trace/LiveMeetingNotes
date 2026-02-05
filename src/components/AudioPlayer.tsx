@@ -80,29 +80,38 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(({ audioBlob, trans
       wavesurferRef.current.destroy();
     }
 
-    // Create WaveSurfer instance
-    const wavesurfer = WaveSurfer.create({
-      container: waveformRef.current,
-      waveColor: '#4a9eff',
-      progressColor: '#1890ff',
-      cursorColor: '#ff4d4f',
-      barWidth: 2,
-      barGap: 1,
-      barRadius: 2,
-      height: 100,
-      normalize: true,
-      interact: true, // Enable click to seek
-      dragToSeek: false, // Click only, no drag to seek
-      hideScrollbar: false,
-    });
+    try {
+      // Create WaveSurfer instance
+      const wavesurfer = WaveSurfer.create({
+        container: waveformRef.current,
+        waveColor: '#4a9eff',
+        progressColor: '#1890ff',
+        cursorColor: '#ff4d4f',
+        barWidth: 2,
+        barGap: 1,
+        barRadius: 2,
+        height: 100,
+        normalize: true,
+        interact: true, // Enable click to seek
+        dragToSeek: false, // Click only, no drag to seek
+        hideScrollbar: false,
+      });
 
-    // Load audio
-    wavesurfer.load(audioUrl);
+      // Load audio with error handling
+      wavesurfer.load(audioUrl);
 
-    // Event listeners
-    wavesurfer.on('ready', () => {
-      setDuration(wavesurfer.getDuration());
-    });
+      // Event listeners
+      wavesurfer.on('ready', () => {
+        setDuration(wavesurfer.getDuration());
+        console.log('✅ WaveSurfer ready, duration:', wavesurfer.getDuration());
+      });
+
+      // Add error handler
+      wavesurfer.on('error', (error) => {
+        console.error('❌ WaveSurfer error:', error);
+        // Set duration to 0 on error to prevent UI issues
+        setDuration(0);
+      });
 
     wavesurfer.on('timeupdate', (time) => {
       setCurrentTime(time);
@@ -341,15 +350,31 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(({ audioBlob, trans
     // Add wheel event listener with passive: false to allow preventDefault
     waveformContainer.addEventListener('wheel', handleWheel, { passive: false });
 
+    wavesurferRef.current = wavesurfer;
+
+    // Cleanup function
     return () => {
-      waveformContainer.removeEventListener('wheel', handleWheel);
-      waveformContainer.removeEventListener('dblclick', handleDoubleClick);
-      waveformContainer.removeEventListener('contextmenu', handleContextMenu);
-      waveformContainer.removeEventListener('mouseenter', handleMouseEnter);
-      waveformContainer.removeEventListener('mouseleave', handleMouseLeave);
-      window.removeEventListener('keydown', handleKeyDown);
-      wavesurfer.destroy();
+      try {
+        waveformContainer.removeEventListener('wheel', handleWheel);
+        waveformContainer.removeEventListener('dblclick', handleDoubleClick);
+        waveformContainer.removeEventListener('contextmenu', handleContextMenu);
+        waveformContainer.removeEventListener('mouseenter', handleMouseEnter);
+        waveformContainer.removeEventListener('mouseleave', handleMouseLeave);
+        window.removeEventListener('keydown', handleKeyDown);
+        wavesurfer.destroy();
+      } catch (cleanupError) {
+        console.error('Error during cleanup:', cleanupError);
+      }
     };
+    } catch (error) {
+      console.error('❌ Failed to initialize WaveSurfer:', error);
+      setDuration(0);
+      // Show error to user
+      alert('Không thể tải audio player. File có thể quá lớn hoặc định dạng không hợp lệ.');
+      
+      // Return empty cleanup function
+      return () => {};
+    }
   }, [audioUrl]);
 
   // Setup audio element event listeners

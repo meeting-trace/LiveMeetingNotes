@@ -21,6 +21,19 @@ import { speechToTextService, SpeechToTextService } from '../services/speechToTe
 import type { RawTranscriptData } from '../services/aiRefinement';
 import type { MeetingInfo, SpeechToTextConfig, TranscriptionResult, AudioSourceType } from '../types/types';
 
+/**
+ * Helper: Get file extension from audio blob MIME type
+ */
+function getAudioExtensionFromBlob(audioBlob: Blob): string {
+  const mimeType = audioBlob.type.toLowerCase();
+  if (mimeType.includes('webm')) return 'webm';
+  if (mimeType.includes('mpeg') || mimeType.includes('mp3')) return 'mp3';
+  if (mimeType.includes('wav')) return 'wav';
+  if (mimeType.includes('ogg')) return 'ogg';
+  if (mimeType.includes('mp4')) return 'mp4';
+  return 'webm'; // Default fallback
+}
+
 interface Props {
   folderPath: string;
   onFolderSelect: (path: string) => void;
@@ -492,7 +505,9 @@ export const RecordingControls: React.FC<Props> = ({
     
     const sanitizedTitle = sanitizeMeetingTitle(meetingInfo.title || 'Meeting');
     const projectName = `${timePrefix}_${sanitizedTitle}`;
-    const audioFileName = `${projectName}.webm`;
+    // Get actual audio extension from MediaRecorder (webm/mp3/wav/ogg/mp4)
+    const audioExtension = recorder.getAudioFileExtension();
+    const audioFileName = `${projectName}.${audioExtension}`;
 
     // Check if folder is selected
     let hasFolder: boolean = !!(folderPath || fileManager.getDirHandle());
@@ -855,7 +870,8 @@ export const RecordingControls: React.FC<Props> = ({
         metadata.metadata.Duration = '00:00:00.0000000';
       } else {
         // Recording project with audio
-        const audioFileName = `${newProjectName}.webm`;
+        const audioExtension = getAudioExtensionFromBlob(audioBlob);
+        const audioFileName = `${newProjectName}.${audioExtension}`;
         metadata = MetadataBuilder.buildMetadata(
           meetingInfo,
           notes,
@@ -910,7 +926,8 @@ export const RecordingControls: React.FC<Props> = ({
           // Save audio file only if it exists (recording project)
           // Now save files directly to current directory (no subDir needed)
           if (audioBlob) {
-            const audioFileName = `${newProjectName}.webm`;
+            const audioExtension = getAudioExtensionFromBlob(audioBlob);
+            const audioFileName = `${newProjectName}.${audioExtension}`;
             await fileManager.saveAudioFile(audioBlob, audioFileName, undefined, true);
             // console.log('✓ Saved audio file:', audioFileName);
           }
@@ -992,7 +1009,8 @@ export const RecordingControls: React.FC<Props> = ({
         
         // Download audio only if it exists
         if (audioBlob) {
-          const audioFileName = `${newProjectName}.webm`;
+          const audioExtension = getAudioExtensionFromBlob(audioBlob);
+          const audioFileName = `${newProjectName}.${audioExtension}`;
           await downloader.downloadAudioFile(audioBlob, audioFileName);
         }
         

@@ -1469,11 +1469,13 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
       const chunkProgress = 10 + ((i / chunks.length) * 80);
+      const chunkDurationMin = Math.ceil((chunk.endTimeMs - chunk.startTimeMs) / 60000);
+      const chunkSizeMB = (chunk.blob.size / (1024 * 1024)).toFixed(1);
 
       if (onProgress) {
         onProgress(
           chunkProgress,
-          `Đang xử lý phần ${i + 1}/${chunks.length}...`
+          `📦 Phần ${i + 1}/${chunks.length}: ${chunkSizeMB}MB • ${chunkDurationMin} phút`
         );
       }
 
@@ -1483,10 +1485,13 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
           apiKey,
           chunk.blob,
           modelName,
-          (subProgress) => {
+          (subProgress, subMessage) => {
             if (onProgress) {
               const totalProgress = chunkProgress + (subProgress / chunks.length) * 0.8;
-              onProgress(totalProgress, `Phần ${i + 1}/${chunks.length}: ${subProgress.toFixed(0)}%`);
+              const progressMessage = subMessage 
+                ? `📦 ${i + 1}/${chunks.length}: ${subMessage}`
+                : `📦 Phần ${i + 1}/${chunks.length}: ${subProgress.toFixed(0)}%`;
+              onProgress(totalProgress, progressMessage);
             }
           },
           true, // skipSizeCheck = true (chunks already validated)
@@ -1500,17 +1505,29 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
         const adjustedResults = this.adjustTimestamps(parsed.results, chunk.startTimeMs);
         allResults.push(...adjustedResults);
         
+        // Log chunk completion
+        console.log(`✅ Chunk ${i + 1}/${chunks.length}: ${adjustedResults.length} segments (${chunk.startTimeMs}ms - ${chunk.endTimeMs}ms)`);
+        
         // Collect summary from this chunk
         if (parsed.summary) {
           allSummaries.push(`Phần ${i + 1}/${chunks.length}: ${parsed.summary}`);
+          console.log(`📝 Chunk ${i + 1}/${chunks.length}: Summary collected (${parsed.summary.length} chars)`);
+        }
+
+        // Show completion for this chunk
+        if (onProgress) {
+          onProgress(
+            chunkProgress + (80 / chunks.length) * 0.9,
+            `✅ Phần ${i + 1}/${chunks.length}: ${adjustedResults.length} segments`
+          );
         }
 
         // Add delay between chunks to respect rate limits (15 req/min)
         if (i < chunks.length - 1) {
           if (onProgress) {
             onProgress(
-              chunkProgress + 5,
-              `Đợi ${requestDelaySeconds}s trước khi xử lý phần tiếp theo...`
+              chunkProgress + (80 / chunks.length),
+              `⏳ Đợi ${requestDelaySeconds}s trước khi xử lý phần ${i + 2}/${chunks.length}...`
             );
           }
           await new Promise(resolve => setTimeout(resolve, requestDelaySeconds * 1000));
@@ -1532,16 +1549,170 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
     // Sort by timestamp
     allResults.sort((a, b) => (a.audioTimeMs || 0) - (b.audioTimeMs || 0));
 
-    if (onProgress) onProgress(100, `Hoàn thành! ${allResults.length} segments`);
+    if (onProgress) onProgress(90, `✅ Đã xử lý ${allResults.length} segments từ ${chunks.length} phần`);
 
     console.log(`✅ Transcribed entire audio: ${allResults.length} segments from ${chunks.length} chunks`);
     
-    // Combine all summaries into one
-    const combinedSummary = allSummaries.length > 0 
-      ? allSummaries.join('\n\n') 
-      : undefined;
+    // Combine summaries: Use Gemini to merge if multiple summaries, otherwise return as-is
+    let combinedSummary: string | undefined = undefined;
+    
+    if (allSummaries.length === 0) {
+      // No summaries at all
+      combinedSummary = undefined;
+    } else if (allSummaries.length === 1) {
+      // Only one summary - use directly
+      combinedSummary = allSummaries[0].replace(/^Phần \d+\/\d+: /, ''); // Remove "Phần 1/1: " prefix
+    } else {
+      // Multiple summaries - try to merge with Gemini API
+      if (onProgress) onProgress(92, `🔄 Đang tổng hợp ${allSummaries.length} phần tóm tắt...`);
+      
+      try {
+        // Call Gemini to merge summaries into one cohesive summary
+        combinedSummary = await this.mergeSummariesWithGemini(
+          apiKey,
+          modelName,
+          allSummaries,
+          summaryPrompt,
+          fileManager
+        );
+        
+        if (onProgress) onProgress(98, `✅ Đã tổng hợp tóm tắt hoàn chỉnh`);
+        console.log(`✅ Merged ${allSummaries.length} summaries with Gemini API`);
+      } catch (mergeError: any) {
+        // Fallback: Manual concatenation if Gemini merge fails
+        console.warn(`⚠️ Failed to merge summaries with Gemini, using manual concatenation:`, mergeError.message);
+        
+        // Manual fallback format
+        combinedSummary = allSummaries
+          .map((summary, index) => `📄 Tóm tắt đoạn ${index + 1}:\n${summary.replace(/^Phần \d+\/\d+: /, '')}`)
+          .join('\n\n---\n\n');
+        
+        if (onProgress) onProgress(98, `⚠️ Ghép tóm tắt thủ công (${allSummaries.length} phần)`);
+      }
+    }
+
+    if (onProgress) onProgress(100, `🎉 Hoàn thành! ${allResults.length} segments`);
     
     return { results: allResults, summary: combinedSummary };
+  }
+
+  /**
+   * Merge multiple summaries into one cohesive summary using Gemini API
+   * This is used when audio is split into chunks and each chunk has its own summary
+   * @param apiKey - Gemini API key
+   * @param modelName - Gemini model name
+   * @param summaries - Array of summaries from chunks (e.g., ["Phần 1/3: ...", "Phần 2/3: ..."])
+   * @param userPrompt - Optional user-provided prompt for summary customization
+   * @param fileManager - Optional file manager for debug logs
+   * @returns Merged summary as a single cohesive paragraph
+   */
+  private static async mergeSummariesWithGemini(
+    apiKey: string,
+    modelName: string,
+    summaries: string[],
+    userPrompt?: string,
+    fileManager?: FileManagerService
+  ): Promise<string> {
+    if (summaries.length === 0) {
+      throw new Error('No summaries to merge');
+    }
+
+    if (summaries.length === 1) {
+      // Only one summary - return directly without "Phần X/Y:" prefix
+      return summaries[0].replace(/^Phần \d+\/\d+: /, '');
+    }
+
+    // Build prompt for Gemini to merge summaries
+    const summariesText = summaries
+      .map((summary, index) => `### Phần ${index + 1}/${summaries.length}\n${summary.replace(/^Phần \d+\/\d+: /, '')}`)
+      .join('\n\n');
+
+    const mergePrompt = `BẠN LÀ CHUYÊN GIA TÓM TẮT CUỘC HỌP.
+
+NHIỆM VỤ: Tổng hợp các tóm tắt riêng lẻ từ các đoạn audio thành MỘT tóm tắt tổng quan liền mạch cho toàn bộ cuộc họp.
+
+YÊU CẦU:
+1. ĐỌC kỹ tất cả các tóm tắt bên dưới (mỗi tóm tắt tương ứng với 1 đoạn audio)
+2. TỔNG HỢP thành 1 đoạn văn xuôi liền mạch, KHÔNG dùng dấu gạch đầu dòng
+3. GIỮ LẠI toàn bộ thông tin quan trọng: số liệu, ngày tháng, tên riêng, quyết định, action items
+4. SẮP XẾP theo trình tự thời gian logic (từ đầu đến cuối cuộc họp)
+5. LOẠI BỎ thông tin trùng lặp giữa các đoạn
+6. ĐẢM BẢO văn phong chuyên nghiệp, mạch lạc, dễ hiểu
+
+${userPrompt ? `\nYÊU CẦU BỔ SUNG TỪ NGƯỜI DÙNG:\n${userPrompt}\n` : ''}
+
+=== CÁC TÓM TẮT RIÊNG LẺ CẦN TỔNG HỢP ===
+
+${summariesText}
+
+=== OUTPUT ===
+
+Hãy trả về MỘT đoạn văn xuôi tổng hợp, KHÔNG có tiêu đề, KHÔNG có dấu gạch đầu dòng, KHÔNG có cấu trúc danh sách.`;
+
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/${this.GEMINI_API_VERSION}/${modelName}:generateContent?key=${apiKey}`;
+
+      const requestBody = {
+        contents: [{
+          parts: [{ text: mergePrompt }]
+        }],
+        generationConfig: {
+          temperature: 0.3, // Lower temperature for more focused, consistent merging
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 8192,
+        },
+        safetySettings: [
+          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+        ]
+      };
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`Gemini API error (${response.status}): ${errorData.error?.message || response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      // Save debug log
+      await this.saveGeminiDebugLog(requestBody, data, {
+        type: 'text',
+        timestamp: new Date().toISOString(),
+        error: data.error ? data.error.message : undefined
+      }, fileManager);
+
+      // Extract merged summary from response
+      const candidates = data?.candidates;
+      if (!candidates || !Array.isArray(candidates) || candidates.length === 0) {
+        throw new Error('No response from Gemini API');
+      }
+
+      const content = candidates[0]?.content;
+      if (!content || !content.parts || !Array.isArray(content.parts) || content.parts.length === 0) {
+        throw new Error('Invalid response format from Gemini API');
+      }
+
+      const mergedSummary = content.parts[0].text.trim();
+      
+      if (!mergedSummary || mergedSummary.length === 0) {
+        throw new Error('Empty summary from Gemini API');
+      }
+
+      return mergedSummary;
+
+    } catch (error: any) {
+      console.error('❌ Failed to merge summaries with Gemini:', error);
+      throw new Error(`Cannot merge summaries: ${error.message}`);
+    }
   }
 
   /**

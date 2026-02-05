@@ -28,8 +28,11 @@ export class MetadataBuilder {
     };
 
     // Metadata JSON with new structure
+    // Extract extension-agnostic project name (remove any audio extension)
+    const projectName = audioFileName.replace(/\.(webm|mp3|wav|ogg|mp4)$/i, '');
+    
     const metadataJson = {
-      ProjectName: audioFileName.replace('.webm', ''),
+      ProjectName: projectName,
       Model: 'Live Recording',
       Language: 'vi',
       OriginalFileName: audioFileName,

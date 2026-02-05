@@ -215,6 +215,27 @@ export class AudioRecorderService {
   }
 
   /**
+   * Get file extension from current MediaRecorder MIME type
+   * @returns File extension (e.g., 'webm', 'mp3', 'wav', 'ogg', 'mp4')
+   */
+  getAudioFileExtension(): string {
+    if (!this.mediaRecorder) {
+      return 'webm'; // Default fallback
+    }
+
+    const mimeType = this.mediaRecorder.mimeType || 'audio/webm';
+    
+    // Map MIME types to extensions
+    if (mimeType.includes('webm')) return 'webm';
+    if (mimeType.includes('mpeg') || mimeType.includes('mp3')) return 'mp3';
+    if (mimeType.includes('wav')) return 'wav';
+    if (mimeType.includes('ogg')) return 'ogg';
+    if (mimeType.includes('mp4')) return 'mp4';
+    
+    return 'webm'; // Default fallback
+  }
+
+  /**
    * Set callback for when stream ends (e.g., user stops screen sharing)
    */
   setOnStreamEndedCallback(callback: () => void): void {
