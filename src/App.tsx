@@ -517,49 +517,13 @@ export const App: React.FC = () => {
     const requestDelaySeconds = config.requestDelaySeconds || 5;
     const maxDurationMinutes = config.maxAudioDurationMinutes || 60;
 
-    let progressModal: any = null;
-    let currentProgress = 0;
-    let currentMessage = '🚀 Đang bắt đầu...';
-
-    // Create a container div that we'll update
-    const progressContainer = document.createElement('div');
-    
-    const updateProgressUI = () => {
-      progressContainer.innerHTML = `
-        <div style="margin-top: 16px;">
-          <div style="padding: 16px; background: linear-gradient(135deg, #667eea22 0%, #764ba222 100%); border-radius: 8px; margin-bottom: 16px;">
-            <div style="margin-bottom: 12px; font-size: 14px; font-weight: bold; color: #333;">
-              ${currentMessage}
-            </div>
-            <div style="width: 100%; height: 24px; background: #f0f0f0; border-radius: 12px; overflow: hidden;">
-              <div style="width: ${currentProgress}%; height: 100%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); transition: width 0.3s ease; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: bold;">
-                ${currentProgress > 5 ? `${currentProgress.toFixed(0)}%` : ''}
-              </div>
-            </div>
-          </div>
-          <div style="font-size: 13px; color: #666; line-height: 1.6;">
-            💡 <strong>Lưu ý:</strong><br />
-            • Hệ thống đang tự động chia file và xử lý từng phần<br />
-            • Có delay ${requestDelaySeconds}s giữa các phần để tuân thủ rate limit<br />
-            • Vui lòng không đóng trình duyệt
-          </div>
-        </div>
-      `;
-    };
-
-    updateProgressUI();
+    // Use message.loading() instead of Modal for better compatibility
+    let hideLoading: (() => void) | null = null;
 
     try {
-      // Show progress modal
-      progressModal = Modal.info({
-        title: '🤖 Đang xử lý toàn bộ file...',
-        width: 600,
-        closable: false,
-        maskClosable: false,
-        okButtonProps: { style: { display: 'none' } },
-        content: progressContainer
-      });
-
+      // Show initial loading message
+      hideLoading = message.loading('🚀 Đang bắt đầu...', 0);
+      
       // Start transcription with progress callback and config values
       // Get valid meeting start time (fallback to transcription time or current time if meetingInfo is empty)
       const meetingStartTime = getValidMeetingStartTime();
@@ -570,11 +534,13 @@ export const App: React.FC = () => {
         audioBlob,
         config.geminiModel,
         (progress, msg) => {
-          currentProgress = progress;
-          currentMessage = msg || '⏳ Đang xử lý...';
+          const displayMsg = msg || '⏳ Đang xử lý...';
           
-          // Update UI by re-rendering the container
-          updateProgressUI();
+          // Update loading message
+          if (hideLoading) {
+            hideLoading(); // Hide previous message
+          }
+          hideLoading = message.loading(`${displayMsg} (${progress.toFixed(0)}%)`, 0);
         },
         maxFileSizeMB,
         requestDelaySeconds,
@@ -584,7 +550,11 @@ export const App: React.FC = () => {
         fileManagerRef.current // Pass fileManager for debug logs
       );
 
-      progressModal.destroy();
+      // Close loading and show success
+      if (hideLoading) {
+        hideLoading();
+        message.success('🎉 Hoàn thành!', 2);
+      }
       
       // Save summary
       if (parsed.summary) {
@@ -596,7 +566,7 @@ export const App: React.FC = () => {
       showMergeOrReplaceModal(parsed.results);
 
     } catch (error: any) {
-      if (progressModal) progressModal.destroy();
+      if (hideLoading) hideLoading();
       Modal.error({
         title: '❌ Lỗi chuyển đổi',
         width: 480,
@@ -995,18 +965,42 @@ export const App: React.FC = () => {
         },
         cancelButtonProps: { size: 'large', style: { height: '40px' } },
         onOk: async () => {
+          // Check file size FIRST before starting transcription
+          const config = speechToTextService.getConfig();
+          const maxFileSizeMB = config?.maxFileSizeMB || 20;
+          const MAX_FILE_SIZE = maxFileSizeMB * 1024 * 1024; // Convert to bytes
+          const fileSizeMB = audioBlob.size / (1024 * 1024);
+          
+          // If file exceeds limit, show segment selection modal immediately
+          if (audioBlob.size > MAX_FILE_SIZE) {
+            console.log(`⚠️ File quá lớn: ${fileSizeMB.toFixed(2)}MB > ${maxFileSizeMB}MB`);
+            showSegmentSelectionModal(fileSizeMB, maxFileSizeMB);
+            return; // Stop execution
+          }
+          
+          // File size OK, proceed with transcription
+          let hideLoading: (() => void) | null = null;
+
           try {
-            const config = speechToTextService.getConfig();
-            const maxFileSizeMB = config?.maxFileSizeMB || 20;
             const meetingStartTime = getValidMeetingStartTime();
+            
+            // Show loading message
+            hideLoading = message.loading('🚀 Đang bắt đầu chuyển đổi...', 0);
             
             const parsed = await AIRefinementService.transcribeAudioWithGemini(
               apiKey,
               audioBlob,
               modelName,
-              (progress, message) => {
-                // Update progress with message
-                const displayMsg = message || `Xử lý: ${progress.toFixed(0)}%`;
+              (progress, msg) => {
+                // Update loading message
+                const displayMsg = msg || `⏳ Đang xử lý... ${progress.toFixed(0)}%`;
+                
+                if (hideLoading) {
+                  hideLoading(); // Hide previous message
+                }
+                hideLoading = message.loading(`${displayMsg} (${progress.toFixed(0)}%)`, 0);
+                
+                // Also log to console for debugging
                 console.log(`Transcription progress: ${progress.toFixed(0)}% - ${displayMsg}`);
               },
               false,
@@ -1015,6 +1009,12 @@ export const App: React.FC = () => {
               config?.summaryPrompt,
               fileManagerRef.current // Pass fileManager for debug logs
             );
+
+            // Close loading message
+            if (hideLoading) {
+              hideLoading();
+              message.success('✅ Chuyển đổi hoàn thành!', 2);
+            }
 
             // Save summary if available
             if (parsed.summary) {
@@ -1026,6 +1026,8 @@ export const App: React.FC = () => {
             showMergeOrReplaceModal(parsed.results);
 
           } catch (error: any) {
+            // Close loading message if open
+            if (hideLoading) hideLoading();
             // Check if error is FILE_TOO_LARGE
             if (error.message === 'FILE_TOO_LARGE') {
               // Show segment selection modal

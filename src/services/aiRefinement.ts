@@ -950,9 +950,9 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với segments và sum
       }
 
       // Adaptive instruction based on duration
-      const adaptiveInstruction = durationMinutes <= 60
+      const adaptiveInstruction = durationMinutes <= 45
         ? `AUDIO NGẮN (${durationMinutes} phút): Hãy phiên âm CHI TIẾT từng câu nói, giữ nguyên wording và ngữ điệu.`
-        : durationMinutes <= 90
+        : durationMinutes <= 60
         ? `AUDIO VỪA (${durationMinutes} phút): Hãy tóm tắt NHÓM CÂU liên quan thành đoạn văn ngắn, vẫn giữ đầy đủ ý chính.`
         : `AUDIO DÀI (${durationMinutes} phút): Chỉ ghi lại Ý CHÍNH của mỗi lượt nói, cô đọng tối đa để tránh vượt giới hạn output.
         
@@ -994,7 +994,14 @@ ${summaryPrompt || 'Tóm tắt cụ thể các nội dung chính của từng ng
 
 CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu gạch đầu dòng.
 
-Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, không có lời dẫn. Cấu trúc như sau:
+🚨 YÊU CẦU ĐỊNH DẠNG OUTPUT:
+• Trả về DUY NHẤT object JSON thuần túy
+• KHÔNG được thêm markdown code block hay backticks
+• KHÔNG có lời giải thích, lời dẫn, hay text thừa
+• Bắt đầu bằng { và kết thúc bằng }
+• Đảm bảo JSON hợp lệ và HOÀN CHỈNH (không bị cắt giữa chừng)
+
+Cấu trúc JSON:
 {
   "segments": [
     {
@@ -1004,7 +1011,9 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
     }
   ],
   "summary": "Nội dung tóm tắt chi tiết về cuộc họp dựa trên yêu cầu ở trên. Viết thành văn xuôi liền mạch."
-}`
+}
+
+⚠️ NẾU SẮP HẾT TOKEN: Ưu tiên giữ đủ thông tin quan trọng, rút ngắn phần mô tả, nhưng BẮT BUỘC phải đóng JSON đúng cấu trúc (có đủ dấu ngoặc cuối).`
             },
             {
               inline_data: {
@@ -1014,6 +1023,21 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
             }
           ]
         }],
+        generationConfig: {
+          // 📊 Set maxOutputTokens based on audio duration to prevent truncation
+          // Rule of thumb: ~100 tokens per minute of audio for detailed transcription
+          // Add 50% buffer to accommodate summary and JSON structure
+          maxOutputTokens: Math.min(
+            8192, // Gemini Pro limit (8K tokens)
+            Math.max(
+              2048, // Minimum 2K for short audio
+              Math.ceil(durationMinutes * 150) // 150 tokens/min with buffer
+            )
+          ),
+          temperature: 0.1, // Low temperature for factual transcription
+          topP: 0.95,
+          topK: 40
+        },
         // 🛡️ Safety Settings: Disable all filters to prevent blocking transcription
         // Audio meetings may contain loud noises, debates, or sensitive words
         // that could be misinterpreted as harmful content
@@ -1771,13 +1795,28 @@ Hãy trả về MỘT đoạn văn xuôi tổng hợp, KHÔNG có tiêu đề, K
 
       const content = candidates[0]?.content;
       if (!content || !content.parts || !Array.isArray(content.parts) || content.parts.length === 0) {
-        console.error('❌ No content/parts in first candidate:', candidates[0]);
-        throw new Error('Empty response from Gemini');
+        console.error('❌ No content/parts in first candidate:', JSON.stringify(candidates[0], null, 2));
+        
+        // Check if blocked by safety filter (even if promptFeedback didn't catch it)
+        const finishReason = candidates[0]?.finishReason;
+        if (finishReason) {
+          console.error('❌ Finish reason:', finishReason);
+          if (finishReason === 'SAFETY' || finishReason === 'RECITATION') {
+            throw new Error(`Gemini blocked content due to: ${finishReason}. Try adjusting audio content or safety settings.`);
+          }
+          if (finishReason === 'MAX_TOKENS') {
+            throw new Error('Response truncated: Gemini reached max output tokens limit. Try using shorter audio or auto-split.');
+          }
+        }
+        
+        throw new Error('Empty response from Gemini - no content parts returned. Check console for full response.');
       }
 
       const textResponse = content.parts[0].text;
       if (!textResponse) {
-        throw new Error('No text in Gemini response');
+        console.error('❌ No text in first part:', JSON.stringify(content.parts[0], null, 2));
+        console.error('❌ Finish reason:', candidates[0]?.finishReason);
+        throw new Error(`No text in Gemini response. Finish reason: ${candidates[0]?.finishReason || 'unknown'}`);
       }
 
       // Debug logging
@@ -1786,10 +1825,23 @@ Hãy trả về MỘT đoạn văn xuôi tổng hợp, KHÔNG có tiêu đề, K
 
       // Extract JSON from response (handle markdown code blocks)
       let jsonText = textResponse.trim();
-      const jsonMatch = jsonText.match(/```json\s*([\s\S]*?)```/) || jsonText.match(/```\s*([\s\S]*?)```/);
+      
+      // Try multiple patterns to extract JSON from markdown code blocks
+      // Pattern 1: ```json ... ```
+      // Pattern 2: ``` ... ```
+      // Pattern 3: Look for { ... } if wrapped text
+      const jsonMatch = 
+        jsonText.match(/```json\s*([\s\S]*?)```/) || 
+        jsonText.match(/```\s*([\s\S]*?)```/) ||
+        jsonText.match(/^`+([\s\S]*?)`+$/);  // Handle single/multiple backticks
+      
       if (jsonMatch) {
         jsonText = jsonMatch[1].trim();
         console.log('✂️ Extracted JSON from markdown code block');
+      } else if (jsonText.startsWith('`') || jsonText.includes('```')) {
+        // Fallback: strip all backticks if they exist but don't match patterns
+        console.warn('⚠️ Found backticks but no match - stripping all backticks');
+        jsonText = jsonText.replace(/`+/g, '').trim();
       }
 
       // Clean control characters ONLY (keep valid JSON whitespace)
