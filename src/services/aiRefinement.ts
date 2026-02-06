@@ -363,7 +363,7 @@ export class AIRefinementService {
     modelName: string, // REQUIRED: specific Gemini model (e.g., "models/gemini-2.5-flash")
     onProgress?: (progress: number, message?: string) => void,
     fileManager?: FileManagerService // Optional: for saving debug logs to project folder
-  ): Promise<{ segments: RefinedSegment[], summary?: string }> {
+  ): Promise<{ segments: RefinedSegment[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
     // Check quota estimate first
     const quotaCheck = this.checkQuotaEstimate(transcriptions);
     console.log('📊 Quota Check:', quotaCheck.message);
@@ -388,10 +388,12 @@ export class AIRefinementService {
     modelName: string,
     onProgress?: (progress: number, message?: string) => void,
     fileManager?: FileManagerService
-  ): Promise<{ segments: RefinedSegment[], summary?: string }> {
+  ): Promise<{ segments: RefinedSegment[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
     const batches = this.splitIntoBatches(transcriptions, this.BATCH_SIZE);
     const allRefinedSegments: RefinedSegment[] = [];
     const allSummaries: string[] = [];
+    let hasTruncation = false;
+    const truncationWarnings: string[] = [];
 
     console.log(`📦 Processing ${transcriptions.length} segments in ${batches.length} batches...`);
 
@@ -425,6 +427,14 @@ export class AIRefinementService {
         if (batchResult.summary) {
           allSummaries.push(batchResult.summary);
         }
+        
+        // Track truncation
+        if (batchResult.isTruncated) {
+          hasTruncation = true;
+          if (batchResult.truncationWarning) {
+            truncationWarnings.push(`Batch ${i + 1}/${batches.length}: ${batchResult.truncationWarning}`);
+          }
+        }
 
         // Add delay between batches to avoid rate limiting (except for last batch)
         if (i < batches.length - 1) {
@@ -455,7 +465,14 @@ export class AIRefinementService {
       ? allSummaries.join('\n\n---\n\n')
       : undefined;
     
-    return { segments: allRefinedSegments, summary: combinedSummary };
+    // Build final truncation warning if any batch was truncated
+    let finalTruncationWarning: string | undefined = undefined;
+    if (hasTruncation && truncationWarnings.length > 0) {
+      finalTruncationWarning = `⚠️ Một số batch bị truncated:\n${truncationWarnings.join('\n')}`;
+      console.warn(finalTruncationWarning);
+    }
+    
+    return { segments: allRefinedSegments, summary: combinedSummary, isTruncated: hasTruncation, truncationWarning: finalTruncationWarning };
   }
 
   /**
@@ -468,7 +485,7 @@ export class AIRefinementService {
     modelName: string, // REQUIRED: specific model like "models/gemini-2.5-flash"
     onProgress?: (progress: number, message?: string) => void,
     fileManager?: FileManagerService
-  ): Promise<{ segments: RefinedSegment[], summary?: string }> {
+  ): Promise<{ segments: RefinedSegment[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
     if (!apiKey || apiKey.trim().length === 0) {
       throw new Error('API Key is required for AI refinement');
     }
@@ -524,10 +541,11 @@ export class AIRefinementService {
           }]
         }],
         generationConfig: {
-          temperature: 0.2,
+          temperature: 0.1, // Lowered from 0.2 for better consistency and rule-following
           topK: 40,
           topP: 0.95,
           maxOutputTokens: 8192,
+          responseMimeType: 'application/json' // Ensure valid JSON output structure
         },
         safetySettings: [
           {
@@ -633,7 +651,7 @@ export class AIRefinementService {
         error: result.error ? result.error.message : undefined
       }, fileManager);
 
-      // Parse AI response (now returns { segments, summary })
+      // Parse AI response (now returns { segments, summary, isTruncated, truncationWarning })
       const parsed = this.parseAIResponse(result);
 
       if (onProgress) onProgress(100);
@@ -642,6 +660,15 @@ export class AIRefinementService {
       if (parsed.summary) {
         console.log(`📝 Summary generated (${parsed.summary.length} characters)`);
       }
+      
+      // Log warning if truncated
+      if (parsed.isTruncated && parsed.truncationWarning) {
+        console.warn(parsed.truncationWarning);
+        if (onProgress) {
+          onProgress(100, `⚠️ ${parsed.truncationWarning}`);
+        }
+      }
+      
       return parsed;
 
     } catch (error: any) {
@@ -660,6 +687,7 @@ export class AIRefinementService {
     const dataJson = JSON.stringify(transcriptData);
     const hasRawData = rawMetadata && rawMetadata.length > 0;
     const rawDataJson = hasRawData ? JSON.stringify(rawMetadata) : null;
+    const segmentCount = transcriptData.length;
 
     // OPTIMIZED: Shortened prompt to reduce token count while maintaining quality
     return `Vai trò: Thư ký chuyên nghiệp soạn biên bản họp.
@@ -668,27 +696,60 @@ Nhiệm vụ: Chuẩn hóa văn bản speech-to-text:
 1. Sửa lỗi nhận diện từ
 2. Xóa từ đệm (à, ừm, thì, là, mà)
 3. Thêm dấu câu, viết hoa danh từ riêng
-4. Gộp các đoạn liên tiếp thành câu hoàn chỉnh
-5. Giữ nguyên nội dung, không thêm bớt ý
-6. Tóm tắt toàn bộ nội dung cuộc họp dựa trên các segment
+4. Giữ nguyên nội dung, không thêm bớt ý
+5. Tóm tắt toàn bộ nội dung cuộc họp dựa trên các segment
+
+📊 NGÂN SÁCH TOKEN (OUTPUT BUDGET):
+Bạn có tối đa ~8000 tokens cho output. Hiện có ${segmentCount} segments cần xử lý.
+
+🎯 CHIẾN LƯỢC 2 BƯỚC - ƯU TIÊN SUMMARY:
+
+📝 BƯỚC 1 - BẮT BUỘC HOÀN THÀNH TRƯỚC:
+   • Tạo "summary" HOÀN CHỈNH (~300-400 từ)
+   • Bao gồm: Chủ đề chính, quyết định, kết luận
+   • GIỮ LẠI: Tên riêng, số liệu, deadline, Action Items
+   • ƯỚC TÍNH: Summary tốn ~500-800 tokens
+
+🔢 BƯỚC 2 - XỬ LÝ SEGMENTS (nếu còn token):
+   • NẾU ÍT SEGMENTS (<30): Chuẩn hóa CHI TIẾT từng câu
+   • NẾU VỪA (30-100): GỘP các câu liên quan, cô đọng nhẹ
+   • NẾU NHIỀU (>100): GỘP MẠNH, chỉ giữ ý chính
+   
+⚠️ QUY TẮC TỰ ĐỘNG DỪNG (AUTO-STOP):
+   • THEO DÕI token usage khi xử lý segments
+   • NẾU ước tính đã dùng ~6000 tokens (75% budget):
+     → DỪNG NGAY việc thêm segments
+     → ĐÓNG JSON đúng cú pháp: }] }
+     → KHÔNG cần xử lý hết segments
+   • TỐT HƠN: Summary đầy đủ + Segments một phần
+   • TỆ HƠN: JSON bị cắt ngang không hợp lệ
+
+💡 CHIẾN THUẬT THÔNG MINH:
+   • Nếu có >50 segments: Chỉ xử lý 20-30 segments ĐẦU TIÊN đại diện
+   • Nếu có >100 segments: Chỉ xử lý 10-15 segments QUAN TRỌNG NHẤT
+   • Ưu tiên segments có số liệu, quyết định, kết luận
+
+⚠️ QUAN TRỌNG - THỨ TỰ OUTPUT:
+- Trả về "summary" TRƯỚC (đầy đủ, hoàn chỉnh)
+- Sau đó "segments" (có thể chỉ một phần nếu hết token)
 
 Output: CHỈ JSON object, KHÔNG markdown/giải thích
 Format: {
-  "segments": [{"timestamp":"...","audioTimeMs":123,"text":"..."},...],
-  "summary": "Tóm tắt nội dung cuộc họp dạng văn xuôi, bao gồm các chủ đề chính, quyết định quan trọng, kết luận."
+  "summary": "Tóm tắt nội dung cuộc họp dạng văn xuôi, bao gồm các chủ đề chính, quyết định quan trọng, kết luận.",
+  "segments": [{"timestamp":"...","audioTimeMs":123,"text":"..."},...]
 }
 
-=== DỮ LIỆU CHÍNH ===
+=== DỮ LIỆU CHÍNH (${segmentCount} segments) ===
 ${dataJson}
 ${hasRawData ? `\n=== DỮ LIỆU BỔ TRỢ (tham khảo) ===\n${rawDataJson}` : ''}
 
-Giữ timestamp/audioTimeMs gốc. Trả về JSON object với segments và summary.`;
+Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC, rồi segments sau. HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh!`;
   }
 
   /**
    * Parse AI response and create refined segments with summary
    */
-  private static parseAIResponse(apiResponse: any): { segments: RefinedSegment[], summary?: string } {
+  private static parseAIResponse(apiResponse: any): { segments: RefinedSegment[], summary?: string, isTruncated?: boolean, truncationWarning?: string } {
     try {
       // Extract text from Gemini response
       const candidates = apiResponse.candidates;
@@ -699,6 +760,14 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với segments và sum
       const content = candidates[0].content;
       if (!content || !content.parts || content.parts.length === 0) {
         throw new Error('Invalid AI response format');
+      }
+
+      // Check for truncation via finishReason
+      const finishReason = candidates[0].finishReason;
+      const isTruncated = finishReason === 'MAX_TOKENS' || finishReason === 'STOP' && content.parts[0].text.includes('...');
+      
+      if (isTruncated || finishReason === 'MAX_TOKENS') {
+        console.warn('⚠️ Response truncated due to MAX_TOKENS:', finishReason);
       }
 
       let responseText = content.parts[0].text.trim();
@@ -772,7 +841,31 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với segments và sum
           audioTimeMs: item.audioTimeMs
         }));
 
-      return { segments, summary };
+      // Build truncation warning if detected
+      let truncationWarning: string | undefined = undefined;
+      if (isTruncated) {
+        // Check if summary might be truncated (incomplete sentence)
+        const summaryTruncated = summary && (
+          !summary.endsWith('.') && 
+          !summary.endsWith('!') && 
+          !summary.endsWith('?') &&
+          !summary.endsWith('。') // Vietnamese period
+        );
+        
+        if (summaryTruncated) {
+          truncationWarning = `⚠️ Kết quả bị cắt ngắn do vượt giới hạn MAX_TOKENS.\n` +
+            `• Summary: Có thể chưa đầy đủ (câu cuối chưa kết thúc)\n` +
+            `• Segments: Đã nhận được ${segments.length} segments (có thể thiếu)\n\n` +
+            `💡 Giải pháp: Chia nhỏ dữ liệu đầu vào hoặc tăng maxOutputTokens trong cấu hình.`;
+        } else {
+          truncationWarning = `⚠️ Kết quả có thể bị cắt ngắn do vượt giới hạn MAX_TOKENS. ` +
+            `Đã nhận được ${segments.length} segments. ` +
+            `Nếu cần đầy đủ hơn, vui lòng chia nhỏ file hoặc sử dụng batch processing.`;
+        }
+        console.warn(truncationWarning);
+      }
+
+      return { segments, summary, isTruncated, truncationWarning };
 
     } catch (error: any) {
       console.error('Failed to parse AI response:', error);
@@ -827,7 +920,7 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với segments và sum
     meetingStartTime?: Date, // Meeting start time for accurate timestamp calculation
     summaryPrompt?: string, // OPTIONAL: user-provided prompt text for the summary field
     fileManager?: FileManagerService // Optional: for saving debug logs to project folder
-  ): Promise<{ results: TranscriptionResult[], summary?: string }> {
+  ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
     if (!apiKey || apiKey.trim().length === 0) {
       throw new Error('Gemini API Key is required');
     }
@@ -927,6 +1020,17 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với segments và sum
       
       console.log(`⏱️ Audio duration: ${durationMinutes} minutes (${audioDuration}s)`);
 
+      // ⚠️ CẢNH BÁO: Audio dài có rủi ro cao bị cắt ngang
+      if (durationMinutes > 60) {
+        console.warn(`⚠️ CẢNH BÁO: Audio quá dài (${durationMinutes} phút > 60 phút)`);
+        console.warn('   Rủi ro: Có thể bị lỗi chuyển đổi do vượt giới hạn token');
+        console.warn('   Khuyến nghị: Sử dụng tính năng "Tự động chia nhỏ và xử lý" để đảm bảo kết quả tốt nhất');
+        
+        if (onProgress) {
+          onProgress(35, `⚠️ Audio dài ${durationMinutes} phút - Có thể mất thời gian và rủi ro lỗi`);
+        }
+      }
+
       // Get MIME type (use WAV if converted)
       const mimeType = processedAudio.type || 'audio/wav';
 
@@ -949,14 +1053,32 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với segments và sum
         onProgress(39, `📊 ${audioSizeMB.toFixed(1)}MB • ${durationMinutes} phút • ${mimeType.split('/')[1].toUpperCase()}`);
       }
 
-      // Adaptive instruction based on duration
+      // 🎯 CHIẾN LƯỢC ƯU TIÊN: Summary trước, Segments sau
       const adaptiveInstruction = durationMinutes <= 60
         ? `AUDIO NGẮN (${durationMinutes} phút): Hãy phiên âm CHI TIẾT từng câu nói, giữ nguyên wording và ngữ điệu.`
         : durationMinutes <= 90
-        ? `AUDIO VỪA (${durationMinutes} phút): Hãy tóm tắt NHÓM CÂU liên quan thành đoạn văn ngắn, vẫn giữ đầy đủ ý chính.`
-        : `AUDIO DÀI (${durationMinutes} phút): Chỉ ghi lại Ý CHÍNH của mỗi lượt nói, cô đọng tối đa để tránh vượt giới hạn output.
-        
-⚠️ QUAN TRỌNG: Nếu cảm thấy output sắp vượt quá giới hạn, hãy tự động chuyển sang chế độ tóm tắt ngắn gọn hơn.`;
+        ? `AUDIO DÀI (${durationMinutes} phút):
+1️⃣ ƯU TIÊN: Tạo summary HOÀN CHỈNH trước (~300-400 từ)
+2️⃣ SAU ĐÓ: Tóm tắt segments cô đọng, nhóm nhiều câu thành 1 segment
+3️⃣ NẾU GẦN HẾT TOKEN (ước tính ~6000 tokens đã dùng): DỪNG NGAY, đóng JSON hợp lệ. TỐT HƠN CÓ SUMMARY ĐẦY ĐỦ + ÍT SEGMENTS, hơn là BỊ CẮT NGANG.
+
+⚠️ LƯU Ý: Chỉ làm segments cho phần ĐẦU của audio nếu thấy không đủ token cho toàn bộ.`
+        : `AUDIO RẤT DÀI (${durationMinutes} phút):
+🎯 CHIẾN LƯỢC 2 BƯỚC:
+
+1️⃣ BƯỚC 1 - BẮT BUỘC: Tạo summary HOÀN CHỈNH
+   • Độ dài: ~400-500 từ
+   • Bao gồm: Chủ đề chính, quyết định quan trọng, kết luận
+   • GIỮ LẠI: Tên riêng, số liệu, deadline
+
+2️⃣ BƯỚC 2 - NẾU CÒN TOKEN: Tạo segments cực kỳ cô đọng
+   • GỘP 5-10 câu liên quan thành 1 segment
+   • CHỈ GHI ý chính, bỏ chi tiết không quan trọng
+   • THEO DÕI token usage: Nếu ước tính đã dùng ~6000 tokens → DỪNG NGAY
+   • ĐÓNG JSON đúng cú pháp: }] }
+
+⚠️ QUY TẮC VÀNG: Summary đầy đủ + Ít segments > Summary + Segments bị cắt ngang
+💡 GỢI Ý: Có thể chỉ làm 10-20 segments đại diện cho phần ĐẦU audio, sau đó dừng lại.`;
 
       // Prepare request
       const endpoint = `https://generativelanguage.googleapis.com/${this.GEMINI_API_VERSION}/${modelName}:generateContent?key=${apiKey}`;
@@ -970,41 +1092,64 @@ NHIỆM VỤ: Xử lý file âm thanh đầu vào để tạo ra bản ghi chép
 
 ${adaptiveInstruction}
 
+📊 NGÂN SÁCH TOKEN (OUTPUT BUDGET):
+Bạn có tối đa ~8000 tokens cho output. Âm thanh dài ${durationMinutes} phút.
+
+🎯 CHIẾN LƯỢC TỰ THÍCH NGHI:
+• AUDIO NGẮN (<10 phút): Phiên âm CHI TIẾT (Verbatim) từng câu nói
+• AUDIO VỪA (10-30 phút): Chuẩn hóa và gộp câu, giữ đầy đủ ý chính
+• AUDIO DÀI (30-60 phút): Tóm tắt THÔNG MINH mỗi lượt nói, ưu tiên thông tin quan trọng
+• AUDIO RẤT DÀI (>60 phút): Chỉ ghi ý chính + từ khóa, cực kỳ cô đọng
+
+⚠️ QUY TẮC AN TOÀN (SAFETY BREAK):
+Nếu bạn ước tính mình đã dùng ~70% token budget (khoảng 5600 tokens):
+→ NGAY LẬP TỨC chuyển sang "Chế độ khẩn cấp": Chỉ ghi TÓM TẮT CỰC NGẮN (1 câu/lượt nói) cho phần còn lại
+→ PHẢI đảm bảo ĐÓNG JSON hợp lệ: }} với đủ dấu ngoặc
+→ NGUYÊN TẮC VÀNG: TỐT HƠN LÀ NGẮN GỌN NHƯNG HOÀN CHỈNH, chứ không phải DÀI MÀ BỊ CẮT NGANG
+
 HƯỚNG DẪN XỬ LÝ:
 
-PHẦN 1: PHIÊN ÂM/TÓM TẮT (tùy độ dài audio)
+PHẦN 1: TÓM TẮT TỔNG QUAN (SUMMARY) - LÀM TRƯỚC
+Sau khi nghe toàn bộ file âm thanh, hãy tóm tắt nội dung cuộc họp dựa trên yêu cầu sau:
+${summaryPrompt || 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'}
+
+CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu gạch đầu dòng. Giữ summary ở mức ~200-300 từ.
+
+PHẦN 2: PHIÊN ÂM/TÓM TẮT SEGMENTS (tùy độ dài audio) - LÀM SAU
 1.  Nghe toàn bộ file âm thanh.
 2.  Trích xuất nội dung chính xác (hoặc tóm tắt nếu cần).
-3.  Phân đoạn hội thoại dựa trên sự thay đổi người nói.
-4.  Gán nhãn người nói nhất quán (Speaker 1, Speaker 2...). Cố gắng nhận diện tên nếu họ tự giới thiệu.
-5.  Gắn Timestamp [h:mm:ss] chính xác tại thời điểm bắt đầu câu nói (ví dụ: 0:30, 1:05:30, 2:15:45).
-6.  Lược bỏ các từ thừa (à, ừ, ờ) nhưng giữ nguyên ý nghĩa.
-7.  Nếu âm thanh không rõ, đánh dấu là "[không rõ]".
+3.  Gán nhãn người nói nhất quán (Speaker 1, Speaker 2...). Cố gắng nhận diện tên nếu họ tự giới thiệu.
+4.  Gắn Timestamp [h:mm:ss] chính xác tại thời điểm BẮT ĐẦU lượt nói của người đó (ví dụ: 0:30, 1:05:30, 2:15:45).
+5.  Lược bỏ các từ thừa (à, ừ, ờ) nhưng giữ nguyên ý nghĩa.
+6.  Nếu âm thanh không rõ, đánh dấu là "[không rõ]".
 
 🎯 BẮT BUỘC GIỮ LẠI (dù có tóm tắt): 
    • Số liệu chính xác
    • Ngày tháng, deadline
-   • Tên riêng (người, công ty, dự án)
    • Quyết định quan trọng
    • Yêu cầu hành động (action items)
 
-PHẦN 2: TÓM TẮT TỔNG QUAN (SUMMARY)
-Sau khi xử lý xong, hãy tóm tắt nội dung cuộc họp dựa trên yêu cầu sau:
-${summaryPrompt || 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'}
-
-CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu gạch đầu dòng.
+⚠️ QUAN TRỌNG - THỨ TỰ OUTPUT:
+- Trả về "summary" TRƯỚC (Phần 1)
+- Sau đó mới đến "segments" (Phần 2)
 
 Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, không có lời dẫn. Cấu trúc như sau:
 {
+  "summary": "Nội dung tóm tắt chi tiết về cuộc họp dựa trên yêu cầu ở trên. Viết thành văn xuôi liền mạch.",
   "segments": [
     {
       "timestamp": "0:00",
       "speaker": "Người nói 1",
-      "text": "nội dung (chi tiết hoặc tóm tắt tùy độ dài audio)"
+      "text": "nội dung tóm tắt của cả lượt nói"
+    },
+    {
+      "timestamp": "0:45",
+      "speaker": "Người nói 2",
+      "text": "nội dung tóm tắt của cả lượt nói"
     }
-  ],
-  "summary": "Nội dung tóm tắt chi tiết về cuộc họp dựa trên yêu cầu ở trên. Viết thành văn xuôi liền mạch."
-}`
+  ]
+}
+HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh trong ngân sách token!`
             },
             {
               inline_data: {
@@ -1014,6 +1159,13 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
             }
           ]
         }],
+        generationConfig: {
+          temperature: 0.1, // Low temperature for consistent, rule-following behavior
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 8192,
+          responseMimeType: 'application/json' // Ensure valid JSON output, helps prevent truncation issues
+        },
         // 🛡️ Safety Settings: Disable all filters to prevent blocking transcription
         // Audio meetings may contain loud noises, debates, or sensitive words
         // that could be misinterpreted as harmful content
@@ -1093,9 +1245,18 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
         error: data.error ? data.error.message : undefined
       }, fileManager);
 
-      // Parse response (now returns { results, summary })
+      // Parse response (now returns { results, summary, isTruncated, truncationWarning })
       const parsed = this.parseGeminiAudioTranscription(data, meetingStartTime);
-      if (onProgress) onProgress(100, '✅ Hoàn thành!');
+      
+      // Show completion or warning
+      if (parsed.isTruncated && parsed.truncationWarning) {
+        console.warn(parsed.truncationWarning);
+        if (onProgress) {
+          onProgress(100, `⚠️ Hoàn thành (có cảnh báo)`);
+        }
+      } else {
+        if (onProgress) onProgress(100, '✅ Hoàn thành!');
+      }
 
       return parsed;
 
@@ -1431,7 +1592,7 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
     meetingStartTime?: Date, // Meeting start time for accurate timestamp calculation
     summaryPrompt?: string, // OPTIONAL: user-provided prompt text for the summary field
     fileManager?: FileManagerService // Optional: for saving debug logs to project folder
-  ): Promise<{ results: TranscriptionResult[], summary?: string }> {
+  ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
     const maxSizeMB = maxFileSizeMB;
 
     // CRITICAL: Convert to WAV first if needed, THEN split based on size
@@ -1465,6 +1626,8 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
 
     const allResults: TranscriptionResult[] = [];
     const allSummaries: string[] = [];
+    let hasTruncation = false;
+    const truncationWarnings: string[] = [];
 
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
@@ -1512,6 +1675,14 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
         if (parsed.summary) {
           allSummaries.push(`Phần ${i + 1}/${chunks.length}: ${parsed.summary}`);
           console.log(`📝 Chunk ${i + 1}/${chunks.length}: Summary collected (${parsed.summary.length} chars)`);
+        }
+        
+        // Track truncation
+        if (parsed.isTruncated) {
+          hasTruncation = true;
+          if (parsed.truncationWarning) {
+            truncationWarnings.push(`Phần ${i + 1}/${chunks.length}: ${parsed.truncationWarning}`);
+          }
         }
 
         // Show completion for this chunk
@@ -1593,7 +1764,14 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
 
     if (onProgress) onProgress(100, `🎉 Hoàn thành! ${allResults.length} segments`);
     
-    return { results: allResults, summary: combinedSummary };
+    // Build final truncation warning
+    let finalTruncationWarning: string | undefined = undefined;
+    if (hasTruncation && truncationWarnings.length > 0) {
+      finalTruncationWarning = `⚠️ Một số phần audio bị truncated do MAX_TOKENS:\n${truncationWarnings.join('\n')}\n\nKhuyến nghị: Giảm thời lượng mỗi phần hoặc tăng maxOutputTokens trong cấu hình.`;
+      console.warn(finalTruncationWarning);
+    }
+    
+    return { results: allResults, summary: combinedSummary, isTruncated: hasTruncation, truncationWarning: finalTruncationWarning };
   }
 
   /**
@@ -1657,10 +1835,11 @@ Hãy trả về MỘT đoạn văn xuôi tổng hợp, KHÔNG có tiêu đề, K
           parts: [{ text: mergePrompt }]
         }],
         generationConfig: {
-          temperature: 0.3, // Lower temperature for more focused, consistent merging
+          temperature: 0.2, // Lower temperature for more focused, consistent merging
           topK: 40,
           topP: 0.95,
           maxOutputTokens: 8192,
+          responseMimeType: 'text/plain' // Plain text for summary merging
         },
         safetySettings: [
           { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
@@ -1758,7 +1937,7 @@ Hãy trả về MỘT đoạn văn xuôi tổng hợp, KHÔNG có tiêu đề, K
   /**
    * Parse Gemini audio transcription response
    */
-  private static parseGeminiAudioTranscription(apiResponse: any, meetingStartTime?: Date): { results: TranscriptionResult[], summary?: string } {
+  private static parseGeminiAudioTranscription(apiResponse: any, meetingStartTime?: Date): { results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string } {
     try {
       // Debug log full API response structure
       console.log('🔍 Full Gemini API response:', JSON.stringify(apiResponse, null, 2));
@@ -1767,6 +1946,14 @@ Hãy trả về MỘT đoạn văn xuôi tổng hợp, KHÔNG có tiêu đề, K
       if (!candidates || !Array.isArray(candidates) || candidates.length === 0) {
         console.error('❌ No candidates in response:', apiResponse);
         throw new Error('No response from Gemini API');
+      }
+
+      // Check for truncation via finishReason
+      const finishReason = candidates[0].finishReason;
+      const isTruncated = finishReason === 'MAX_TOKENS';
+      
+      if (isTruncated) {
+        console.warn('⚠️ Response truncated due to MAX_TOKENS:', finishReason);
       }
 
       const content = candidates[0]?.content;
@@ -1819,11 +2006,11 @@ Hãy trả về MỘT đoạn văn xuôi tổng hợp, KHÔNG có tiêu đề, K
         
         // Try progressive parsing: parse valid parts and mark error parts
         console.log('🔄 Attempting progressive segment extraction...');
-        const segments = this.extractSegmentsWithErrorHandling(jsonText, errorPosition);
+        const extractResult = this.extractSegmentsWithErrorHandling(jsonText, errorPosition);
         
-        if (segments && segments.length > 0) {
-          console.log(`✅ Extracted ${segments.length} segments (including error markers)`);
-          parsed = { segments };
+        if (extractResult && extractResult.segments && extractResult.segments.length > 0) {
+          console.log(`✅ Extracted ${extractResult.segments.length} segments (including error markers)`);
+          parsed = extractResult; // Use the whole result object (includes summary if found)
         } else {
           throw parseError;
         }
@@ -1901,7 +2088,31 @@ Hãy trả về MỘT đoạn văn xuôi tổng hợp, KHÔNG có tiêu đề, K
         };
       });
       
-      return { results, summary };
+      // Build truncation warning if detected
+      let truncationWarning: string | undefined = undefined;
+      if (isTruncated) {
+        // Check if summary might be truncated (incomplete sentence)
+        const summaryTruncated = summary && (
+          !summary.endsWith('.') && 
+          !summary.endsWith('!') && 
+          !summary.endsWith('?') &&
+          !summary.endsWith('。')
+        );
+        
+        if (summaryTruncated) {
+          truncationWarning = `⚠️ Kết quả bị cắt ngắn do vượt giới hạn MAX_TOKENS.\n` +
+            `• Summary: Có thể chưa đầy đủ (câu cuối chưa kết thúc)\n` +
+            `• Segments: Đã nhận được ${results.length} segments (có thể thiếu)\n\n` +
+            `💡 Giải pháp: Giảm thời lượng audio mỗi phần hoặc tăng maxOutputTokens.`;
+        } else {
+          truncationWarning = `⚠️ Kết quả có thể bị cắt ngắn do vượt giới hạn MAX_TOKENS. ` +
+            `Đã nhận được ${results.length} segments. ` +
+            `Nếu cần đầy đủ hơn, vui lòng giảm thời lượng audio hoặc sử dụng auto-split.`;
+        }
+        console.warn(truncationWarning);
+      }
+      
+      return { results, summary, isTruncated, truncationWarning };
 
     } catch (error: any) {
       console.error('❌ Failed to parse Gemini audio transcription:', error);
@@ -1970,9 +2181,28 @@ Hãy trả về MỘT đoạn văn xuôi tổng hợp, KHÔNG có tiêu đề, K
   /**
    * Progressive segment extraction with error handling
    * Parse valid parts, mark error parts, continue to end
+   * Also attempts to extract summary if present
    */
-  private static extractSegmentsWithErrorHandling(text: string, _errorPosition: number): any[] {
+  private static extractSegmentsWithErrorHandling(text: string, _errorPosition: number): { segments: any[], summary?: string } {
     const segments: any[] = [];
+    let summary: string | undefined = undefined;
+    
+    // First, try to extract summary if it exists
+    const summaryMatch = text.match(/"summary"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/s);
+    if (summaryMatch) {
+      try {
+        // Unescape the summary text
+        summary = summaryMatch[1]
+          .replace(/\\n/g, '\n')
+          .replace(/\\r/g, '\r')
+          .replace(/\\t/g, '\t')
+          .replace(/\\"/g, '"')
+          .replace(/\\\\/g, '\\');
+        console.log(`✅ Extracted summary from truncated JSON (${summary.length} chars)`);
+      } catch (err) {
+        console.warn('⚠️ Failed to extract summary:', err);
+      }
+    }
     
     // Strategy: Split by segment boundaries and parse each independently
     // Look for segment patterns: { "timestamp": "...", "speaker": "...", "text": "..." }
@@ -2040,9 +2270,10 @@ Hãy trả về MỘT đoạn văn xuôi tổng hợp, KHÔNG có tiêu đề, K
     // If no segments found via boundary method, try full regex extraction
     if (segments.length === 0) {
       console.log('🔄 Falling back to full regex extraction...');
-      return this.extractSegmentsManually(text);
+      const manualResult = this.extractSegmentsManually(text);
+      return { segments: manualResult, summary };
     }
     
-    return segments;
+    return { segments, summary };
   }
 }

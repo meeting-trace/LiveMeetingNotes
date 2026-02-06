@@ -557,7 +557,7 @@ export const App: React.FC = () => {
         closable: false,
         maskClosable: false,
         okButtonProps: { style: { display: 'none' } },
-        content: progressContainer
+        content: <div dangerouslySetInnerHTML={{ __html: progressContainer.innerHTML }} />
       });
 
       // Start transcription with progress callback and config values
@@ -590,6 +590,33 @@ export const App: React.FC = () => {
       if (parsed.summary) {
         console.log('📋 Received summary from Gemini:', parsed.summary);
         setGeminiSummary(parsed.summary);
+      }
+      
+      // Show truncation warning if detected
+      if (parsed.isTruncated && parsed.truncationWarning) {
+        Modal.warning({
+          title: '⚠️ Cảnh báo: Kết quả bị cắt ngắn',
+          width: 600,
+          content: (
+            <div style={{ marginTop: 16 }}>
+              <div style={{
+                padding: '12px 16px',
+                background: '#fffbe6',
+                border: '1px solid #ffe58f',
+                borderRadius: '6px',
+                marginBottom: '12px'
+              }}>
+                <div style={{ color: '#d48806', fontSize: '14px', whiteSpace: 'pre-line' }}>
+                  {parsed.truncationWarning}
+                </div>
+              </div>
+              <div style={{ marginTop: 12, color: '#595959', fontSize: '13px' }}>
+                <strong>Kết quả nhận được:</strong> {parsed.results.length} segments
+              </div>
+            </div>
+          ),
+          okText: 'Đóng'
+        });
       }
 
       // Show merge/replace options modal
@@ -723,6 +750,29 @@ export const App: React.FC = () => {
           if (parsed.summary) {
             console.log('📋 Received summary from segment:', parsed.summary);
             setGeminiSummary(parsed.summary);
+          }
+          
+          // Show truncation warning if detected
+          if (parsed.isTruncated && parsed.truncationWarning) {
+            Modal.warning({
+              title: '⚠️ Cảnh báo: Kết quả bị cắt ngắn',
+              width: 600,
+              content: (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{
+                    padding: '12px 16px',
+                    background: '#fffbe6',
+                    border: '1px solid #ffe58f',
+                    borderRadius: '6px'
+                  }}>
+                    <div style={{ color: '#d48806', fontSize: '14px', whiteSpace: 'pre-line' }}>
+                      {parsed.truncationWarning}
+                    </div>
+                  </div>
+                </div>
+              ),
+              okText: 'Đóng'
+            });
           }
 
           // Show merge/replace options modal
@@ -923,21 +973,50 @@ export const App: React.FC = () => {
 
       // Check audio duration (if available)
       const audioDurationMs = audioPlayerRef.current?.getDuration() || 0;
+      const durationMinutes = Math.floor(audioDurationMs / 60000);
+      
       if (audioDurationMs === 0) {
         message.warning('Không thể xác định thời lượng audio. Đang thử chuyển đổi...');
       }
 
+      // ⚠️ Kiểm tra và cảnh báo nếu audio > 60 phút
+      const isLongAudio = durationMinutes > 60;
+
       // Show confirmation modal with enhanced UI
       Modal.confirm({
         title: (
-          <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#667eea' }}>
-            <span style={{ fontSize: '24px' }}>🤖</span> Chuyển đổi giọng nói với Gemini AI
+          <span style={{ fontSize: '18px', fontWeight: 'bold', color: isLongAudio ? '#ff4d4f' : '#667eea' }}>
+            <span style={{ fontSize: '24px' }}>{isLongAudio ? '⚠️' : '🤖'}</span> Chuyển đổi giọng nói với Gemini AI{isLongAudio ? ' - Audio quá dài!' : ' - Gemini AI có thể đưa ra thông tin không chính xác, HÃY THẬN TRỌNG!!!'}
           </span>
         ),
         width: 600,
         icon: null,
         content: (
           <div style={{ marginTop: 16 }}>
+            {/* ⚠️ CẢNH BÁO ƯU TIÊN cho audio dài */}
+            {isLongAudio && (
+              <div style={{ 
+                padding: '16px', 
+                background: '#fff2e8',
+                border: '2px solid #ff7a45',
+                borderRadius: '8px',
+                marginBottom: '16px'
+              }}>
+                <div style={{ fontSize: '15px', color: '#d4380d', lineHeight: '1.8' }}>
+                  <strong style={{ fontSize: '16px' }}>⚠️ CẢNH BÁO: Audio quá dài ({durationMinutes} phút)</strong><br /><br />
+                  <strong>Rủi ro cao:</strong><br />
+                  • Có thể bị lỗi do vượt giới hạn token của Gemini<br />
+                  • Kết quả có thể bị cắt ngắn hoặc không đầy đủ<br />
+                  • Thời gian xử lý rất lâu ({Math.ceil(durationMinutes / 10)}-{Math.ceil(durationMinutes / 5)} phút)<br />
+                  • Tốn token API nhiều<br /><br />
+                  <strong style={{ color: '#ff4d4f' }}>🔧 KHUYẾN NGHỊ:</strong><br />
+                  • Sử dụng tính năng <strong>"Tự động chia nhỏ và xử lý"</strong><br />
+                  • Hoặc chọn đoạn audio ngắn hơn (&lt;60 phút) để chuyển đổi<br />
+                  • Kết quả sẽ chính xác và hoàn chỉnh hơn
+                </div>
+              </div>
+            )}
+
             <div style={{ 
               padding: '16px', 
               background: 'linear-gradient(135deg, #667eea22 0%, #764ba222 100%)',
@@ -949,47 +1028,59 @@ export const App: React.FC = () => {
                 • Model: <span style={{ fontWeight: 'bold', color: '#667eea' }}>{modelName.replace('models/', '')}</span><br />
                 • Kích thước file: <span style={{ fontWeight: 'bold' }}>{(audioBlob.size / (1024 * 1024)).toFixed(2)} MB</span><br />
                 {audioDurationMs > 0 && (
-                  <>• Thời lượng: <span style={{ fontWeight: 'bold' }}>{Math.floor(audioDurationMs / 60000)}:{String(Math.floor((audioDurationMs % 60000) / 1000)).padStart(2, '0')}</span></>
+                  <>
+                    • Thời lượng: <span style={{ fontWeight: 'bold', color: isLongAudio ? '#ff4d4f' : 'inherit' }}>
+                      {Math.floor(audioDurationMs / 60000)}:{String(Math.floor((audioDurationMs % 60000) / 1000)).padStart(2, '0')}
+                      {isLongAudio && ' ⚠️'}
+                    </span>
+                  </>
                 )}
               </div>
             </div>
 
-            <div style={{ 
-              padding: '16px', 
-              background: '#f0f5ff',
-              border: '1px solid #adc6ff',
-              borderRadius: '8px',
-              marginBottom: '16px'
-            }}>
-              <div style={{ fontSize: '14px', color: '#666', lineHeight: '1.8' }}>
-                <strong style={{ color: '#1890ff' }}>✨ Lợi ích của Gemini AI:</strong><br />
-                • Độ chính xác cao hơn Web Speech API<br />
-                • Tự động phân biệt người nói<br />
-                • Làm sạch văn bản (loại bỏ từ đệm, sửa lỗi)<br />
-                • Hỗ trợ tiếng Việt tốt hơn
+            {/* Lợi ích - chỉ hiện khi không phải audio dài */}
+            {!isLongAudio && (
+              <div style={{ 
+                padding: '16px', 
+                background: '#f0f5ff',
+                border: '1px solid #adc6ff',
+                borderRadius: '8px',
+                marginBottom: '16px'
+              }}>
+                <div style={{ fontSize: '14px', color: '#666', lineHeight: '1.8' }}>
+                  <strong style={{ color: '#1890ff' }}>✨ Lợi ích của Gemini AI:</strong><br />
+                  • Độ chính xác cao hơn Web Speech API<br />
+                  • Tự động phân biệt người nói<br />
+                  • Làm sạch văn bản (loại bỏ từ đệm, sửa lỗi)<br />
+                  • Hỗ trợ tiếng Việt tốt hơn
+                </div>
               </div>
-            </div>
+            )}
 
             <div style={{ 
               padding: '12px', 
-              background: '#fffbe6',
-              border: '1px solid #ffe58f',
+              background: isLongAudio ? '#fff2e8' : '#fffbe6',
+              border: `1px solid ${isLongAudio ? '#ffbb96' : '#ffe58f'}`,
               borderRadius: '6px',
               fontSize: '13px',
               color: '#666'
             }}>
-              <strong>⏳ Thời gian xử lý:</strong> Tùy thuộc vào độ dài audio (khoảng 1-3 phút cho file 10-20 phút)<br />
+              <strong>⏳ Thời gian xử lý:</strong> {isLongAudio 
+                ? `RẤT LÂU (~${Math.ceil(durationMinutes / 10)}-${Math.ceil(durationMinutes / 5)} phút) và có thể thất bại` 
+                : 'Tùy thuộc vào độ dài audio (khoảng 1-3 phút cho file 10-20 phút)'}<br />
               <strong>💰 Chi phí:</strong> Gemini API miễn phí cho mục đích cá nhân (250K tokens/ngày)
+              {isLongAudio && <><br /><strong style={{ color: '#ff4d4f' }}>⚠️ Audio dài tốn nhiều token!</strong></>}
             </div>
           </div>
         ),
-        okText: '🚀 Bắt đầu chuyển đổi',
-        cancelText: 'Hủy',
+        okText: isLongAudio ? '⚠️ Vẫn tiếp tục (Không khuyến nghị)' : '🚀 Bắt đầu chuyển đổi',
+        cancelText: isLongAudio ? '✅ Hủy (Khuyến nghị)' : 'Hủy',
         okButtonProps: { 
           size: 'large',
+          danger: isLongAudio,
           style: { 
             height: '40px',
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            background: isLongAudio ? undefined : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
             border: 'none'
           }
         },
@@ -1020,6 +1111,29 @@ export const App: React.FC = () => {
             if (parsed.summary) {
               console.log('📋 Received summary:', parsed.summary);
               setGeminiSummary(parsed.summary);
+            }
+            
+            // Show truncation warning if detected
+            if (parsed.isTruncated && parsed.truncationWarning) {
+              Modal.warning({
+                title: '⚠️ Cảnh báo: Kết quả bị cắt ngắn',
+                width: 600,
+                content: (
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{
+                      padding: '12px 16px',
+                      background: '#fffbe6',
+                      border: '1px solid #ffe58f',
+                      borderRadius: '6px'
+                    }}>
+                      <div style={{ color: '#d48806', fontSize: '14px', whiteSpace: 'pre-line' }}>
+                        {parsed.truncationWarning}
+                      </div>
+                    </div>
+                  </div>
+                ),
+                okText: 'Đóng'
+              });
             }
 
             // Show merge/replace options modal
@@ -1612,7 +1726,7 @@ export const App: React.FC = () => {
     Modal.confirm({
       title: (
         <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1890ff' }}>
-          🤖 Chuẩn hóa văn bản bằng Gemini AI
+          🤖 Chuẩn hóa văn bản bằng Gemini AI - Gemini AI có thể đưa ra thông tin không chính xác, HÃY THẬN TRỌNG!!!
         </div>
       ),
       icon: <ExclamationCircleOutlined style={{ color: '#1890ff' }} />,
@@ -1964,6 +2078,33 @@ export const App: React.FC = () => {
         ? ` và tóm tắt nội dung!`
         : `!`;
       message.success(`✅ Đã chuẩn hóa thành công ${refinedResults.length} đoạn văn bản${summaryMsg}`);
+      
+      // Show truncation warning if detected
+      if (refinedResult.isTruncated && refinedResult.truncationWarning) {
+        Modal.warning({
+          title: '⚠️ Cảnh báo: Kết quả bị cắt ngắn',
+          width: 600,
+          content: (
+            <div style={{ marginTop: 16 }}>
+              <div style={{
+                padding: '12px 16px',
+                background: '#fffbe6',
+                border: '1px solid #ffe58f',
+                borderRadius: '6px',
+                marginBottom: '12px'
+              }}>
+                <div style={{ color: '#d48806', fontSize: '14px', whiteSpace: 'pre-line' }}>
+                  {refinedResult.truncationWarning}
+                </div>
+              </div>
+              <div style={{ marginTop: 12, color: '#595959', fontSize: '13px' }}>
+                <strong>Kết quả nhận được:</strong> {refinedResults.length} segments
+              </div>
+            </div>
+          ),
+          okText: 'Đóng'
+        });
+      }
 
     } catch (error: any) {
       const progressDiv = document.getElementById('ai-refine-progress');
