@@ -517,6 +517,52 @@ export const App: React.FC = () => {
     const requestDelaySeconds = config.requestDelaySeconds || 5;
     const maxDurationMinutes = config.maxAudioDurationMinutes || 60;
 
+    // ⚠️ Kiểm tra thời lượng và cảnh báo nếu quá dài
+    const audioDurationMs = audioPlayerRef.current?.getDuration() || 0;
+    const durationMinutes = Math.floor(audioDurationMs / 60000);
+    
+    if (durationMinutes > 60) {
+      // Hiện cảnh báo cho audio dài, nhưng với tone khác (tính năng này đã được tối ưu cho audio dài)
+      const confirmed = await new Promise<boolean>((resolve) => {
+        Modal.warning({
+          title: '⚠️ Audio rất dài',
+          width: 600,
+          content: (
+            <div style={{ marginTop: 16 }}>
+              <div style={{ 
+                padding: '16px', 
+                background: '#fffbe6',
+                border: '1px solid #ffe58f',
+                borderRadius: '8px',
+                marginBottom: '16px'
+              }}>
+                <div style={{ fontSize: '15px', color: '#d48806', lineHeight: '1.8' }}>
+                  <strong>Thông tin:</strong><br />
+                  • Thời lượng: <strong>{durationMinutes} phút</strong><br />
+                  • Số phần ước tính: <strong>~{Math.ceil(durationMinutes / maxDurationMinutes)} phần</strong><br />
+                  • Thời gian xử lý: <strong>~{Math.ceil(durationMinutes / 10)}-{Math.ceil(durationMinutes / 5)} phút</strong><br />
+                  • Delay giữa các phần: <strong>{requestDelaySeconds}s</strong><br /><br />
+                  <strong style={{ color: '#ff7a45' }}>Lưu ý:</strong><br />
+                  • Quá trình này sẽ mất khá nhiều thời gian<br />
+                  • Tốn nhiều token API (audio dài)<br />
+                  • Vui lòng không đóng trình duyệt trong lúc xử lý
+                </div>
+              </div>
+              <div style={{ fontSize: '13px', color: '#666' }}>
+                <strong>💡 Gợi ý:</strong> Nếu chỉ cần tóm tắt một phần, hãy chọn "Chuyển đổi đoạn đã chọn" và chọn khoảng thời gian ngắn hơn.
+              </div>
+            </div>
+          ),
+          okText: '✅ Tiếp tục xử lý',
+          cancelText: 'Hủy',
+          onOk: () => resolve(true),
+          onCancel: () => resolve(false)
+        });
+      });
+      
+      if (!confirmed) return;
+    }
+
     let progressModal: any = null;
     let currentProgress = 0;
     let currentMessage = '🚀 Đang bắt đầu...';
