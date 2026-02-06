@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { Collapse, Empty, Space, Tag, Tooltip, Button } from 'antd';
-import { AudioOutlined } from '@ant-design/icons';
+import { AudioOutlined, CloudServerOutlined } from '@ant-design/icons';
 import type { TranscriptionResult } from '../types/types';
 import { TranscriptionItem } from './TranscriptionItem';
 
@@ -30,6 +30,41 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
   const [isManuallyResized, setIsManuallyResized] = useState<boolean>(false);
   const [isUserScrolling, setIsUserScrolling] = useState<boolean>(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState<boolean>(false);
+  
+  // Check if there's cached Gemini file
+  const [cacheInfo, setCacheInfo] = useState<{hasCachedFile: boolean; expiresIn: string} | null>(null);
+  
+  useEffect(() => {
+    // Check localStorage for cached Gemini file
+    const checkCache = () => {
+      try {
+        const keys = Object.keys(localStorage);
+        const cacheKey = keys.find(k => k.startsWith('gemini_audio_cache_'));
+        if (cacheKey) {
+          const cached = JSON.parse(localStorage.getItem(cacheKey) || '{}');
+          if (cached.expires) {
+            const expiresDate = new Date(cached.expires);
+            const now = new Date();
+            const hoursLeft = Math.floor((expiresDate.getTime() - now.getTime()) / (1000 * 60 * 60));
+            
+            if (hoursLeft > 0) {
+              setCacheInfo({
+                hasCachedFile: true,
+                expiresIn: `${hoursLeft}h`
+              });
+            }
+          }
+        }
+      } catch (e) {
+        // Ignore cache check errors
+      }
+    };
+    
+    checkCache();
+    const interval = setInterval(checkCache, 60000); // Check every minute
+    
+    return () => clearInterval(interval);
+  }, []);
 
   // Auto-scroll to bottom when new transcription arrives (only if user is at bottom)
   useEffect(() => {
@@ -271,6 +306,13 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
                 )}
                 {transcriptions.length > 0 && (
                   <Tag color="blue">{transcriptions.length} đoạn</Tag>
+                )}
+                {cacheInfo?.hasCachedFile && (
+                  <Tooltip title="File audio đã được cache trên Gemini. Query lần sau sẽ nhanh hơn (chỉ mất ~10-20s)">
+                    <Tag color="cyan" icon={<CloudServerOutlined />}>
+                      ⚡ Cached ({cacheInfo.expiresIn})
+                    </Tag>
+                  </Tooltip>
                 )}
               </Space>
               
