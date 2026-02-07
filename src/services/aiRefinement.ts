@@ -274,6 +274,53 @@ export class AIRefinementService {
   }
 
   /**
+   * 🌍 Map language code to readable language name
+   * @param languageCode - Language code (e.g., 'vi-VN', 'en-US', 'ja-JP')
+   * @returns Language name for prompt instruction
+   */
+  private static getLanguageName(languageCode?: string): string | null {
+    if (!languageCode) return null;
+    
+    const languageMap: Record<string, string> = {
+      'vi': 'Tiếng Việt',
+      'vi-VN': 'Tiếng Việt',
+      'en': 'English',
+      'en-US': 'English',
+      'en-GB': 'English',
+      'ja': '日本語 (Japanese)',
+      'ja-JP': '日本語 (Japanese)',
+      'ko': '한국어 (Korean)',
+      'ko-KR': '한국어 (Korean)',
+      'zh': '中文 (Chinese)',
+      'zh-CN': '中文 (Chinese)',
+      'zh-TW': '中文 (Chinese)',
+      'th': 'ภาษาไทย (Thai)',
+      'th-TH': 'ภาษาไทย (Thai)',
+      'fr': 'Français (French)',
+      'fr-FR': 'Français (French)',
+      'de': 'Deutsch (German)',
+      'de-DE': 'Deutsch (German)',
+      'es': 'Español (Spanish)',
+      'es-ES': 'Español (Spanish)',
+      'pt': 'Português (Portuguese)',
+      'pt-BR': 'Português (Portuguese)',
+      'ru': 'Русский (Russian)',
+      'ru-RU': 'Русский (Russian)',
+      'ar': 'العربية (Arabic)',
+      'ar-SA': 'العربية (Arabic)',
+      'hi': 'हिन्दी (Hindi)',
+      'hi-IN': 'हिन्दी (Hindi)'
+    };
+    
+    // Try exact match first, then prefix match
+    const exactMatch = languageMap[languageCode];
+    if (exactMatch) return exactMatch;
+    
+    const prefix = languageCode.split('-')[0];
+    return languageMap[prefix] || null;
+  }
+
+  /**
    * Get usage metadata and quota information from Gemini API
    * Note: Gemini API doesn't provide direct quota endpoint, but we can infer from rate limit headers
    */
@@ -530,7 +577,7 @@ export class AIRefinementService {
    * @param onProgress - Progress callback
    * @returns UploadedFileInfo with uri, mimeType, state, name
    */
-  private static async uploadAudioToGemini(
+  public static async uploadAudioToGemini(
     apiKey: string,
     audioBlob: Blob,
     displayName: string,
@@ -1358,14 +1405,14 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
         
         const originalSizeMB = audioBlob.size / (1024 * 1024);
         
-        // ✨ Convert to WAV with mono + 16kHz to reduce file size dramatically
+        // ✨ Convert to MP3 with 16kHz to reduce file size dramatically
         // 16kHz is optimal for speech recognition (telephony quality)
-        // Mono reduces size by 50%, 16kHz reduces by ~70% → total ~85% reduction
-        processedAudio = await this.convertToWav(audioBlob, 16000);
+        // MP3 compression reduces size by ~80% → optimal bandwidth usage
+        processedAudio = await this.convertToMp3(audioBlob, 16000);
         
         const newSizeMB = processedAudio.size / (1024 * 1024);
         const reduction = ((1 - newSizeMB / originalSizeMB) * 100).toFixed(1);
-        console.log(`✅ Converted to WAV: ${originalSizeMB.toFixed(2)}MB → ${newSizeMB.toFixed(2)}MB (${reduction}% reduction)`);
+        console.log(`✅ Converted to MP3: ${originalSizeMB.toFixed(2)}MB → ${newSizeMB.toFixed(2)}MB (${reduction}% reduction)`);
         
         // Display conversion result on UI
         if (onProgress) {
@@ -1459,7 +1506,7 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
         ? `AUDIO NGẮN (${durationMinutes} phút): Hãy phiên âm CHI TIẾT từng câu nói, giữ nguyên wording và ngữ điệu.`
         : durationMinutes <= 90
         ? `AUDIO DÀI (${durationMinutes} phút):
-1️⃣ ƯU TIÊN: Tạo summary HOÀN CHỈNH trước (~300-400 từ)
+1️⃣ ƯU TIÊN: Tạo summary HOÀN CHỈNH trước (~200-300 từ)
 2️⃣ SAU ĐÓ: Tóm tắt segments cô đọng, nhóm nhiều câu thành 1 segment
 3️⃣ NẾU GẦN HẾT TOKEN (ước tính ~6000 tokens đã dùng): DỪNG NGAY, đóng JSON hợp lệ. TỐT HƠN CÓ SUMMARY ĐẦY ĐỦ + ÍT SEGMENTS, hơn là BỊ CẮT NGANG.
 
@@ -1468,7 +1515,7 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
 🎯 CHIẾN LƯỢC 2 BƯỚC:
 
 1️⃣ BƯỚC 1 - BẮT BUỘC: Tạo summary HOÀN CHỈNH
-   • Độ dài: ~400-500 từ
+   • Độ dài: ~200-300 từ
    • Bao gồm: Chủ đề chính, quyết định quan trọng, kết luận
    • GIỮ LẠI: Tên riêng, số liệu, deadline
 
@@ -1696,11 +1743,17 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
    * - API Key bound: Cache validated against API key to prevent cross-key usage
    * 
    * PROMPT OPTIMIZATION:
-   * - All chunks: Transcription-only prompt (short, focused, consistent)
-   * - Summary: Generated SEPARATELY after all transcriptions complete
-   *   → Has full meeting context with emphasis on second half (conclusions/actions)
-   *   → More accurate and comprehensive than partial summaries
-   * - Token savings: ~200 tokens × number of chunks
+   * - Summary: Generated FIRST via generateSummaryFromAudio() (SEPARATE call)
+   *   → Gemini processes audio directly with focus on second half (conclusions/actions)
+   *   → Compact prompt to reduce TPM (Tokens Per Minute) usage
+   *   → maxOutputTokens: 2048 (200-400 words target, saves quota)
+   *   → 90-second delay after summary before transcription (full quota reset)
+   * - Transcription: Each chunk via queryTimeRange() (SEPARATE calls, transcription-only)
+   *   → Pure transcription prompt (~50 tokens, no summary logic)
+   *   → Token savings: ~150 tokens per chunk vs old mixed prompt
+   *   → maxOutputTokens: 16384 (full 25-min transcription without truncation)
+   *   → 90-second delays between chunks (full quota reset for 265K input tokens)
+   *   → Progressive results: Each batch saved immediately to UI
    * 
    * @param apiKey - Gemini API key
    * @param audioBlob - Audio file to transcribe
@@ -1718,7 +1771,10 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
     onProgress?: (progress: number, message?: string) => void,
     chunkDurationMinutes: number = 25,
     meetingStartTime?: Date,
-    summaryPrompt?: string
+    summaryPrompt?: string,
+    onSummaryReady?: (summary: string) => void, // 🆕 Callback when summary is ready
+    onSegmentReady?: (segments: TranscriptionResult[], chunkIndex: number, totalChunks: number) => void, // 🆕 Callback when each segment batch is ready
+    outputLanguage?: string // 🆕 Output language (from Web Speech API config, e.g., 'vi-VN', 'en-US')
   ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
     try {
       console.log('🎯 Starting transcription with smart caching...');
@@ -1767,14 +1823,18 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
       if (!uploadedFile) {
         if (onProgress) onProgress(8, '📤 Đang tải file lên Gemini (chỉ 1 lần)...');
         
-        // Convert to WAV if needed
+        // Convert to MP3 if needed (Gemini supports WAV and MP3)
         let processedAudio = audioBlob;
         const audioType = audioBlob.type.toLowerCase();
         const isWavOrMp3 = audioType.includes('wav') || audioType.includes('mpeg') || audioType.includes('mp3');
         
         if (!isWavOrMp3) {
-          console.log(`🔄 Converting ${audioType} to WAV...`);
-          processedAudio = await this.convertToWav(audioBlob, 16000);
+          console.log(`🔄 Converting ${audioType} to MP3...`);
+          processedAudio = await this.convertToMp3(audioBlob, 16000);
+        } else if (!audioType.includes('mp3') && !audioType.includes('mpeg')) {
+          // Convert WAV to MP3 for better compression
+          console.log(`🔄 Converting WAV to MP3 for compression...`);
+          processedAudio = await this.convertToMp3(audioBlob, 16000);
         }
         
         // Get duration
@@ -1815,29 +1875,77 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
       
       console.log(`📊 Will query ${timeRanges.length} time ranges (${chunkDurationMinutes} min each)`);
       
-      // Step 6: Query each time range
-      const allResults: TranscriptionResult[] = [];
+      // ⚠️ Quota warning for very long audio
+      if (totalMinutes > 100) {
+        console.warn(`⚠️ Long audio (${totalMinutes} min) may exceed quota (250K tokens/minute)`);
+        console.warn(`   Summary: ~${Math.floor(totalMinutes * 0.7)}K tokens`);
+        console.warn(`   Transcription: ~${timeRanges.length * 20}K tokens`);
+        console.warn(`   Total estimate: ~${Math.floor(totalMinutes * 0.7) + timeRanges.length * 20}K tokens`);
+        if (onProgress) {
+          onProgress(12, `⚠️ Audio dài - có thể vượt quota...`);
+        }
+      }
+      
+      // Step 6: Generate summary FIRST (directly from audio, focus on second half)
       let globalSummary: string | undefined;
+      
+      if (onProgress) onProgress(12, '📝 Đang tạo tóm tắt từ audio (ưu tiên nửa cuối)...');
+      
+      console.log(`\n📝 Generating summary directly from audio (${totalMinutes} min)...`);
+      try {
+        globalSummary = await this.generateSummaryFromAudio(
+          apiKey,
+          uploadedFile!,
+          modelName,
+          totalMinutes,
+          summaryPrompt,
+          outputLanguage // Pass language for output
+        );
+        console.log('✅ Summary generated successfully');
+        
+        // 🆕 Immediately save summary to UI
+        if (onSummaryReady && globalSummary) {
+          console.log('📤 Sending summary to UI immediately...');
+          onSummaryReady(globalSummary);
+        }
+        
+        // ⏳ Delay to ensure quota resets (long audio needs more time)
+        const delaySeconds = totalMinutes > 60 ? 90 : 10; // 90s for long audio (>60min), 10s for short
+        console.log(`⏳ Waiting ${delaySeconds}s for quota reset before transcription...`);
+        if (onProgress) onProgress(15, `⏳ Chờ ${delaySeconds}s để quota reset...`);
+        
+        // Countdown for user feedback
+        for (let i = delaySeconds; i > 0; i -= 10) {
+          if (i !== delaySeconds && onProgress) {
+            onProgress(15, `⏳ Còn ${i}s...`);
+          }
+          await new Promise(resolve => setTimeout(resolve, Math.min(10000, i * 1000)));
+        }
+      } catch (error: any) {
+        console.error('⚠️ Failed to generate summary:', error);
+        globalSummary = '⚠️ Không thể tạo tóm tắt tự động. Vui lòng xem chi tiết transcript bên dưới.';
+      }
+      
+      // Step 7: Query each time range for transcription
+      const allResults: TranscriptionResult[] = [];
       let hasTruncation = false;
       const warnings: string[] = [];
       
       for (let i = 0; i < timeRanges.length; i++) {
         const range = timeRanges[i];
-        const rangeProgress = 15 + ((i / timeRanges.length) * 80);
+        const rangeProgress = 20 + ((i / timeRanges.length) * 75); // 20-95%
         
         if (onProgress) {
           onProgress(
             rangeProgress,
-            `🔄 Đang xử lý phút ${range.startMin}-${range.endMin} (${i + 1}/${timeRanges.length})...`
+            `🔄 Đang phiên âm phút ${range.startMin}-${range.endMin} (${i + 1}/${timeRanges.length})...`
           );
         }
         
         console.log(`\n🔄 Processing range ${i + 1}/${timeRanges.length}: ${range.startMin}-${range.endMin} minutes`);
         
-        // 🎯 SMART CACHING PROMPT STRATEGY:
-        // - All chunks: Request transcription only (token-efficient)
-        // - Summary: Will be generated SEPARATELY after all transcriptions complete
-        //   → Allows full meeting context with focus on second half (conclusions/actions)
+        // 🎯 TRANSCRIPTION ONLY: Request transcription for this time range
+        // Summary is generated separately via generateSummaryFromAudio()
         // All results use same fileUri (no re-upload needed)
         const parsed = await this.queryTimeRange(
           apiKey,
@@ -1846,8 +1954,7 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
           range.startMin,
           range.endMin,
           meetingStartTime,
-          summaryPrompt,
-          false // No summary in any chunk - will generate separately
+          outputLanguage // Pass language for output
         );
         
         // Collect results
@@ -1860,27 +1967,31 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
           }
         }
         
-        // Small delay between queries
-        if (i < timeRanges.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
+        // 🆕 Immediately save this segment batch to UI
+        if (onSegmentReady && parsed.results.length > 0) {
+          console.log(`📤 Sending segment batch ${i + 1}/${timeRanges.length} to UI (${parsed.results.length} items)...`);
+          onSegmentReady(parsed.results, i + 1, timeRanges.length);
         }
-      }
-      
-      // Step 7: Generate comprehensive summary from complete transcription
-      if (onProgress) onProgress(95, '📝 Đang tạo tóm tắt toàn diện...');
-      
-      console.log(`\n📝 Generating comprehensive summary from ${allResults.length} segments...`);
-      try {
-        globalSummary = await this.generateSummaryFromTranscript(
-          apiKey,
-          modelName,
-          allResults,
-          summaryPrompt
-        );
-        console.log('✅ Summary generated successfully');
-      } catch (error: any) {
-        console.error('⚠️ Failed to generate summary:', error);
-        globalSummary = '⚠️ Không thể tạo tóm tắt tự động. Vui lòng xem chi tiết transcript bên dưới.';
+        
+        // ⏳ Delay between queries to avoid quota (90s for very long audio)
+        if (i < timeRanges.length - 1) {
+          const delayBetweenQueries = 90; // 90 seconds (audio 139min = 265K tokens/query)
+          console.log(`⏳ Waiting ${delayBetweenQueries}s before next query...`);
+          if (onProgress) {
+            onProgress(
+              rangeProgress,
+              `⏳ Chờ ${delayBetweenQueries}s để quota reset...`
+            );
+          }
+          
+          // Countdown for better UX
+          for (let wait = delayBetweenQueries; wait > 0; wait -= 10) {
+            if (wait !== delayBetweenQueries && onProgress) {
+              onProgress(rangeProgress, `⏳ Còn ${wait}s...`);
+            }
+            await new Promise(resolve => setTimeout(resolve, Math.min(10000, wait * 1000)));
+          }
+        }
       }
       
       if (onProgress) onProgress(100, '✅ Hoàn thành!');
@@ -1905,6 +2016,23 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
       // User can retry and will skip re-upload step
       console.log('💡 File URI is still cached. Retry will skip upload.');
       
+      // Check if quota error
+      if (error.message && (error.message.includes('quota') || error.message.includes('429'))) {
+        // Extract wait time if available
+        const retryMatch = error.message.match(/retry in ([\d.]+)s/);
+        const waitTime = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : 60;
+        
+        // Ensure progress is cleared by throwing error
+        const quotaError = new Error(
+          `⛔ Vượt giới hạn 250K tokens/phút.\n\n` +
+          `🕒 Vui lòng chờ ${waitTime}s rồi nhấn "Thử lại".\n` +
+          `💡 File đã upload - lần sau sẽ nhanh hơn.\n` +
+          `📊 Monitor: https://ai.dev/rate-limit`
+        );
+        (quotaError as any).isQuotaError = true; // Flag for UI handling
+        throw quotaError;
+      }
+      
       throw new Error(`Failed to transcribe: ${error.message}`);
     }
   }
@@ -1913,11 +2041,11 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
    * 🎬 Query specific time range from uploaded audio file
    * Uses fileUri to avoid re-uploading
    * 
-   * SMART CACHING STRATEGY:
-   * - First chunk (i=0): includeSummary=true → generates both summary + segments
-   * - Subsequent chunks: includeSummary=false → generates segments only (token-efficient)
-   * - Summary from first chunk provides overview, even though it only covers partial audio
+   * TRANSCRIPTION-ONLY STRATEGY:
+   * - This method ONLY handles transcription (no summary)
+   * - Summary is generated separately via generateSummaryFromAudio()
    * - All timestamps are relative to absolute audio position (adjusted by offsetMs)
+   * - Compact prompt for token efficiency
    */
   private static async queryTimeRange(
     apiKey: string,
@@ -1926,56 +2054,26 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
     startMinutes: number,
     endMinutes: number,
     meetingStartTime?: Date,
-    summaryPrompt?: string,
-    includeSummary: boolean = false
-  ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
+    outputLanguage?: string // Language code (e.g., 'vi-VN', 'en-US')
+  ): Promise<{ results: TranscriptionResult[], isTruncated?: boolean, truncationWarning?: string }> {
     
-    // Build optimized prompt based on whether summary is needed
-    let prompt: string;
+    // Detect language name from code
+    const languageName = this.getLanguageName(outputLanguage);
+    const languageInstruction = languageName ? `\n- TRẢ VỀ BẰNG ${languageName.toUpperCase()}` : '';
     
-    if (includeSummary) {
-      // 🎯 FIRST CHUNK ONLY - Include summary (based on partial audio)
-      prompt = `BẠN LÀ CHUYÊN GIA GHI CHÉP CUỘC HỌP (AI SCRIBE).
+    // 🎯 TRANSCRIPTION-ONLY PROMPT (compact, token-efficient)
+    const prompt = `PHIÊN ÂM AUDIO - PHẦN ${startMinutes} ĐẾN ${endMinutes} PHÚT
 
-🎯 KHOẢNG THỜI GIAN: Phút ${startMinutes} đến ${endMinutes}
-Chỉ xử lý đoạn audio trong khoảng thời gian này, KHÔNG xử lý phần ngoài.
-
-PHẦN 1: TÓM TẮT TỔNG QUAN (chỉ chunk đầu)
-${summaryPrompt || 'Dựa trên đoạn audio này (phần đầu cuộc họp), hãy tóm tắt nội dung chính. Bao gồm chủ đề, context, và các điểm quan trọng đã đề cập.'}
-- Viết văn xuôi liền mạch, KHÔNG dùng bullet points
-- Độ dài: ~200-300 từ
-- LƯU Ý: Đây chỉ là phần đầu cuộc họp, tóm tắt dựa trên những gì đã nghe được
-
-PHẦN 2: PHIÊN ÂM CHI TIẾT
-Phiên âm từng câu nói trong đoạn ${startMinutes}-${endMinutes} phút:
-- Timestamp: Bắt đầu từ ${startMinutes}:00 (tuyệt đối từ đầu audio)
-- Speaker: Gán nhãn Speaker 1, Speaker 2...
-- Text: Nội dung rõ ràng, loại bỏ từ đệm (à, ừm, ờ)
-- Gộp câu liên tiếp của cùng 1 người thành 1 segment
-
-Output JSON:
-{
-  "summary": "Tóm tắt phần đầu cuộc họp...",
-  "segments": [{"timestamp": "${startMinutes}:00", "speaker": "Speaker 1", "text": "..."}]
-}`;
-    } else {
-      // ⚡ SUBSEQUENT CHUNKS - Transcription only (token-efficient)
-      prompt = `BẠN LÀ CHUYÊN GIA PHIÊN ÂM (AI SCRIBE).
-
-🎯 KHOẢNG THỜI GIAN: Phút ${startMinutes} đến ${endMinutes}
-Chỉ phiên âm đoạn này, KHÔNG xử lý phần ngoài.
-
-NHIỆM VỤ: Phiên âm chi tiết từng câu nói
-- Timestamp: Bắt đầu từ ${startMinutes}:00 (tuyệt đối từ đầu audio)
-- Speaker: Speaker 1, Speaker 2...
-- Text: Rõ ràng, loại bỏ từ đệm (à, ừm, ờ)
-- Gộp câu liên tiếp của cùng 1 người
+Nhiệm vụ:
+- Phân biệt người nói (Speaker 1, Speaker 2...)
+- Timestamp bắt đầu từ ${startMinutes}:00 (vị trí tuyệt đối trong audio)
+- Loại bỏ từ đệm (à, ừm, ơ)
+- Gộp câu liên tiếp của cùng 1 người${languageInstruction}
 
 Output JSON:
 {
   "segments": [{"timestamp": "${startMinutes}:00", "speaker": "Speaker 1", "text": "..."}]
 }`;
-    }
 
     const endpoint = `https://generativelanguage.googleapis.com/${this.GEMINI_API_VERSION}/${modelName}:generateContent?key=${apiKey}`;
 
@@ -1995,7 +2093,7 @@ Output JSON:
         temperature: 0.1,
         topK: 40,
         topP: 0.95,
-        maxOutputTokens: 8192,
+        maxOutputTokens: 16384, // Increased for full 25-min transcription (25min ≈ 500-800 words ≈ 1000-1600 tokens + JSON overhead)
         responseMimeType: 'application/json'
       },
       safetySettings: [
@@ -2021,7 +2119,7 @@ Output JSON:
 
     const data = await response.json();
 
-    // Parse response with time offset
+    // Parse response with time offset (transcription only)
     const offsetMs = startMinutes * 60 * 1000;
     const adjustedMeetingTime = meetingStartTime 
       ? new Date(meetingStartTime.getTime() + offsetMs)
@@ -2033,95 +2131,83 @@ Output JSON:
     );
 
     // Adjust timestamps in results to account for offset
-    parsed.results.forEach(result => {
+    parsed.results.forEach((result: TranscriptionResult) => {
       if (result.audioTimeMs) {
         result.audioTimeMs += offsetMs;
       }
     });
 
-    return parsed;
+    // Return transcription results only (no summary)
+    return {
+      results: parsed.results,
+      isTruncated: parsed.isTruncated,
+      truncationWarning: parsed.truncationWarning
+    };
   }
 
   /**
-   * 📝 Generate comprehensive summary from complete transcription
-   * Analyzes entire meeting with emphasis on second half (conclusions, actions)
+   * 📝 Generate comprehensive summary directly from audio file
+   * Queries Gemini with audio file to generate summary (NOT from text transcript)
    * 
    * STRATEGY:
-   * - Input: Complete transcription segments from all time ranges
-   * - Focus: Second half of meeting (where conclusions/directives typically occur)
-   * - Output: Cohesive summary covering entire meeting
+   * - Query second half of audio for detailed summary (where conclusions typically occur)
+   * - Gemini processes audio directly without text intermediary
+   * - Token-efficient and captures audio nuances (tone, emphasis)
+   * - maxOutputTokens controlled to prevent truncation
    * 
    * @param apiKey - Gemini API key
+   * @param uploadedFile - Uploaded audio file info (cached)
    * @param modelName - Gemini model name
-   * @param transcriptionResults - Complete transcription segments
+   * @param audioDurationMinutes - Total audio duration in minutes
    * @param customPrompt - Optional custom summary requirements
    * @returns Generated summary
    */
-  private static async generateSummaryFromTranscript(
+  private static async generateSummaryFromAudio(
     apiKey: string,
+    uploadedFile: UploadedFileInfo,
     modelName: string,
-    transcriptionResults: TranscriptionResult[],
-    customPrompt?: string
+    audioDurationMinutes: number,
+    customPrompt?: string,
+    outputLanguage?: string // Language code (e.g., 'vi-VN', 'en-US')
   ): Promise<string> {
     
-    if (transcriptionResults.length === 0) {
-      throw new Error('No transcription results to summarize');
-    }
+    // Calculate second half time range for focused summary
+    const halfwayPoint = Math.floor(audioDurationMinutes / 2);
+    const endPoint = audioDurationMinutes;
+    
+    // Detect language name from code
+    const languageName = this.getLanguageName(outputLanguage);
+    const languageInstruction = languageName ? `\n- TRẢ VỀ BẰNG ${languageName.toUpperCase()}` : '';
+    
+    // Build compact prompt to reduce TPM usage
+    const summaryPrompt = `Tóm tắt cuộc họp (${audioDurationMinutes} phút):
 
-    // Build transcript text with timestamps
-    const transcriptText = transcriptionResults
-      .map(result => {
-        const speaker = result.speaker || 'Speaker';
-        const text = result.text || '';
-        // Convert audioTimeMs to MM:SS format
-        let timeLabel = '';
-        if (result.audioTimeMs !== undefined) {
-          const totalSeconds = Math.floor(result.audioTimeMs / 1000);
-          const minutes = Math.floor(totalSeconds / 60);
-          const seconds = totalSeconds % 60;
-          timeLabel = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-        }
-        return timeLabel ? `[${timeLabel}] ${speaker}: ${text}` : `${speaker}: ${text}`;
-      })
-      .join('\n');
-
-    // Calculate meeting duration for context
-    const totalSegments = transcriptionResults.length;
-    const halfwayPoint = Math.floor(totalSegments / 2);
-
-    const summaryPrompt = `BẠN LÀ CHUYÊN GIA PHÂN TÍCH CUỘC HỌP.
-
-🎯 NHIỆM VỤ: Tạo tóm tắt toàn diện cho toàn bộ cuộc họp dựa trên transcript hoàn chỉnh bên dưới.
-
-⚠️ YÊU CẦU ĐẶC BIỆT:
-- TÓM TẮT TOÀN BỘ cuộc họp từ đầu đến cuối
-- ƯU TIÊN CHI TIẾT HỞN ở NỬA CUỐI cuộc họp (thường chứa kết luận, chỉ đạo, quyết định quan trọng)
-- GIỮ ĐẦY ĐỦ: Số liệu, ngày tháng, tên riêng, action items, deadlines
-- SẮP XẾP theo trình tự thời gian logic
-- Văn xuôi liền mạch, KHÔNG dùng bullet points
-
-${customPrompt ? `\n📋 YÊU CẦU BỔ SUNG:\n${customPrompt}\n` : ''}
-
-=== TRANSCRIPT HOÀN CHỈNH ===
-
-${transcriptText}
-
-=== OUTPUT ===
-
-Hãy trả về tóm tắt dưới dạng văn xuôi, tập trung mô tả chi tiết phần cuối cuộc họp (từ segment ${halfwayPoint}/${totalSegments} trở đi).`;
+- ƯU TIÊN chi tiết nửa cuối (phút ${halfwayPoint}-${endPoint}): kết luận, quyết định, action items
+- Phần đầu: tóm tắt ngắn context/chủ đề
+- Giữ: số liệu, ngày tháng, tên riêng, deadlines
+- Văn xuôi, 200-400 từ${languageInstruction}
+${customPrompt ? `\n${customPrompt}` : ''}`;
 
     try {
       const endpoint = `https://generativelanguage.googleapis.com/${this.GEMINI_API_VERSION}/${modelName}:generateContent?key=${apiKey}`;
 
       const requestBody = {
         contents: [{
-          parts: [{ text: summaryPrompt }]
+          parts: [
+            { text: summaryPrompt },
+            {
+              fileData: {
+                mimeType: uploadedFile.mimeType,
+                fileUri: uploadedFile.uri
+              }
+            }
+          ]
         }],
         generationConfig: {
           temperature: 0.2,
           topK: 40,
           topP: 0.95,
-          maxOutputTokens: 8192,
+          maxOutputTokens: 2048, // Reduced to save quota and TPM (200-400 words ~ 400-800 tokens)
           responseMimeType: 'text/plain'
         },
         safetySettings: [
@@ -2132,7 +2218,7 @@ Hãy trả về tóm tắt dưới dạng văn xuôi, tập trung mô tả chi t
         ]
       };
 
-      console.log(`📝 Generating summary from ${totalSegments} segments (focus on second half)...`);
+      console.log(`📝 Generating summary directly from audio (${audioDurationMinutes} min, focus on second half)...`);
 
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -2142,23 +2228,78 @@ Hãy trả về tóm tắt dưới dạng văn xuôi, tập trung mô tả chi t
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(`Gemini API error (${response.status}): ${errorData.error?.message || response.statusText}`);
+        console.error('❌ API Error Response:', errorData);
+        
+        let errorMessage = `Gemini API error (${response.status})`;
+        if (errorData.error?.message) {
+          errorMessage += `: ${errorData.error.message}`;
+        } else {
+          errorMessage += `: ${response.statusText}`;
+        }
+        
+        // Check for specific quota errors
+        if (response.status === 429) {
+          errorMessage = 'Quota exceeded. Please wait a moment and try again.';
+        } else if (response.status === 400 && errorData.error?.message?.includes('audio')) {
+          errorMessage = 'Audio format not supported or corrupted. Try converting to WAV first.';
+        }
+        
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
 
-      // Extract summary from response
-      const summary = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      // Log full response for debugging
+      console.log('📊 API Response structure:', {
+        hasCandidates: !!data.candidates,
+        candidatesLength: data.candidates?.length,
+        firstCandidate: data.candidates?.[0] ? {
+          hasContent: !!data.candidates[0].content,
+          hasParts: !!data.candidates[0].content?.parts,
+          partsLength: data.candidates[0].content?.parts?.length
+        } : null
+      });
+
+      // Extract summary from response with multiple fallback strategies
+      let summary: string | undefined;
       
-      if (!summary) {
-        throw new Error('No summary returned from API');
+      // Strategy 1: Standard path
+      summary = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      
+      // Strategy 2: Check if it's in different structure
+      if (!summary && data.candidates?.[0]?.output) {
+        summary = data.candidates[0].output;
+      }
+      
+      // Strategy 3: Check text field directly
+      if (!summary && data.text) {
+        summary = data.text;
+      }
+      
+      // Strategy 4: Check if blocked by safety
+      if (!summary && data.candidates?.[0]?.finishReason) {
+        const finishReason = data.candidates[0].finishReason;
+        console.warn('⚠️ Response finish reason:', finishReason);
+        
+        if (finishReason === 'SAFETY' || finishReason === 'BLOCKED_SAFETY') {
+          throw new Error('Summary blocked by safety filters. Try with different audio or adjust safety settings.');
+        } else if (finishReason === 'MAX_TOKENS') {
+          throw new Error('Summary exceeded max tokens limit. Audio might be too long.');
+        } else if (finishReason === 'RECITATION') {
+          throw new Error('Summary blocked due to recitation detection.');
+        }
+      }
+      
+      if (!summary || summary.trim().length === 0) {
+        console.error('❌ No summary in response. Full data:', JSON.stringify(data, null, 2));
+        throw new Error('No summary returned from API. Check console for full response.');
       }
 
       console.log(`✅ Summary generated successfully (${summary.length} chars)`);
       return summary.trim();
 
     } catch (error: any) {
-      console.error('❌ Failed to generate summary:', error);
+      console.error('❌ Failed to generate summary from audio:', error);
       throw new Error(`Failed to generate summary: ${error.message}`);
     }
   }
@@ -2213,11 +2354,12 @@ Hãy trả về tóm tắt dưới dạng văn xuôi, tập trung mô tả chi t
   }
 
   /**
-   * Convert audio blob to WAV format with optional sample rate optimization
-   * Gemini API officially supports WAV and MP3 only
+   * Convert audio blob to MP3 format for optimal compression
+   * Gemini API officially supports WAV and MP3
+   * MP3 provides ~80% size reduction vs WAV
    * @param targetSampleRate - Target sample rate (16000 for smaller files, 44100 for quality)
    */
-  private static async convertToWav(audioBlob: Blob, targetSampleRate: number = 44100): Promise<Blob> {
+  public static async convertToMp3(audioBlob: Blob, targetSampleRate: number = 16000): Promise<Blob> {
     return new Promise((resolve, reject) => {
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       const reader = new FileReader();
@@ -2227,16 +2369,16 @@ Hãy trả về tóm tắt dưới dạng văn xuôi, tập trung mô tả chi t
           const arrayBuffer = e.target?.result as ArrayBuffer;
           const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-          // Resample if needed to reduce file size
+          // Resample to reduce file size
           let finalBuffer = audioBuffer;
           if (audioBuffer.sampleRate !== targetSampleRate) {
             console.log(`🔊 Resampling: ${audioBuffer.sampleRate}Hz → ${targetSampleRate}Hz`);
             finalBuffer = await this.resampleAudioBuffer(audioBuffer, targetSampleRate);
           }
 
-          // Convert to WAV
-          const wavBlob = this.audioBufferToWav(finalBuffer);
-          resolve(wavBlob);
+          // Convert to MP3 format
+          const mp3Blob = await this.audioBufferToMp3(finalBuffer);
+          resolve(mp3Blob);
         } catch (error) {
           reject(error);
         }
@@ -2245,6 +2387,65 @@ Hãy trả về tóm tắt dưới dạng văn xuôi, tập trung mô tả chi t
       reader.onerror = reject;
       reader.readAsArrayBuffer(audioBlob);
     });
+  }
+
+  /**
+   * Convert AudioBuffer to MP3 Blob using lamejs
+   * lamejs is a pure JavaScript MP3 encoder (no external compilation needed)
+   */
+  private static async audioBufferToMp3(audioBuffer: AudioBuffer): Promise<Blob> {
+    const numberOfChannels = audioBuffer.numberOfChannels;
+    const sampleRate = audioBuffer.sampleRate;
+    const channelData = [];
+    
+    // Extract audio data from each channel
+    for (let i = 0; i < numberOfChannels; i++) {
+      channelData.push(audioBuffer.getChannelData(i));
+    }
+
+    // Initialize MP3 encoder with lamejs (assuming it's available)
+    // If lamejs is not available, provide helpful error
+    if (!(window as any).lamejs) {
+      throw new Error(
+        'MP3 encoder (lamejs) not loaded. Please ensure lamejs library is included in your HTML: '
+        + '<script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>'
+      );
+    }
+
+    const encoder = new ((window as any).lamejs.Mp3Encoder)(numberOfChannels, sampleRate, 128);
+    const mp3Data: number[] = [];
+
+    // Maximum samples to process at once (prevents memory issues)
+    const samplesPerFrame = 1152;
+    const totalSamples = audioBuffer.length;
+
+    // Process audio in chunks
+    for (let i = 0; i < totalSamples; i += samplesPerFrame) {
+      const sampleChunk = Math.min(samplesPerFrame, totalSamples - i);
+      
+      if (numberOfChannels === 2) {
+        const left = channelData[0].slice(i, i + sampleChunk);
+        const right = channelData[1].slice(i, i + sampleChunk);
+        const encoded = encoder.encodeBuffer(left, right);
+        if (encoded.length > 0) {
+          mp3Data.push(...encoded);
+        }
+      } else {
+        const mono = channelData[0].slice(i, i + sampleChunk);
+        const encoded = encoder.encodeBuffer(mono);
+        if (encoded.length > 0) {
+          mp3Data.push(...encoded);
+        }
+      }
+    }
+
+    // Flush remaining data
+    const finalData = encoder.flush();
+    if (finalData.length > 0) {
+      mp3Data.push(...finalData);
+    }
+
+    return new Blob([new Uint8Array(mp3Data)], { type: 'audio/mpeg' });
   }
 
   /**
@@ -2266,69 +2467,9 @@ Hãy trả về tóm tắt dưới dạng văn xuôi, tập trung mô tả chi t
   }
 
   /**
-   * Convert AudioBuffer to WAV Blob
-   */
-  private static audioBufferToWav(audioBuffer: AudioBuffer): Blob {
-    const numberOfChannels = audioBuffer.numberOfChannels;
-    const sampleRate = audioBuffer.sampleRate;
-    const format = 1; // PCM
-    const bitDepth = 16;
-
-    const bytesPerSample = bitDepth / 8;
-    const blockAlign = numberOfChannels * bytesPerSample;
-
-    const data = [];
-    for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
-      data.push(audioBuffer.getChannelData(i));
-    }
-
-    const interleaved = this.interleave(data);
-    const dataLength = interleaved.length * bytesPerSample;
-    const buffer = new ArrayBuffer(44 + dataLength);
-    const view = new DataView(buffer);
-
-    // Write WAV header
-    this.writeString(view, 0, 'RIFF');
-    view.setUint32(4, 36 + dataLength, true);
-    this.writeString(view, 8, 'WAVE');
-    this.writeString(view, 12, 'fmt ');
-    view.setUint32(16, 16, true); // fmt chunk size
-    view.setUint16(20, format, true);
-    view.setUint16(22, numberOfChannels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * blockAlign, true);
-    view.setUint16(32, blockAlign, true);
-    view.setUint16(34, bitDepth, true);
-    this.writeString(view, 36, 'data');
-    view.setUint32(40, dataLength, true);
-
-    // Write audio data
-    this.floatTo16BitPCM(view, 44, interleaved);
-
-    return new Blob([buffer], { type: 'audio/wav' });
-  }
-
-  /**
-   * Interleave multiple audio channels
-   */
-  private static interleave(channelData: Float32Array[]): Float32Array {
-    const length = channelData[0].length;
-    const numberOfChannels = channelData.length;
-    const result = new Float32Array(length * numberOfChannels);
-
-    let offset = 0;
-    for (let i = 0; i < length; i++) {
-      for (let channel = 0; channel < numberOfChannels; channel++) {
-        result[offset++] = channelData[channel][i];
-      }
-    }
-
-    return result;
-  }
-  /**
    * Split audio into chunks based on size AND duration limits
    * Each chunk must satisfy: size <= maxChunkSizeMB AND duration <= maxDurationMinutes
-   * @param audioBlob - Audio blob to split (should be WAV format)
+   * @param audioBlob - Audio blob to split (any format supported by browser)
    * @param maxChunkSizeMB - Maximum size per chunk in MB (default: 20)
    * @param maxDurationMinutes - Maximum duration per chunk in minutes (default: 60)
    * @returns Array of chunks with blob, startTimeMs, endTimeMs
@@ -2438,9 +2579,9 @@ Hãy trả về tóm tắt dưới dạng văn xuôi, tập trung mô tả chi t
             }
           }
 
-          // Convert to WAV
-          const wavBlob = this.audioBufferToWav(segmentBuffer);
-          resolve(wavBlob);
+          // Convert to MP3
+          const mp3Blob = await this.audioBufferToMp3(segmentBuffer);
+          resolve(mp3Blob);
         } catch (error) {
           reject(error);
         }
@@ -2482,27 +2623,27 @@ Hãy trả về tóm tắt dưới dạng văn xuôi, tập trung mô tả chi t
     // All other formats (WebM, MP4, OGG, AAC, FLAC) must be converted to WAV
     if (onProgress) onProgress(3, 'Đang kiểm tra định dạng audio...');
     
-    let wavBlob = audioBlob;
+    let mp3Blob = audioBlob;
     const audioType = audioBlob.type.toLowerCase();
     const isWavOrMp3 = audioType.includes('wav') || audioType.includes('mpeg') || audioType.includes('mp3');
     const needsConversion = !isWavOrMp3;
     
     if (needsConversion) {
-      if (onProgress) onProgress(5, `Đang chuyển đổi ${audioType} sang WAV...`);
+      if (onProgress) onProgress(5, `Đang chuyển đổi ${audioType} sang MP3...`);
       // Convert with lower sample rate for smaller file size
       const targetSampleRate = 16000; // Lower sample rate = smaller file
-      wavBlob = await this.convertToWav(audioBlob, targetSampleRate);
+      mp3Blob = await this.convertToMp3(audioBlob, targetSampleRate);
       
       const originalSizeMB = audioBlob.size / (1024 * 1024);
-      const wavSizeMB = wavBlob.size / (1024 * 1024);
-      console.log(`✅ Converted ${audioType}: ${originalSizeMB.toFixed(2)}MB → ${wavSizeMB.toFixed(2)}MB (WAV)`);
+      const mp3SizeMB = mp3Blob.size / (1024 * 1024);
+      console.log(`✅ Converted ${audioType}: ${originalSizeMB.toFixed(2)}MB → ${mp3SizeMB.toFixed(2)}MB (MP3)`);
     } else {
       console.log(`✅ Audio format ${audioType} is supported by Gemini (WAV/MP3) - no conversion needed`);
     }
 
-    // Now split the WAV file into chunks based on actual WAV size AND duration
-    if (onProgress) onProgress(8, 'Đang phân tích và chia file WAV...');
-    const chunks = await this.splitAudioIntoChunks(wavBlob, maxSizeMB, maxDurationMinutes);
+    // Now split the MP3 file into chunks based on actual size AND duration
+    if (onProgress) onProgress(8, 'Đang phân tích và chia file MP3...');
+    const chunks = await this.splitAudioIntoChunks(mp3Blob, maxSizeMB, maxDurationMinutes);
 
     if (onProgress) onProgress(10, `Đã chia thành ${chunks.length} phần. Bắt đầu chuyển đổi...`);
 
@@ -2798,49 +2939,25 @@ Hãy trả về MỘT đoạn văn xuôi tổng hợp, KHÔNG có tiêu đề, K
    * Reserved for future implementation
    */
   /**
-   * Write string to DataView
-   */
-  private static writeString(view: DataView, offset: number, string: string): void {
-    for (let i = 0; i < string.length; i++) {
-      view.setUint8(offset + i, string.charCodeAt(i));
-    }
-  }
-
-  /**
-   * Convert Float32 samples to 16-bit PCM
-   */
-  private static floatTo16BitPCM(view: DataView, offset: number, input: Float32Array): void {
-    for (let i = 0; i < input.length; i++, offset += 2) {
-      const s = Math.max(-1, Math.min(1, input[i]));
-      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-    }
-  }
-
-  /**
    * Parse Gemini audio transcription response
+   * Extracts segments and summary from API response
+   * Handles JSON parsing errors with fallback extraction
    */
-  private static parseGeminiAudioTranscription(apiResponse: any, meetingStartTime?: Date): { results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string } {
+  public static parseGeminiAudioTranscription(
+    apiResponse: any,
+    meetingStartTime?: Date
+  ): { results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string } {
     try {
-      // Debug log full API response structure
-      console.log('🔍 Full Gemini API response:', JSON.stringify(apiResponse, null, 2));
-      
-      const candidates = apiResponse?.candidates;
-      if (!candidates || !Array.isArray(candidates) || candidates.length === 0) {
-        console.error('❌ No candidates in response:', apiResponse);
-        throw new Error('No response from Gemini API');
-      }
-
-      // Check for truncation via finishReason
-      const finishReason = candidates[0].finishReason;
+      // Check for truncation
+      const finishReason = apiResponse?.candidates?.[0]?.finishReason;
       const isTruncated = finishReason === 'MAX_TOKENS';
-      
       if (isTruncated) {
         console.warn('⚠️ Response truncated due to MAX_TOKENS:', finishReason);
       }
 
-      const content = candidates[0]?.content;
+      const content = apiResponse?.candidates?.[0]?.content;
       if (!content || !content.parts || !Array.isArray(content.parts) || content.parts.length === 0) {
-        console.error('❌ No content/parts in first candidate:', candidates[0]);
+        console.error('❌ No content/parts in first candidate:', apiResponse?.candidates?.[0]);
         throw new Error('Empty response from Gemini');
       }
 

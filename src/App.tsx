@@ -13,6 +13,7 @@ import { FileManagerService } from './services/fileManager';
 import { saveBackup, loadBackup, clearBackup, hasBackup, getBackupAge } from './services/autoBackup';
 import { speechToTextService, SpeechToTextService } from './services/speechToText';
 import { AIRefinementService, type RawTranscriptData } from './services/aiRefinement';
+import { MultipleFilesTranscriptionService } from './services/aiRefinement_multipleFiles';
 import { updateManager, UpdateManagerService } from './services/updateManager';
 import type { MeetingInfo, SpeechToTextConfig, TranscriptionResult } from './types/types';
 import { message, Modal } from 'antd';
@@ -1032,7 +1033,7 @@ export const App: React.FC = () => {
       Modal.confirm({
         title: (
           <span style={{ fontSize: '18px', fontWeight: 'bold', color: isLongAudio ? '#ff4d4f' : '#667eea' }}>
-            <span style={{ fontSize: '24px' }}>{isLongAudio ? '⚡' : '🤖'}</span> Chuyển đổi giọng nói với Gemini AI{isLongAudio ? ' - Smart Caching Mode' : ''}
+            <span style={{ fontSize: '24px' }}>{isLongAudio ? '⚡' : '🤖'}</span> Chuyển đổi giọng nói với Gemini AI{isLongAudio ? ' - Multiple Files Mode' : ''}
           </span>
         ),
         width: 620,
@@ -1049,20 +1050,23 @@ export const App: React.FC = () => {
                 marginBottom: '16px'
               }}>
                 <div style={{ fontSize: '15px', color: '#0050b3', lineHeight: '1.8' }}>
-                  <strong style={{ fontSize: '16px', color: '#1890ff' }}>⚡ SMART CACHING: Audio dài ({durationMinutes} phút)</strong><br /><br />
+                  <strong style={{ fontSize: '16px', color: '#1890ff' }}>⚡ MULTIPLE FILES: Audio dài ({durationMinutes} phút)</strong><br /><br />
                   <strong style={{ color: '#52c41a' }}>✅ Hệ thống sẽ tự động:</strong><br />
-                  • <strong>Bước 1:</strong> Upload audio lên Gemini (1 lần duy nhất)<br />
-                  • <strong>Bước 2:</strong> Lưu cache 48 giờ để tái sử dụng<br />
-                  • <strong>Bước 3:</strong> Chia nhỏ thành {Math.ceil(durationMinutes / 25)} đoạn × 25 phút<br />
-                  • <strong>Bước 4:</strong> Xử lý từng đoạn và gộp kết quả<br /><br />
+                  • <strong>Bước 1:</strong> Chia file thành {Math.ceil(durationMinutes / 25)} phần × 25 phút (~10 giây)<br />
+                  • <strong>Bước 2:</strong> Chuyển đổi từng phần sang MP3 format (~3s/phần)<br />
+                  • <strong>Bước 3:</strong> Upload từng file riêng lẻ (~20s/file)<br />
+                  • <strong>Bước 4:</strong> Phiên âm + tóm tắt từng file (~15s/file)<br />
+                  • <strong>Bước 5:</strong> Kết quả hiển thị ngay sau mỗi file<br /><br />
                   <strong style={{ color: '#1890ff' }}>⚡ Lợi ích:</strong><br />
-                  • Tiết kiệm 99.6% token API (dùng File API thay Base64)<br />
-                  • Kết quả <strong>đầy đủ</strong> không bị cắt (~{Math.ceil(durationMinutes / 25) * 40} đoạn)<br />
-                  • Cache 48h: Lần sau chỉ mất ~10 giây thay vì {Math.ceil(durationMinutes / 10)} phút<br />
-                  • Tiến trình chi tiết: Bạn sẽ thấy "Query 1/{Math.ceil(durationMinutes / 25)} (0-25 phút)"<br /><br />
+                  • Tiết kiệm 86% input tokens (43K/file thay vì 265K)<br />
+                  • Không bị MAX_TOKENS truncation (mỗi file nhỏ)<br />
+                  • Không bị quota errors (chỉ cần delay 10s)<br />
+                  • Progressive UX: Kết quả xuất hiện dần dần<br />
+                  • <strong style={{ color: '#52c41a' }}>Tránh memory overflow</strong> (split trước, convert sau)<br /><br />
                   <strong style={{ color: '#fa8c16' }}>⏱️ Thời gian ước tính:</strong><br />
-                  • Lần đầu: ~{Math.ceil(durationMinutes / 15)}-{Math.ceil(durationMinutes / 10)} phút (upload + xử lý)<br />
-                  • Lần sau (cache): ~10-20 giây (chỉ query)
+                  • Tổng thời gian: ~{Math.ceil((durationMinutes / 25) * 0.6)} phút<br />
+                  • Kết quả đầu tiên: ~1 phút (file 1)<br />
+                  • Mỗi file tiếp theo: ~35 giây
                 </div>
               </div>
             )}
@@ -1086,9 +1090,9 @@ export const App: React.FC = () => {
                     </span><br />
                     {isLongAudio && (
                       <>
-                        • Chế độ: <span style={{ fontWeight: 'bold', color: '#52c41a' }}>Smart Caching</span><br />
-                        • Số queries: <span style={{ fontWeight: 'bold', color: '#1890ff' }}>{Math.ceil(durationMinutes / 25)} × 25 phút</span><br />
-                        • Token ước tính: <span style={{ fontWeight: 'bold', color: '#52c41a' }}>~{Math.ceil(durationMinutes / 25) * 9}K (tiết kiệm 99.6%)</span>
+                        • Chế độ: <span style={{ fontWeight: 'bold', color: '#52c41a' }}>Multiple Files</span><br />
+                        • Số files: <span style={{ fontWeight: 'bold', color: '#1890ff' }}>{Math.ceil(durationMinutes / 25)} × 25 phút</span><br />
+                        • Token ước tính: <span style={{ fontWeight: 'bold', color: '#52c41a' }}>~{Math.ceil(durationMinutes / 25) * 43}K (tiết kiệm 86%)</span>
                       </>
                     )}
                   </>
@@ -1126,11 +1130,11 @@ export const App: React.FC = () => {
               <strong>⏳ Thời gian xử lý:</strong> {isLongAudio 
                 ? `~${Math.ceil(durationMinutes / 15)}-${Math.ceil(durationMinutes / 10)} phút (lần đầu), ~10-20 giây (cache)` 
                 : 'Khoảng 1-3 phút cho audio 10-20 phút'}<br />
-              <strong>💰 Chi phí:</strong> Gemini API miễn phí (250K tokens/ngày){isLongAudio && ` - Smart Caching tiết kiệm 99.6% token!`}
+              <strong>💰 Chi phí:</strong> Gemini API miễn phí (250K tokens/ngày){isLongAudio && ` - Multiple Files tiết kiệm 86% input tokens!`}
             </div>
           </div>
         ),
-        okText: isLongAudio ? '⚡ Smart Caching (Khuyến nghị)' : '🚀 Bắt đầu chuyển đổi',
+        okText: isLongAudio ? '⚡ Multiple Files (Khuyến nghị)' : '🚀 Bắt đầu chuyển đổi',
         cancelText: 'Hủy',
         okButtonProps: { 
           size: 'large',
@@ -1149,48 +1153,63 @@ export const App: React.FC = () => {
             const maxFileSizeMB = config?.maxFileSizeMB || 20;
             const meetingStartTime = getValidMeetingStartTime();
             
-            // ⚡ Use Smart Caching for long audio (>60 minutes)
+            // ⚡ Use Multiple Files Strategy for long audio (>60 minutes)
             let parsed;
             if (isLongAudio) {
-              // Smart Caching Mode: Upload once, query multiple time ranges
+              // Multiple Files Mode: Split → Upload each → Query each
               const chunkDurationMinutes = 25; // 25-minute chunks
+              const delaySeconds = 10; // 10s delay between chunks
               
-              message.info(`⚡ Smart Caching: Chia ${durationMinutes} phút thành ${Math.ceil(durationMinutes / chunkDurationMinutes)} đoạn × ${chunkDurationMinutes} phút`, 4);
+              message.info(`⚡ Multiple Files: Chia file thành ${Math.ceil(durationMinutes / chunkDurationMinutes)} chunks × ${chunkDurationMinutes} phút`, 4);
               
-              let hasShownCacheReuse = false; // Track if we've shown cache reuse message
+              const allSummaries: string[] = [];
               
-              parsed = await AIRefinementService.transcribeAudioWithCaching(
+              parsed = await MultipleFilesTranscriptionService.transcribeWithMultipleFiles({
                 apiKey,
                 audioBlob,
                 modelName,
-                (progress, progressMsg) => {
-                  // Display detailed progress message
-                  const displayMsg = progressMsg || `Xử lý: ${progress.toFixed(0)}%`;
-                  console.log(`⚡ Smart Caching progress: ${progress.toFixed(0)}% - ${displayMsg}`);
-                  
-                  // Show special message when reusing cached file
-                  if (!hasShownCacheReuse && progressMsg && progressMsg.includes('Đang dùng file đã upload')) {
-                    message.success('💾 Tìm thấy file đã upload! Bỏ qua bước upload (~30s)', 3);
-                    hasShownCacheReuse = true;
-                  }
-                  
-                  // Show progress notification
-                  if (progressMsg) {
-                    message.loading({
-                      content: displayMsg,
-                      key: 'smart-caching-progress',
-                      duration: 0
-                    });
-                  }
-                },
-                chunkDurationMinutes,
+                maxChunkDurationMinutes: chunkDurationMinutes,
+                maxChunkSizeMB: maxFileSizeMB,
+                delayBetweenChunks: delaySeconds,
                 meetingStartTime,
-                config?.summaryPrompt
-              );
+                outputLanguage: config?.languageCode,
+                onProgress: (progress, progressMsg) => {
+                  const displayMsg = progressMsg || `Xử lý: ${progress.toFixed(0)}%`;
+                  console.log(`⚡ Multiple Files progress: ${progress.toFixed(0)}% - ${displayMsg}`);
+                  
+                  message.loading({
+                    content: displayMsg,
+                    key: 'multiple-files-progress',
+                    duration: 0
+                  });
+                },
+                onChunkReady: (chunkIndex, totalChunks, segments, summary) => {
+                  console.log(`📝 Chunk ${chunkIndex}/${totalChunks} received (${segments.length} segments)...`);
+                  
+                  // Save segments immediately
+                  setTranscriptions(prev => {
+                    const merged = [...prev, ...segments];
+                    return merged.sort((a, b) => (a.audioTimeMs || 0) - (b.audioTimeMs || 0));
+                  });
+                  setHasUnsavedChanges(true);
+                  
+                  // Collect summaries
+                  allSummaries.push(summary);
+                  
+                  message.success(`✅ Đã lưu chunk ${chunkIndex}/${totalChunks} (${segments.length} segments)`, 2);
+                }
+              });
               
-              // Close progress notification
-              message.destroy('smart-caching-progress');
-              message.success(`✅ Hoàn thành Smart Caching: ${parsed.results.length} đoạn`, 3);
+              // Merge all chunk summaries
+              if (parsed.summaries && parsed.summaries.length > 0) {
+                const combinedSummary = `📝 TÓM TẮT TỪNG PHẦN:\n\n${parsed.summaries.map((s, i) => `Phần ${i + 1}:\n${s}`).join('\n\n')}`;
+                setGeminiSummary(combinedSummary);
+              }
+              
+              message.destroy('multiple-files-progress');
+              message.success(`✅ Hoàn thành Multiple Files: ${parsed.results.length} đoạn`, 3);
+              
+              console.log('✅ All segments already saved progressively to UI');
               
             } else {
               // Normal Mode: Single request for short audio
@@ -1208,12 +1227,12 @@ export const App: React.FC = () => {
                 config?.summaryPrompt,
                 fileManagerRef.current
               );
-            }
-
-            // Save summary if available
-            if (parsed.summary) {
-              console.log('📋 Received summary:', parsed.summary);
-              setGeminiSummary(parsed.summary);
+              
+              // Normal mode: Save summary if not already saved
+              if (parsed.summary) {
+                console.log('📋 Received summary:', parsed.summary);
+                setGeminiSummary(parsed.summary);
+              }
             }
             
             // Show truncation warning if detected
@@ -1239,8 +1258,11 @@ export const App: React.FC = () => {
               });
             }
 
-            // Show merge/replace options modal
-            showMergeOrReplaceModal(parsed.results);
+            // Show merge/replace modal ONLY for Normal mode
+            // Smart Caching already saved progressively via callbacks
+            if (!isLongAudio) {
+              showMergeOrReplaceModal(parsed.results);
+            }
 
           } catch (error: any) {
             // Check if error is FILE_TOO_LARGE
