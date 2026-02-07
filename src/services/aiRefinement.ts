@@ -1335,6 +1335,154 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
    * Gemini API officially supports WAV and MP3 only
    * @param targetSampleRate - Target sample rate (16000 for smaller files, 44100 for quality)
    */
+  /**
+   * Convert audio to MP3 format (compressed, smaller file size)
+   * MP3: ~128kbps = 58 MB per 60min audio (vs WAV: 115 MB)
+   * Requires lamejs library for browser MP3 encoding
+   * 
+   * @param audioBlob - Input audio blob (any format)
+   * @param targetSampleRate - Target sample rate (default: 16000Hz for optimal compression)
+   * @param bitRate - MP3 bitrate in kbps (default: 128kbps, min: 64, max: 320)
+   * @returns Promise<Blob> - MP3 encoded audio
+   */
+  private static async convertToMp3(
+    audioBlob: Blob,
+    targetSampleRate: number = 16000,
+    bitRate: number = 128
+  ): Promise<Blob> {
+    return new Promise(async (resolve, reject) => {
+      try {
+        // Step 1: Decode audio to PCM
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const reader = new FileReader();
+
+        reader.onload = async (e) => {
+          try {
+            const arrayBuffer = e.target?.result as ArrayBuffer;
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+            // Step 2: Resample to target sample rate
+            let finalBuffer = audioBuffer;
+            if (audioBuffer.sampleRate !== targetSampleRate) {
+              console.log(`🔊 Resampling: ${audioBuffer.sampleRate}Hz → ${targetSampleRate}Hz`);
+              finalBuffer = await this.resampleAudioBuffer(audioBuffer, targetSampleRate);
+            }
+
+            // Step 3: Convert to mono if needed (MP3 encoding works best with mono)
+            const channelData = finalBuffer.numberOfChannels === 1
+              ? finalBuffer.getChannelData(0)
+              : this.downmixToMono(finalBuffer);
+
+            // Step 4: Check if lamejs is available for MP3 encoding
+            const lameScript = document.querySelector('script[src*="lamejs"]');
+            if (!lameScript && typeof (window as any).lamejs === 'undefined') {
+              console.warn('⚠️ lamejs library not found, falling back to WAV format');
+              // Fallback to WAV if lamejs not available
+              const wavBlob = this.audioBufferToWav(finalBuffer);
+              resolve(wavBlob);
+              return;
+            }
+
+            // Step 5: Encode PCM to MP3 using lamejs
+            const mp3Data = await this.encodePcmToMp3(channelData, targetSampleRate, bitRate);
+            const mp3Blob = new Blob([mp3Data as any], { type: 'audio/mpeg' });
+            
+            const originalSizeMB = audioBlob.size / (1024 * 1024);
+            const mp3SizeMB = mp3Blob.size / (1024 * 1024);
+            console.log(`✅ MP3 Encoded: ${originalSizeMB.toFixed(2)}MB → ${mp3SizeMB.toFixed(2)}MB (${bitRate}kbps)`);
+            
+            resolve(mp3Blob);
+          } catch (error) {
+            reject(error);
+          }
+        };
+
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(audioBlob);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * Encode PCM audio to MP3 using lamejs library
+   * Requires: <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
+   */
+  private static async encodePcmToMp3(
+    pcmData: Float32Array,
+    sampleRate: number,
+    bitRate: number
+  ): Promise<Uint8Array> {
+    const encoder = new (window as any).lamejs.Mp3Encoder(1, sampleRate, bitRate); // 1 channel (mono)
+    const mp3Data: Uint8Array[] = [];
+
+    // Encode in chunks for large files
+    const chunkSize = 1024 * 10; // 10KB chunks
+    for (let i = 0; i < pcmData.length; i += chunkSize) {
+      const chunk = pcmData.slice(i, i + chunkSize);
+      // Convert float32 to int16
+      const int16 = this.float32ToInt16(chunk);
+      const encoded = encoder.encodeBuffer(int16);
+      if (encoded.length > 0) {
+        mp3Data.push(new Uint8Array(encoded));
+      }
+    }
+
+    // Flush remaining data
+    const final = encoder.flush();
+    if (final.length > 0) {
+      mp3Data.push(new Uint8Array(final));
+    }
+
+    // Combine all arrays
+    const totalLength = mp3Data.reduce((sum, arr) => sum + arr.length, 0);
+    const mp3Buffer = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const arr of mp3Data) {
+      mp3Buffer.set(arr, offset);
+      offset += arr.length;
+    }
+    
+    return mp3Buffer;
+  }
+
+  /**
+   * Convert Float32 PCM data to Int16 (required by MP3 encoder)
+   */
+  private static float32ToInt16(float32Array: Float32Array): Int16Array {
+    const int16Array = new Int16Array(float32Array.length);
+    for (let i = 0; i < float32Array.length; i++) {
+      // Convert float (-1 to 1) to int16 (-32768 to 32767)
+      let s = Math.max(-1, Math.min(1, float32Array[i]));
+      int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    }
+    return int16Array;
+  }
+
+  /**
+   * Downmix multichannel audio to mono (for MP3 encoding)
+   */
+  private static downmixToMono(audioBuffer: AudioBuffer): Float32Array {
+    const numberOfChannels = audioBuffer.numberOfChannels;
+    const length = audioBuffer.length;
+    const monoData = new Float32Array(length);
+
+    if (numberOfChannels === 1) {
+      return audioBuffer.getChannelData(0);
+    }
+
+    // Average all channels
+    for (let channel = 0; channel < numberOfChannels; channel++) {
+      const channelData = audioBuffer.getChannelData(channel);
+      for (let i = 0; i < length; i++) {
+        monoData[i] += channelData[i] / numberOfChannels;
+      }
+    }
+
+    return monoData;
+  }
+
   private static async convertToWav(audioBlob: Blob, targetSampleRate: number = 44100): Promise<Blob> {
     return new Promise((resolve, reject) => {
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -1589,41 +1737,83 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
     maxFileSizeMB: number = 20,
     requestDelaySeconds: number = 5,
     maxDurationMinutes: number = 60,
-    meetingStartTime?: Date, // Meeting start time for accurate timestamp calculation
-    summaryPrompt?: string, // OPTIONAL: user-provided prompt text for the summary field
-    fileManager?: FileManagerService // Optional: for saving debug logs to project folder
+    meetingStartTime?: Date,
+    summaryPrompt?: string,
+    fileManager?: FileManagerService,
+    preferMP3: boolean = true
   ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
-    const maxSizeMB = maxFileSizeMB;
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('📋 BƯỚC 1: Kiểm tra & chuyển đổi định dạng audio');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-    // CRITICAL: Convert to WAV first if needed, THEN split based on size
-    // Gemini API officially supports: WAV and MP3 only
-    // All other formats (WebM, MP4, OGG, AAC, FLAC) must be converted to WAV
-    if (onProgress) onProgress(3, 'Đang kiểm tra định dạng audio...');
+    // ============================================
+    // STEP 1: Validate & Convert Format
+    // ============================================
+    if (onProgress) onProgress(3, '🔍 Kiểm tra định dạng audio...');
     
-    let wavBlob = audioBlob;
+    let audioToSplit = audioBlob;
     const audioType = audioBlob.type.toLowerCase();
     const isWavOrMp3 = audioType.includes('wav') || audioType.includes('mpeg') || audioType.includes('mp3');
     const needsConversion = !isWavOrMp3;
     
+    let conversionFormat = '';
     if (needsConversion) {
-      if (onProgress) onProgress(5, `Đang chuyển đổi ${audioType} sang WAV...`);
-      // Convert with lower sample rate for smaller file size
-      const targetSampleRate = 16000; // Lower sample rate = smaller file
-      wavBlob = await this.convertToWav(audioBlob, targetSampleRate);
+      if (preferMP3) {
+        if (onProgress) onProgress(5, `🔄 Chuyển đổi ${audioType} → MP3 (compressed)...`);
+        try {
+          audioToSplit = await this.convertToMp3(audioBlob, 16000, 128);
+          conversionFormat = 'MP3';
+          console.log(`✅ Converted to MP3`);
+        } catch (mp3Error: any) {
+          console.warn(`⚠️ MP3 conversion failed (${mp3Error.message}), falling back to WAV...`);
+          audioToSplit = await this.convertToWav(audioBlob, 16000);
+          conversionFormat = 'WAV (MP3 fallback)';
+        }
+      } else {
+        if (onProgress) onProgress(5, `🔄 Chuyển đổi ${audioType} → WAV...`);
+        audioToSplit = await this.convertToWav(audioBlob, 16000);
+        conversionFormat = 'WAV';
+        console.log(`✅ Converted to WAV`);
+      }
       
       const originalSizeMB = audioBlob.size / (1024 * 1024);
-      const wavSizeMB = wavBlob.size / (1024 * 1024);
-      console.log(`✅ Converted ${audioType}: ${originalSizeMB.toFixed(2)}MB → ${wavSizeMB.toFixed(2)}MB (WAV)`);
+      const convertedSizeMB = audioToSplit.size / (1024 * 1024);
+      const savedPercent = ((1 - convertedSizeMB / originalSizeMB) * 100).toFixed(1);
+      console.log(`✅ Format: ${originalSizeMB.toFixed(2)}MB (${audioType}) → ${convertedSizeMB.toFixed(2)}MB (${conversionFormat}) - Saved ${savedPercent}%`);
     } else {
-      console.log(`✅ Audio format ${audioType} is supported by Gemini (WAV/MP3) - no conversion needed`);
+      conversionFormat = audioType.includes('mp3') ? 'MP3' : 'WAV';
+      console.log(`✅ Format ${audioType} is supported by Gemini API (${conversionFormat})`);
     }
+    
+    console.log('✅ BƯỚC 1 COMPLETE: Định dạng đã sẵn sàng\n');
 
-    // Now split the WAV file into chunks based on actual WAV size AND duration
-    if (onProgress) onProgress(8, 'Đang phân tích và chia file WAV...');
-    const chunks = await this.splitAudioIntoChunks(wavBlob, maxSizeMB, maxDurationMinutes);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('📋 BƯỚC 2: Kiểm tra giới hạn & chia file');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-    if (onProgress) onProgress(10, `Đã chia thành ${chunks.length} phần. Bắt đầu chuyển đổi...`);
+    // ============================================
+    // STEP 2: Validate Limits & Split File
+    // ============================================
+    if (onProgress) onProgress(8, '📊 Phân tích kích thước và thời lượng...');
+    
+    const chunks = await this.splitAudioIntoChunks(audioToSplit, maxFileSizeMB, maxDurationMinutes);
+    
+    console.log(`✅ File đã được chia: ${chunks.length} phần`);
+    chunks.forEach((chunk, i) => {
+      const sizeKB = (chunk.blob.size / 1024).toFixed(0);
+      const durationMin = ((chunk.endTimeMs - chunk.startTimeMs) / 60000).toFixed(1);
+      console.log(`   Phần ${i + 1}/${chunks.length}: ${sizeKB}KB • ${durationMin} phút (${chunk.startTimeMs}ms - ${chunk.endTimeMs}ms)`);
+    });
+    
+    console.log('✅ BƯỚC 2 COMPLETE: File đã được chia\n');
 
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('📋 BƯỚC 3: Xử lý từng phần & lưu kết quả ngay');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+    // ============================================
+    // STEP 3: Batch Process with Immediate Saving
+    // ============================================
     const allResults: TranscriptionResult[] = [];
     const allSummaries: string[] = [];
     let hasTruncation = false;
@@ -1632,52 +1822,52 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
       const chunkProgress = 10 + ((i / chunks.length) * 80);
-      const chunkDurationMin = Math.ceil((chunk.endTimeMs - chunk.startTimeMs) / 60000);
-      const chunkSizeMB = (chunk.blob.size / (1024 * 1024)).toFixed(1);
+      const chunkDurationMin = ((chunk.endTimeMs - chunk.startTimeMs) / 60000).toFixed(1);
+      const chunkSizeKB = (chunk.blob.size / 1024).toFixed(0);
 
+      console.log(`\n📦 Phần ${i + 1}/${chunks.length}: ${chunkSizeKB}KB • ${chunkDurationMin} phút`);
+      
       if (onProgress) {
-        onProgress(
-          chunkProgress,
-          `📦 Phần ${i + 1}/${chunks.length}: ${chunkSizeMB}MB • ${chunkDurationMin} phút`
-        );
+        onProgress(chunkProgress, `📦 Phần ${i + 1}/${chunks.length}: Gửi tới Gemini...`);
       }
 
       try {
-        // Transcribe this chunk (skip size check - already validated and split)
+        // Step 3.1: Send chunk to Gemini
+        if (onProgress) {
+          onProgress(chunkProgress + 5, `📦 Phần ${i + 1}/${chunks.length}: Đợi API Gemini...`);
+        }
+        
         const parsed = await this.transcribeAudioWithGemini(
           apiKey,
           chunk.blob,
           modelName,
           (subProgress, subMessage) => {
             if (onProgress) {
-              const totalProgress = chunkProgress + (subProgress / chunks.length) * 0.8;
-              const progressMessage = subMessage 
-                ? `📦 ${i + 1}/${chunks.length}: ${subMessage}`
-                : `📦 Phần ${i + 1}/${chunks.length}: ${subProgress.toFixed(0)}%`;
-              onProgress(totalProgress, progressMessage);
+              const totalProgress = chunkProgress + 5 + (subProgress / chunks.length) * 0.75;
+              onProgress(totalProgress, `📦 Phần ${i + 1}/${chunks.length}: ${subMessage || `${subProgress.toFixed(0)}%`}`);
             }
           },
-          true, // skipSizeCheck = true (chunks already validated)
-          maxSizeMB, // Pass maxFileSizeMB to child call
-          meetingStartTime, // Pass meeting start time for accurate timestamps
-          summaryPrompt, // Pass user-provided summary prompt through
-          fileManager // Pass fileManager for debug logs
+          true,
+          maxFileSizeMB,
+          meetingStartTime,
+          summaryPrompt,
+          fileManager
         );
 
-        // Adjust timestamps for this chunk
+        // Step 3.2: Adjust timestamps for this chunk
         const adjustedResults = this.adjustTimestamps(parsed.results, chunk.startTimeMs);
+        
+        // Step 3.3: SAVE results immediately (xong bước nào là chắc chắn kết quả bước đó)
         allResults.push(...adjustedResults);
         
-        // Log chunk completion
-        console.log(`✅ Chunk ${i + 1}/${chunks.length}: ${adjustedResults.length} segments (${chunk.startTimeMs}ms - ${chunk.endTimeMs}ms)`);
+        console.log(`   ✅ Phần ${i + 1}/${chunks.length} SAVED: ${adjustedResults.length} segments`);
+        console.log(`      - Time range: ${chunk.startTimeMs}ms - ${chunk.endTimeMs}ms`);
         
-        // Collect summary from this chunk
         if (parsed.summary) {
           allSummaries.push(`Phần ${i + 1}/${chunks.length}: ${parsed.summary}`);
-          console.log(`📝 Chunk ${i + 1}/${chunks.length}: Summary collected (${parsed.summary.length} chars)`);
+          console.log(`      - Summary: ${parsed.summary.substring(0, 100)}${parsed.summary.length > 100 ? '...' : ''}`);
         }
         
-        // Track truncation
         if (parsed.isTruncated) {
           hasTruncation = true;
           if (parsed.truncationWarning) {
@@ -1685,60 +1875,75 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
           }
         }
 
-        // Show completion for this chunk
         if (onProgress) {
           onProgress(
-            chunkProgress + (80 / chunks.length) * 0.9,
-            `✅ Phần ${i + 1}/${chunks.length}: ${adjustedResults.length} segments`
+            chunkProgress + 80 / chunks.length - 5,
+            `✅ Phần ${i + 1}/${chunks.length}: ${adjustedResults.length} segments SAVED`
           );
         }
 
-        // Add delay between chunks to respect rate limits (15 req/min)
+        // Step 3.4: Rate limiting delay between chunks
         if (i < chunks.length - 1) {
           if (onProgress) {
             onProgress(
-              chunkProgress + (80 / chunks.length),
-              `⏳ Đợi ${requestDelaySeconds}s trước khi xử lý phần ${i + 2}/${chunks.length}...`
+              chunkProgress + 80 / chunks.length,
+              `⏳ Đợi ${requestDelaySeconds}s (API rate limit: 15 req/min)...`
             );
           }
+          console.log(`   ⏳ Waiting ${requestDelaySeconds}s before next chunk...`);
           await new Promise(resolve => setTimeout(resolve, requestDelaySeconds * 1000));
         }
       } catch (error: any) {
-        // Handle quota errors
+        // Handle quota errors gracefully
         if (error.message.includes('429') || error.message.includes('quota')) {
+          const completedChunks = i;
+          const processedSegments = allResults.length;
           throw new Error(
-            `Vượt hạn mức API tại phần ${i + 1}/${chunks.length}.\n\n` +
-            `✅ Đã xử lý: ${i}/${chunks.length} phần\n` +
-            `❌ Lỗi: ${error.message}\n\n` +
-            `💡 Đợi 24 giờ hoặc nâng cấp Paid tier.`
+            `❌ Vượt hạn mức API Gemini tại phần ${i + 1}/${chunks.length}\n\n` +
+            `✅ Đã xử lý thành công:\n` +
+            `   - Phần: ${completedChunks}/${chunks.length}\n` +
+            `   - Segments: ${processedSegments}\n` +
+            `   - Kết quả đã SAVED\n\n` +
+            `❌ Nguyên nhân: ${error.message}\n\n` +
+            `💡 Giải pháp:\n` +
+            `   • Đợi 24 giờ để reset quota hàng ngày\n` +
+            `   • Hoặc nâng cấp lên Paid tier (unlimited)\n` +
+            `   • API ref: https://ai.google.dev/pricing`
           );
         }
         throw error;
       }
     }
 
-    // Sort by timestamp
-    allResults.sort((a, b) => (a.audioTimeMs || 0) - (b.audioTimeMs || 0));
+    console.log(`\n✅ BƯỚC 3 COMPLETE: ${allResults.length} segments từ ${chunks.length} phần đã SAVED\n`);
 
-    if (onProgress) onProgress(90, `✅ Đã xử lý ${allResults.length} segments từ ${chunks.length} phần`);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('📋 BƯỚC 4: Gộp kết quả & sắp xếp');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-    console.log(`✅ Transcribed entire audio: ${allResults.length} segments from ${chunks.length} chunks`);
+    // ============================================
+    // STEP 4: Merge & Sort Results
+    // ============================================
+    if (onProgress) onProgress(90, '🔄 Gộp kết quả từ tất cả các phần...');
     
-    // Combine summaries: Use Gemini to merge if multiple summaries, otherwise return as-is
+    // Step 4.1: Sort by timestamp
+    allResults.sort((a, b) => (a.audioTimeMs || 0) - (b.audioTimeMs || 0));
+    
+    console.log(`✅ Đã sắp xếp: ${allResults.length} segments theo timestamp`);
+
+    // Step 4.2: Merge summaries
     let combinedSummary: string | undefined = undefined;
     
     if (allSummaries.length === 0) {
-      // No summaries at all
+      console.log('📝 No summaries available');
       combinedSummary = undefined;
     } else if (allSummaries.length === 1) {
-      // Only one summary - use directly
-      combinedSummary = allSummaries[0].replace(/^Phần \d+\/\d+: /, ''); // Remove "Phần 1/1: " prefix
+      combinedSummary = allSummaries[0].replace(/^Phần \d+\/\d+: /, '');
+      console.log(`📝 Single summary: ${combinedSummary.substring(0, 100)}${combinedSummary.length > 100 ? '...' : ''}`);
     } else {
-      // Multiple summaries - try to merge with Gemini API
-      if (onProgress) onProgress(92, `🔄 Đang tổng hợp ${allSummaries.length} phần tóm tắt...`);
+      if (onProgress) onProgress(92, `🔄 Gộp ${allSummaries.length} phần tóm tắt...`);
       
       try {
-        // Call Gemini to merge summaries into one cohesive summary
         combinedSummary = await this.mergeSummariesWithGemini(
           apiKey,
           modelName,
@@ -1746,32 +1951,39 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
           summaryPrompt,
           fileManager
         );
+        console.log(`📝 Merged summary: ${combinedSummary.substring(0, 100)}${combinedSummary.length > 100 ? '...' : ''}`);
         
-        if (onProgress) onProgress(98, `✅ Đã tổng hợp tóm tắt hoàn chỉnh`);
-        console.log(`✅ Merged ${allSummaries.length} summaries with Gemini API`);
+        if (onProgress) onProgress(98, '✅ Tóm tắt đã gộp');
       } catch (mergeError: any) {
-        // Fallback: Manual concatenation if Gemini merge fails
-        console.warn(`⚠️ Failed to merge summaries with Gemini, using manual concatenation:`, mergeError.message);
-        
-        // Manual fallback format
-        combinedSummary = allSummaries
-          .map((summary, index) => `📄 Tóm tắt đoạn ${index + 1}:\n${summary.replace(/^Phần \d+\/\d+: /, '')}`)
-          .join('\n\n---\n\n');
-        
-        if (onProgress) onProgress(98, `⚠️ Ghép tóm tắt thủ công (${allSummaries.length} phần)`);
+        console.warn('⚠️ Failed to merge summaries:', mergeError.message);
+        combinedSummary = allSummaries.map(s => s.replace(/^Phần \d+\/\d+: /, '')).join(' ');
       }
     }
 
-    if (onProgress) onProgress(100, `🎉 Hoàn thành! ${allResults.length} segments`);
-    
-    // Build final truncation warning
-    let finalTruncationWarning: string | undefined = undefined;
+    // Step 4.3: Finalize warnings
+    let finalWarning: string | undefined = undefined;
     if (hasTruncation && truncationWarnings.length > 0) {
-      finalTruncationWarning = `⚠️ Một số phần audio bị truncated do MAX_TOKENS:\n${truncationWarnings.join('\n')}\n\nKhuyến nghị: Giảm thời lượng mỗi phần hoặc tăng maxOutputTokens trong cấu hình.`;
-      console.warn(finalTruncationWarning);
+      finalWarning = `⚠️ Một hoặc nhiều phần bị cắt ngắn:\n${truncationWarnings.join('\n')}`;
     }
+
+    if (onProgress) onProgress(100, '✅ Hoàn thành');
     
-    return { results: allResults, summary: combinedSummary, isTruncated: hasTruncation, truncationWarning: finalTruncationWarning };
+    console.log('✅ BƯỚC 4 COMPLETE: Kết quả đã sẵn sàng\n');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(`📊 SUMMARY:`);
+    console.log(`   - Total Segments: ${allResults.length}`);
+    console.log(`   - Chunks Processed: ${chunks.length}`);
+    console.log(`   - Format Used: ${conversionFormat}`);
+    console.log(`   - Has Summary: ${!!combinedSummary}`);
+    console.log(`   - Truncated: ${hasTruncation}`);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+    return {
+      results: allResults,
+      summary: combinedSummary,
+      isTruncated: hasTruncation,
+      truncationWarning: finalWarning
+    };
   }
 
   /**
