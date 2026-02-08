@@ -61,10 +61,6 @@ export const App: React.FC = () => {
   const [showUpdateNotification, setShowUpdateNotification] = useState(false);
   const [updateConfig, setUpdateConfig] = useState(() => UpdateManagerService.loadConfig());
   
-  // Processing progress states
-  const [processingProgress, setProcessingProgress] = useState(0);
-  const [processingMessage, setProcessingMessage] = useState('');
-  const [processingDetails, setProcessingDetails] = useState<string[]>([]);
 
   /**
    * Get valid meeting start time for Gemini transcription
@@ -569,64 +565,73 @@ export const App: React.FC = () => {
     }
 
     let progressModal: any = null;
-    
-    // Reset progress states
-    setProcessingProgress(0);
-    setProcessingMessage('🚀 Đang bắt đầu...');
-    setProcessingDetails([]);
+    let currentProgress = 0;
+    let currentMessage = '🚀 Đang bắt đầu...';
+    let progressDetails: string[] = [];
+
+    const renderProgressContent = () => (
+      <div style={{ marginTop: 16 }}>
+        <div style={{ padding: '16px', background: 'linear-gradient(135deg, #667eea22 0%, #764ba222 100%)', borderRadius: '8px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#333' }}>{currentMessage}</div>
+            <div style={{ fontSize: '12px', color: '#999' }}>{new Date().toLocaleTimeString()}</div>
+          </div>
+          <div style={{ width: '100%', height: '24px', background: '#f0f0f0', borderRadius: '12px', overflow: 'hidden' }}>
+            <div style={{ width: `${currentProgress}%`, height: '100%', background: 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)', transition: 'width 0.3s ease', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '12px', fontWeight: 'bold' }}>
+              {currentProgress > 5 ? `${currentProgress.toFixed(0)}%` : ''}
+            </div>
+          </div>
+          <div style={{ marginTop: '8px', fontSize: '12px', color: '#555' }}>
+            Tiến trình: <strong>{currentProgress.toFixed(0)}%</strong>
+          </div>
+        </div>
+
+        {progressDetails.length > 0 && (
+          <div style={{
+            padding: '12px',
+            background: '#f5f5f5',
+            borderRadius: '6px',
+            marginBottom: '16px',
+            maxHeight: '360px',
+            overflowY: 'scroll',
+            fontSize: '12px',
+            lineHeight: '1.8',
+            fontFamily: 'monospace',
+            color: '#333'
+          }}>
+            <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#667eea' }}>📋 Nhật ký tiến trình:</div>
+            {progressDetails.map((detail, idx) => (
+              <div key={idx} style={{ margin: '4px 0', borderBottom: '1px solid #e0e0e0', paddingBottom: '4px' }}>
+                {detail}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ fontSize: '13px', color: '#666', lineHeight: '1.6' }}>
+          💡 <strong>Lưu ý:</strong><br />
+          • Hệ thống đang tự động chia file và xử lý từng phần<br />
+          • Có delay {requestDelaySeconds}s giữa các phần để tuân thủ rate limit<br />
+          • Vui lòng không đóng trình duyệt
+        </div>
+      </div>
+    );
+
+    const updateProgressModal = () => {
+      if (progressModal && typeof progressModal.update === 'function') {
+        progressModal.update({ content: renderProgressContent() });
+      }
+    };
 
     try {
-      // Show progress modal with real-time state updates
+      // Show progress modal with live updates
       progressModal = Modal.info({
         title: '🤖 Đang xử lý toàn bộ file...',
         width: 700,
         closable: false,
         maskClosable: false,
         okButtonProps: { style: { display: 'none' } },
-        content: (
-          <div style={{ marginTop: 16 }}>
-            <div style={{ padding: '16px', background: 'linear-gradient(135deg, #667eea22 0%, #764ba222 100%)', borderRadius: '8px', marginBottom: '16px' }}>
-              <div style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 'bold', color: '#333' }}>
-                {processingMessage}
-              </div>
-              <div style={{ width: '100%', height: '24px', background: '#f0f0f0', borderRadius: '12px', overflow: 'hidden' }}>
-                <div style={{ width: `${processingProgress}%`, height: '100%', background: 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)', transition: 'width 0.3s ease', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '12px', fontWeight: 'bold' }}>
-                  {processingProgress > 5 ? `${processingProgress.toFixed(0)}%` : ''}
-                </div>
-              </div>
-            </div>
-            
-            {/* Thông tin chi tiết xử lý */}
-            {processingDetails.length > 0 && (
-              <div style={{ 
-                padding: '12px', 
-                background: '#f5f5f5', 
-                borderRadius: '6px', 
-                marginBottom: '16px',
-                maxHeight: '300px',
-                overflowY: 'auto',
-                fontSize: '12px',
-                lineHeight: '1.8',
-                fontFamily: 'monospace',
-                color: '#333'
-              }}>
-                <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#667eea' }}>📋 Chi tiết xử lý:</div>
-                {processingDetails.map((detail, idx) => (
-                  <div key={idx} style={{ margin: '4px 0', borderBottom: '1px solid #e0e0e0', paddingBottom: '4px' }}>
-                    {detail}
-                  </div>
-                ))}
-              </div>
-            )}
-            
-            <div style={{ fontSize: '13px', color: '#666', lineHeight: '1.6' }}>
-              💡 <strong>Lưu ý:</strong><br />
-              • Hệ thống đang tự động chia file và xử lý từng phần<br />
-              • Có delay {requestDelaySeconds}s giữa các phần để tuân thủ rate limit<br />
-              • Vui lòng không đóng trình duyệt
-            </div>
-          </div>
-        )
+        content: renderProgressContent()
       });
 
       // Start transcription with progress callback and config values
@@ -639,17 +644,12 @@ export const App: React.FC = () => {
         audioBlob,
         config.geminiModel,
         (progress, msg) => {
-          setProcessingProgress(progress);
-          setProcessingMessage(msg || '⏳ Đang xử lý...');
-          
-          // Add detail to the list
+          currentProgress = progress;
+          currentMessage = msg || '⏳ Đang xử lý...';
           if (msg) {
-            setProcessingDetails(prev => {
-              // Giữ tối đa 20 dòng cuối cùng để tránh memory leak
-              const updated = [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`];
-              return updated.slice(Math.max(0, updated.length - 20));
-            });
+            progressDetails = [...progressDetails, `[${new Date().toLocaleTimeString()}] ${msg}`].slice(-200);
           }
+          updateProgressModal();
         },
         maxFileSizeMB,
         requestDelaySeconds,
@@ -700,9 +700,6 @@ export const App: React.FC = () => {
 
     } catch (error: any) {
       if (progressModal) progressModal.destroy();
-      setProcessingProgress(0);
-      setProcessingMessage('');
-      setProcessingDetails([]);
       Modal.error({
         title: '❌ Lỗi chuyển đổi',
         width: 480,

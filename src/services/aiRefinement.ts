@@ -727,11 +727,6 @@ Nhiệm vụ: Chuẩn hóa văn bản speech-to-text:
 4. Giữ nguyên nội dung, không thêm bớt ý
 5. Tóm tắt toàn bộ nội dung cuộc họp dựa trên các segment
 
-📊 NGÂN SÁCH TOKEN (OUTPUT BUDGET):
-Bạn có tối đa ~8000 tokens cho output. Hiện có ${segmentCount} segments cần xử lý.
-
-🎯 CHIẾN LƯỢC 2 BƯỚC - ƯU TIÊN SUMMARY:
-
 📝 BƯỚC 1 - BẮT BUỘC HOÀN THÀNH TRƯỚC:
    • Tạo "summary" HOÀN CHỈNH (~300-400 từ)
    • Bao gồm: Chủ đề chính, quyết định, kết luận
@@ -742,26 +737,8 @@ Bạn có tối đa ~8000 tokens cho output. Hiện có ${segmentCount} segments
    • NẾU ÍT SEGMENTS (<30): Chuẩn hóa CHI TIẾT từng câu
    • NẾU VỪA (30-100): GỘP các câu liên quan, cô đọng nhẹ
    • NẾU NHIỀU (>100): GỘP MẠNH, chỉ giữ ý chính
-   
-⚠️ QUY TẮC TỰ ĐỘNG DỪNG (AUTO-STOP):
-   • THEO DÕI token usage khi xử lý segments
-   • NẾU ước tính đã dùng ~6000 tokens (75% budget):
-     → DỪNG NGAY việc thêm segments
-     → ĐÓNG JSON đúng cú pháp: }] }
-     → KHÔNG cần xử lý hết segments
-   • TỐT HƠN: Summary đầy đủ + Segments một phần
-   • TỆ HƠN: JSON bị cắt ngang không hợp lệ
 
-💡 CHIẾN THUẬT THÔNG MINH:
-   • Nếu có >50 segments: Chỉ xử lý 20-30 segments ĐẦU TIÊN đại diện
-   • Nếu có >100 segments: Chỉ xử lý 10-15 segments QUAN TRỌNG NHẤT
-   • Ưu tiên segments có số liệu, quyết định, kết luận
-
-⚠️ QUAN TRỌNG - THỨ TỰ OUTPUT:
-- Trả về "summary" TRƯỚC (đầy đủ, hoàn chỉnh)
-- Sau đó "segments" (có thể chỉ một phần nếu hết token)
-
-Output: CHỈ JSON object, KHÔNG markdown/giải thích
+Output: CHỈ JSON object chuẩn theo form dưới, KHÔNG markdown/giải thích
 Format: {
   "summary": "Tóm tắt nội dung cuộc họp dạng văn xuôi, bao gồm các chủ đề chính, quyết định quan trọng, kết luận.",
   "segments": [{"timestamp":"...","audioTimeMs":123,"text":"..."},...]
@@ -1543,15 +1520,21 @@ ${languageCode.toLowerCase().startsWith('vi') ? 'TASK: Process this audio chunk 
   /**
    * Split audio into chunks based on size AND duration limits
    * Each chunk must satisfy: size <= maxChunkSizeMB AND duration <= maxDurationMinutes
-   * @param audioBlob - Audio blob to split (should be WAV format)
+   * @param audioBlob - Audio blob to split (WAV or MP3)
    * @param maxChunkSizeMB - Maximum size per chunk in MB (default: 20)
    * @param maxDurationMinutes - Maximum duration per chunk in minutes (default: 60)
+   * @param targetFormat - Output format for chunks ('wav' | 'mp3')
+   * @param targetSampleRate - Target sample rate for output (default: 16000)
+   * @param bitRate - MP3 bitrate (kbps, default: 128)
    * @returns Array of chunks with blob, startTimeMs, endTimeMs
    */
   public static async splitAudioIntoChunks(
     audioBlob: Blob,
     maxChunkSizeMB: number = 20,
-    maxDurationMinutes: number = 60
+    maxDurationMinutes: number = 60,
+    targetFormat: 'wav' | 'mp3' = 'wav',
+    targetSampleRate: number = 16000,
+    bitRate: number = 128
   ): Promise<{ blob: Blob; startTimeMs: number; endTimeMs: number }[]> {
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     const reader = new FileReader();
@@ -1591,7 +1574,14 @@ ${languageCode.toLowerCase().startsWith('vi') ? 'TASK: Process this audio chunk 
 
             console.log(`⏱️ Extracting chunk ${i + 1}/${numberOfChunks}: ${startTimeMs.toFixed(0)}ms - ${endTimeMs.toFixed(0)}ms`);
 
-            const chunkBlob = await this.extractAudioSegment(audioBlob, startTimeMs, endTimeMs);
+            const chunkBlob = await this.extractAudioSegment(
+              audioBlob,
+              startTimeMs,
+              endTimeMs,
+              targetFormat,
+              targetSampleRate,
+              bitRate
+            );
 
             chunks.push({
               blob: chunkBlob,
@@ -1616,12 +1606,18 @@ ${languageCode.toLowerCase().startsWith('vi') ? 'TASK: Process this audio chunk 
    * @param audioBlob - Original audio blob
    * @param startTimeMs - Start time in milliseconds
    * @param endTimeMs - End time in milliseconds
+   * @param targetFormat - Output format ('wav' | 'mp3')
+   * @param targetSampleRate - Target sample rate for output (default: 16000)
+   * @param bitRate - MP3 bitrate (kbps, default: 128)
    * @returns Promise<Blob> - Audio segment blob
    */
   public static async extractAudioSegment(
     audioBlob: Blob,
     startTimeMs: number,
-    endTimeMs: number
+    endTimeMs: number,
+    targetFormat: 'wav' | 'mp3' = 'wav',
+    targetSampleRate: number = 16000,
+    bitRate: number = 128
   ): Promise<Blob> {
     return new Promise((resolve, reject) => {
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -1653,7 +1649,32 @@ ${languageCode.toLowerCase().startsWith('vi') ? 'TASK: Process this audio chunk 
             }
           }
 
-          // Convert to WAV
+          if (targetFormat === 'mp3') {
+            // Resample if needed for MP3 encoding
+            let finalBuffer = segmentBuffer;
+            if (segmentBuffer.sampleRate !== targetSampleRate) {
+              finalBuffer = await this.resampleAudioBuffer(segmentBuffer, targetSampleRate);
+            }
+
+            const channelData = finalBuffer.numberOfChannels === 1
+              ? finalBuffer.getChannelData(0)
+              : this.downmixToMono(finalBuffer);
+
+            const lameScript = document.querySelector('script[src*="lamejs"]');
+            if (!lameScript && typeof (window as any).lamejs === 'undefined') {
+              console.warn('⚠️ lamejs library not found, falling back to WAV format for chunk');
+              const wavBlob = this.audioBufferToWav(finalBuffer);
+              resolve(wavBlob);
+              return;
+            }
+
+            const mp3Data = await this.encodePcmToMp3(channelData, targetSampleRate, bitRate);
+            const mp3Blob = new Blob([mp3Data as any], { type: 'audio/mpeg' });
+            resolve(mp3Blob);
+            return;
+          }
+
+          // Convert to WAV (default)
           const wavBlob = this.audioBufferToWav(segmentBuffer);
           resolve(wavBlob);
         } catch (error) {
@@ -1703,8 +1724,8 @@ ${languageCode.toLowerCase().startsWith('vi') ? 'TASK: Process this audio chunk 
     
     let audioToSplit = audioBlob;
     const audioType = audioBlob.type.toLowerCase();
-    const isWavOrMp3 = audioType.includes('wav') || audioType.includes('mpeg') || audioType.includes('mp3');
-    const needsConversion = !isWavOrMp3;
+    const isMp3 = audioType.includes('mpeg') || audioType.includes('mp3');
+    const needsConversion = !isMp3;
     
     let conversionFormat = '';
     if (needsConversion) {
@@ -1731,8 +1752,8 @@ ${languageCode.toLowerCase().startsWith('vi') ? 'TASK: Process this audio chunk 
       const savedPercent = ((1 - convertedSizeMB / originalSizeMB) * 100).toFixed(1);
       console.log(`✅ Format: ${originalSizeMB.toFixed(2)}MB (${audioType}) → ${convertedSizeMB.toFixed(2)}MB (${conversionFormat}) - Saved ${savedPercent}%`);
     } else {
-      conversionFormat = audioType.includes('mp3') ? 'MP3' : 'WAV';
-      console.log(`✅ Format ${audioType} is supported by Gemini API (${conversionFormat})`);
+      conversionFormat = 'MP3';
+      console.log(`✅ Format ${audioType} is supported by Gemini API (MP3)`);
     }
     
     console.log('✅ BƯỚC 1 COMPLETE: Định dạng đã sẵn sàng\n');
@@ -1746,7 +1767,15 @@ ${languageCode.toLowerCase().startsWith('vi') ? 'TASK: Process this audio chunk 
     // ============================================
     if (onProgress) onProgress(8, '📊 Phân tích kích thước và thời lượng...');
     
-    const chunks = await this.splitAudioIntoChunks(audioToSplit, maxFileSizeMB, maxDurationMinutes);
+    const targetFormat: 'wav' | 'mp3' = audioToSplit.type.includes('mpeg') || audioToSplit.type.includes('mp3') ? 'mp3' : 'wav';
+    const chunks = await this.splitAudioIntoChunks(
+      audioToSplit,
+      maxFileSizeMB,
+      maxDurationMinutes,
+      targetFormat,
+      16000,
+      128
+    );
     
     console.log(`✅ File đã được chia: ${chunks.length} phần`);
     chunks.forEach((chunk, i) => {
@@ -1754,6 +1783,13 @@ ${languageCode.toLowerCase().startsWith('vi') ? 'TASK: Process this audio chunk 
       const durationMin = ((chunk.endTimeMs - chunk.startTimeMs) / 60000).toFixed(1);
       console.log(`   Phần ${i + 1}/${chunks.length}: ${sizeKB}KB • ${durationMin} phút (${chunk.startTimeMs}ms - ${chunk.endTimeMs}ms)`);
     });
+
+    if (onProgress && chunks.length > 0) {
+      const totalDurationMin = (chunks[chunks.length - 1].endTimeMs / 60000).toFixed(1);
+      const avgDurationMin = (chunks.reduce((sum, chunk) => sum + (chunk.endTimeMs - chunk.startTimeMs), 0) / chunks.length / 60000).toFixed(1);
+      const avgSizeKB = (chunks.reduce((sum, chunk) => sum + chunk.blob.size, 0) / chunks.length / 1024).toFixed(0);
+      onProgress(12, `✅ Đã chia ${chunks.length} phần • Tổng ${totalDurationMin} phút • TB ${avgDurationMin} phút/phần • ${avgSizeKB}KB/phần`);
+    }
     
     console.log('✅ BƯỚC 2 COMPLETE: File đã được chia\n');
 
