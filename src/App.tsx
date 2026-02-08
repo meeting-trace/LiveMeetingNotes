@@ -60,6 +60,11 @@ export const App: React.FC = () => {
   // Update manager states
   const [showUpdateNotification, setShowUpdateNotification] = useState(false);
   const [updateConfig, setUpdateConfig] = useState(() => UpdateManagerService.loadConfig());
+  
+  // Processing progress states
+  const [processingProgress, setProcessingProgress] = useState(0);
+  const [processingMessage, setProcessingMessage] = useState('');
+  const [processingDetails, setProcessingDetails] = useState<string[]>([]);
 
   /**
    * Get valid meeting start time for Gemini transcription
@@ -564,46 +569,64 @@ export const App: React.FC = () => {
     }
 
     let progressModal: any = null;
-    let currentProgress = 0;
-    let currentMessage = '🚀 Đang bắt đầu...';
-
-    // Create a container div that we'll update
-    const progressContainer = document.createElement('div');
     
-    const updateProgressUI = () => {
-      progressContainer.innerHTML = `
-        <div style="margin-top: 16px;">
-          <div style="padding: 16px; background: linear-gradient(135deg, #667eea22 0%, #764ba222 100%); border-radius: 8px; margin-bottom: 16px;">
-            <div style="margin-bottom: 12px; font-size: 14px; font-weight: bold; color: #333;">
-              ${currentMessage}
-            </div>
-            <div style="width: 100%; height: 24px; background: #f0f0f0; border-radius: 12px; overflow: hidden;">
-              <div style="width: ${currentProgress}%; height: 100%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); transition: width 0.3s ease; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: bold;">
-                ${currentProgress > 5 ? `${currentProgress.toFixed(0)}%` : ''}
-              </div>
-            </div>
-          </div>
-          <div style="font-size: 13px; color: #666; line-height: 1.6;">
-            💡 <strong>Lưu ý:</strong><br />
-            • Hệ thống đang tự động chia file và xử lý từng phần<br />
-            • Có delay ${requestDelaySeconds}s giữa các phần để tuân thủ rate limit<br />
-            • Vui lòng không đóng trình duyệt
-          </div>
-        </div>
-      `;
-    };
-
-    updateProgressUI();
+    // Reset progress states
+    setProcessingProgress(0);
+    setProcessingMessage('🚀 Đang bắt đầu...');
+    setProcessingDetails([]);
 
     try {
-      // Show progress modal
+      // Show progress modal with real-time state updates
       progressModal = Modal.info({
         title: '🤖 Đang xử lý toàn bộ file...',
-        width: 600,
+        width: 700,
         closable: false,
         maskClosable: false,
         okButtonProps: { style: { display: 'none' } },
-        content: <div dangerouslySetInnerHTML={{ __html: progressContainer.innerHTML }} />
+        content: (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ padding: '16px', background: 'linear-gradient(135deg, #667eea22 0%, #764ba222 100%)', borderRadius: '8px', marginBottom: '16px' }}>
+              <div style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 'bold', color: '#333' }}>
+                {processingMessage}
+              </div>
+              <div style={{ width: '100%', height: '24px', background: '#f0f0f0', borderRadius: '12px', overflow: 'hidden' }}>
+                <div style={{ width: `${processingProgress}%`, height: '100%', background: 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)', transition: 'width 0.3s ease', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '12px', fontWeight: 'bold' }}>
+                  {processingProgress > 5 ? `${processingProgress.toFixed(0)}%` : ''}
+                </div>
+              </div>
+            </div>
+            
+            {/* Thông tin chi tiết xử lý */}
+            {processingDetails.length > 0 && (
+              <div style={{ 
+                padding: '12px', 
+                background: '#f5f5f5', 
+                borderRadius: '6px', 
+                marginBottom: '16px',
+                maxHeight: '300px',
+                overflowY: 'auto',
+                fontSize: '12px',
+                lineHeight: '1.8',
+                fontFamily: 'monospace',
+                color: '#333'
+              }}>
+                <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#667eea' }}>📋 Chi tiết xử lý:</div>
+                {processingDetails.map((detail, idx) => (
+                  <div key={idx} style={{ margin: '4px 0', borderBottom: '1px solid #e0e0e0', paddingBottom: '4px' }}>
+                    {detail}
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            <div style={{ fontSize: '13px', color: '#666', lineHeight: '1.6' }}>
+              💡 <strong>Lưu ý:</strong><br />
+              • Hệ thống đang tự động chia file và xử lý từng phần<br />
+              • Có delay {requestDelaySeconds}s giữa các phần để tuân thủ rate limit<br />
+              • Vui lòng không đóng trình duyệt
+            </div>
+          </div>
+        )
       });
 
       // Start transcription with progress callback and config values
@@ -616,18 +639,25 @@ export const App: React.FC = () => {
         audioBlob,
         config.geminiModel,
         (progress, msg) => {
-          currentProgress = progress;
-          currentMessage = msg || '⏳ Đang xử lý...';
+          setProcessingProgress(progress);
+          setProcessingMessage(msg || '⏳ Đang xử lý...');
           
-          // Update UI by re-rendering the container
-          updateProgressUI();
+          // Add detail to the list
+          if (msg) {
+            setProcessingDetails(prev => {
+              // Giữ tối đa 20 dòng cuối cùng để tránh memory leak
+              const updated = [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`];
+              return updated.slice(Math.max(0, updated.length - 20));
+            });
+          }
         },
         maxFileSizeMB,
         requestDelaySeconds,
         maxDurationMinutes,
         meetingStartTime,
         config.summaryPrompt,
-        fileManagerRef.current // Pass fileManager for debug logs
+        fileManagerRef.current, // Pass fileManager for debug logs
+        config.languageCode // Target language for Gemini output (matches Web Speech API config)
       );
 
       progressModal.destroy();
@@ -670,6 +700,9 @@ export const App: React.FC = () => {
 
     } catch (error: any) {
       if (progressModal) progressModal.destroy();
+      setProcessingProgress(0);
+      setProcessingMessage('');
+      setProcessingDetails([]);
       Modal.error({
         title: '❌ Lỗi chuyển đổi',
         width: 480,
@@ -781,7 +814,8 @@ export const App: React.FC = () => {
             maxFileSizeMB,
             meetingStartTime,
             config.summaryPrompt,
-            fileManagerRef.current // Pass fileManager for debug logs
+            fileManagerRef.current, // Pass fileManager for debug logs
+            config.languageCode // Target language for Gemini output
           );
 
           // Adjust timestamps to match original audio
@@ -1150,7 +1184,8 @@ export const App: React.FC = () => {
               maxFileSizeMB,
               meetingStartTime,
               config?.summaryPrompt,
-              fileManagerRef.current // Pass fileManager for debug logs
+              fileManagerRef.current, // Pass fileManager for debug logs
+              config?.languageCode // Target language for Gemini output
             );
 
             // Save summary if available

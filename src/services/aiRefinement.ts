@@ -49,6 +49,34 @@ export class AIRefinementService {
   }
 
   /**
+   * Get prompts based on language code
+   * Returns: { summaryPrompt, segmentPrompt, outputFormat }
+   */
+  private static getPromptsForLanguage(
+    languageCode: string = 'vi-VN'
+  ): { summary: string; segments: string; format: string; role: string } {
+    const lang = languageCode.toLowerCase();
+    
+    if (lang.startsWith('en')) {
+      // English prompts
+      return {
+        role: 'You are an expert meeting scribe, please process the content of this audio segment.',
+        summary: 'Briefly summarize the content of this audio segment',
+        segments: 'Convert the speech to text in this audio segment:\n1. Assign speaker labels (Speaker 1, Speaker 2, names if known)\n2. Attach Timestamps: h:mm:ss at the START of the utterance (e.g., 0:30, 1:05)',
+        format: '{"summary":"Brief summary of this audio segment","segments":[{"timestamp":"0:00","speaker":"Speaker 1","text":"Summary of speaker\'s statement"}]}'
+      };
+    } else {
+      // Vietnamese (default) prompts
+      return {
+        role: 'Bạn là chuyên gia ghi chép cuộc họp, hãy xử lý nội dung đoạn âm thanh này.',
+        summary: 'tóm tắt ngắn gọn nội dung đoạn âm thanh này',
+        segments: 'Chuyển đổi giọng nói sang văn bản trong đoạn âm thanh này:\n1. Gán nhãn người nói (Speaker 1, Speaker 2, tên nếu biết)\n2. Gắn Timestamp: h:mm:ss tại BẮT ĐẦU lượt nói (VD: 0:30, 1:05)',
+        format: '{"summary":"tóm tắt ngắn gọn nội dung đoạn âm thanh này)","segments":[{"timestamp":"0:00","speaker":"Speaker 1","text":"Summary of speaker\'s statement"}]}'
+      };
+    }
+  }
+
+  /**
    * Save Gemini API request and response to file for debugging
    * Only saves prompt text and response, excludes large binary data (audio base64)
    * Saves to project folder's debug-logs/ directory when folder is selected
@@ -919,7 +947,8 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
     maxFileSizeMB: number = 20, // Maximum file size in MB (from config)
     meetingStartTime?: Date, // Meeting start time for accurate timestamp calculation
     summaryPrompt?: string, // OPTIONAL: user-provided prompt text for the summary field
-    fileManager?: FileManagerService // Optional: for saving debug logs to project folder
+    fileManager?: FileManagerService, // Optional: for saving debug logs to project folder
+    languageCode: string = 'vi-VN' // Target language code (default: Vietnamese)
   ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
     if (!apiKey || apiKey.trim().length === 0) {
       throw new Error('Gemini API Key is required');
@@ -1055,49 +1084,21 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
 
       // 📊 Simplified prompt for chunks (audio is already split into balanced pieces)
       // Focus on: CONCISE summary + speaker segments
-      const chunkInstructions = `AUDIO CHUNK - XỰ LÝ ĐƠNGIẢN (${durationMinutes} phút):\n\nVì audio đã được chia thành chunks có kích thước cân bằng, bạn chỉ cần:\n1️⃣ Tóm tắt VÔ CÙNG NGẮN GỌN (30-50 từ max)\n2️⃣ Trích xuất segments chính (2-5 segments/chunk là tối ưu)\n3️⃣ Giữ lại: Tên riêng, quyết định, con số quan trọng`;
+      // const chunkInstructions = `AUDIO CHUNK - XỰ LÝ ĐƠNGIẢN (${durationMinutes} phút):\n\nVì audio đã được chia thành chunks có kích thước cân bằng, bạn chỉ cần:\n1️⃣ Tóm tắt VÔ CÙNG NGẮN GỌN (30-50 từ max)\n2️⃣ Trích xuất segments chính (2-5 segments/chunk là tối ưu)\n3️⃣ Giữ lại: Tên riêng, quyết định, con số quan trọng`;
 
       // Prepare request
       const endpoint = `https://generativelanguage.googleapis.com/${this.GEMINI_API_VERSION}/${modelName}:generateContent?key=${apiKey}`;
+
+      // Get language-specific prompts
+      const prompts = this.getPromptsForLanguage(languageCode);
 
       requestBody = {
         contents: [{
           parts: [
             {
-              text: `BẠN LÀ CHUYÊN GIA GHI CHÉP CUỘC HỌP (AI SCRIBE).
-NHIỆM VỤ: Xử lý đoạn âm thanh (CHUNK) này - Là phần của cuộc họp lớn hơn.
+              text: `${prompts.role}
 
-${chunkInstructions}
-
-📋 CHI TIẾT HƯỚNG DẪN:
-
-BƯỚC 1: TÓM TẮT CHUNK (SUMMARY) - VÔ CÙNG NGẮN GỌN
-${summaryPrompt || '• Độ dài: 30-50 từ MAX\n• Bao gồm: Chủ đề chính, quyết định chốt (nếu có)\n• Giữ lại: Tên riêng, số liệu, deadline quan trọng\n• Định dạng: Viết thành 1-2 câu liền mạch (văn xuôi)'}
-
-BƯỚC 2: PHIÊN ÂM SEGMENTS (2-5 segments/chunk tối ưu)
-1. Gán nhãn người nói nhất quán (Speaker 1, Speaker 2, tên nếu biết)
-2. Gắn Timestamp: h:mm:ss tại BẮT ĐẦU lượt nói (VD: 0:30, 1:05)
-3. Tóm tắt NỘI DUNG (bỏ từ thừa, giữ ý chính)
-4. BẮT BUỘC GIỮ LẠI: Quyết định, con số, deadline, action items
-
-⚠️ QUY TẮC VÀNG:
-• Tôi ước tính ~6000 tokens cho output - segment vừa đủ thôi
-• Nếu thấy sắp hết token: DỪNG, đảm bảo JSON hợp lệ
-• PRIORITY: Summary HOÀN thành + Segments cô đọng > So nhiều mà cắt ngang
-
-📤 OUTPUT FORMAT (JSON strictly):
-{
-  "summary": "Tóm tắt 30-50 từ của chunk này (1-2 câu)",
-  "segments": [
-    {
-      "timestamp": "0:00",
-      "speaker": "Speaker 1",
-      "text": "Tóm tắt nội dung lượt nói"
-    }
-  ]
-}
-
-❗ IMPORTANT: Trả về LUÔN JSON (không markdown, không lời dẫn). Đảm bảo valid JSON!`
+${languageCode.toLowerCase().startsWith('vi') ? 'TASK: Process this audio chunk - Part of a larger meeting.\n\nSTEP 1: SUMMARY - EXTREMELY CONCISE\n' + prompts.summary + '\n\nSTEP 2: EXTRACT SEGMENTS (2-5 per chunk)\n' + prompts.segments + '\n\nOUTPUT FORMAT (JSON only):\n' + prompts.format + '\n\nIMPORTANT: Return valid JSON only (no markdown, no text before/after).' : 'Là phần của cuộc họp lớn hơn.\n\nBƯỚC 1: TÓM TẮT CHUNK (SUMMARY) - VÔ CÙNG NGẮN GỌN\n' + (summaryPrompt || prompts.summary) + '\n\nBƯỚC 2: PHIÊN ÂM SEGMENTS (2-5 segments/chunk tối ưu)\n' + prompts.segments + '\n\nĐẶC BIỆT LƯU Ý:\n• Nếu thấy sắp hết token: DỪNG, đảm bảo JSON hợp lệ\n• KHÔNG thêm bất kỳ văn bản nào ngoài JSON\n\n📤 OUTPUT FORMAT (JSON strictly):\n' + prompts.format + '\nQuan trọng: Chỉ trả về JSON chuẩn (không markdown, không lời dẫn).'}`
             },
             {
               inline_data: {
@@ -1688,6 +1689,7 @@ BƯỚC 2: PHIÊN ÂM SEGMENTS (2-5 segments/chunk tối ưu)
     meetingStartTime?: Date,
     summaryPrompt?: string,
     fileManager?: FileManagerService,
+    languageCode: string = 'vi-VN', // Target language code
     preferMP3: boolean = true
   ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -1799,7 +1801,8 @@ BƯỚC 2: PHIÊN ÂM SEGMENTS (2-5 segments/chunk tối ưu)
           maxFileSizeMB,
           meetingStartTime,
           summaryPrompt,
-          fileManager
+          fileManager,
+          languageCode
         );
 
         // Step 3.2: Adjust timestamps for this chunk
@@ -1897,14 +1900,15 @@ BƯỚC 2: PHIÊN ÂM SEGMENTS (2-5 segments/chunk tối ưu)
           modelName,
           allSummaries,
           summaryPrompt,
-          fileManager
+          fileManager,
+          languageCode
         );
         console.log(`📝 Merged summary: ${combinedSummary.substring(0, 100)}${combinedSummary.length > 100 ? '...' : ''}`);
         
         if (onProgress) onProgress(98, '✅ Tóm tắt đã gộp');
       } catch (mergeError: any) {
         console.warn('⚠️ Failed to merge summaries:', mergeError.message);
-        combinedSummary = allSummaries.map(s => s.replace(/^Phần \d+\/\d+: /, '')).join(' ');
+        combinedSummary = allSummaries.map(s => s.replace(/^(Part|Phần) \d+\/\d+: /, '')).join(' ');
       }
     }
 
@@ -1949,23 +1953,58 @@ BƯỚC 2: PHIÊN ÂM SEGMENTS (2-5 segments/chunk tối ưu)
     modelName: string,
     summaries: string[],
     userPrompt?: string,
-    fileManager?: FileManagerService
+    fileManager?: FileManagerService,
+    languageCode: string = 'vi-VN'
   ): Promise<string> {
     if (summaries.length === 0) {
       throw new Error('No summaries to merge');
     }
 
     if (summaries.length === 1) {
-      // Only one summary - return directly without "Phần X/Y:" prefix
-      return summaries[0].replace(/^Phần \d+\/\d+: /, '');
+      // Only one summary - return directly without prefix
+      return summaries[0].replace(/^(Part|Phần) \d+\/\d+: /, '');
     }
 
-    // Build prompt for Gemini to merge summaries
+    // Build prompt for Gemini to merge summaries based on language
+    const lang = languageCode.toLowerCase();
+    const isEnglish = lang.startsWith('en');
+    
     const summariesText = summaries
-      .map((summary, index) => `### Phần ${index + 1}/${summaries.length}\n${summary.replace(/^Phần \d+\/\d+: /, '')}`)
+      .map((summary, index) => 
+        isEnglish 
+          ? `### Part ${index + 1}/${summaries.length}\n${summary.replace(/^(Part|Phần) \d+\/\d+: /, '')}`
+          : `### Phần ${index + 1}/${summaries.length}\n${summary.replace(/^(Part|Phần) \d+\/\d+: /, '')}`
+      )
       .join('\n\n');
 
-    const mergePrompt = `BẠN LÀ CHUYÊN GIA TỔNG HỢP CUỘC HỌP (MULTI-CHUNK MERGE).
+    const mergePrompt = isEnglish
+      ? `You are an expert meeting summary specialist (MULTI-CHUNK MERGE).
+
+TASK: Merge brief summaries from multiple audio chunks into one complete summary for the entire meeting.
+
+CONTEXT:
+• Meeting was split into ${summaries.length} chunks processed separately
+• Each chunk has ONE brief summary (30-100 words)
+• Merge them into ONE cohesive overall summary
+
+REQUIREMENTS:
+1. READ all summaries below in chronological order
+2. FIND important information: topics, decisions, action items, numbers, dates
+3. ELIMINATE duplicates between chunks
+4. WRITE as 1 paragraph (3-5 sentences), NO bullet points
+5. PRESERVE all important details (names, numbers, deadlines)
+6. ENSURE clear causal logic (A leads to B leads to C)
+
+${userPrompt ? `ADDITIONAL USER REQUIREMENT:\n${userPrompt}\n` : ''}
+
+=== CHUNKS TO MERGE (IN ORDER) ===
+
+${summariesText}
+
+=== OUTPUT ===
+
+Return EXACTLY 1 paragraph (3-5 sentences), no title, no bullets, no markdown.`
+      : `BẠN LÀ CHUYÊN GIA TỔNG HỢP CUỘC HỌP (MULTI-CHUNK MERGE).
 
 NHIỆM VỤ: Gộp các tóm tắt ngắn từ nhiều chunks audio thành 1 tóm tắt hoàn chỉnh cho toàn bộ cuộc họp.
 
@@ -1988,7 +2027,7 @@ ${userPrompt ? `YÊU CẦU THÊM TỪ USER:\n${userPrompt}\n` : ''}
 
 ${summariesText}
 
-=== OUTPUT YÊUẾN ===
+=== OUTPUT ===
 
 Trả về ĐÚNG 1 đoạn văn xuôi (3-5 câu), không tiêu đề, không gạch đầu dòng, không markdown.`;
 
