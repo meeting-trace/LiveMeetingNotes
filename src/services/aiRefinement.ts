@@ -1053,32 +1053,9 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
         onProgress(39, `📊 ${audioSizeMB.toFixed(1)}MB • ${durationMinutes} phút • ${mimeType.split('/')[1].toUpperCase()}`);
       }
 
-      // 🎯 CHIẾN LƯỢC ƯU TIÊN: Summary trước, Segments sau
-      const adaptiveInstruction = durationMinutes <= 60
-        ? `AUDIO NGẮN (${durationMinutes} phút): Hãy phiên âm CHI TIẾT từng câu nói, giữ nguyên wording và ngữ điệu.`
-        : durationMinutes <= 90
-        ? `AUDIO DÀI (${durationMinutes} phút):
-1️⃣ ƯU TIÊN: Tạo summary HOÀN CHỈNH trước (~300-400 từ)
-2️⃣ SAU ĐÓ: Tóm tắt segments cô đọng, nhóm nhiều câu thành 1 segment
-3️⃣ NẾU GẦN HẾT TOKEN (ước tính ~6000 tokens đã dùng): DỪNG NGAY, đóng JSON hợp lệ. TỐT HƠN CÓ SUMMARY ĐẦY ĐỦ + ÍT SEGMENTS, hơn là BỊ CẮT NGANG.
-
-⚠️ LƯU Ý: Chỉ làm segments cho phần ĐẦU của audio nếu thấy không đủ token cho toàn bộ.`
-        : `AUDIO RẤT DÀI (${durationMinutes} phút):
-🎯 CHIẾN LƯỢC 2 BƯỚC:
-
-1️⃣ BƯỚC 1 - BẮT BUỘC: Tạo summary HOÀN CHỈNH
-   • Độ dài: ~400-500 từ
-   • Bao gồm: Chủ đề chính, quyết định quan trọng, kết luận
-   • GIỮ LẠI: Tên riêng, số liệu, deadline
-
-2️⃣ BƯỚC 2 - NẾU CÒN TOKEN: Tạo segments cực kỳ cô đọng
-   • GỘP 5-10 câu liên quan thành 1 segment
-   • CHỈ GHI ý chính, bỏ chi tiết không quan trọng
-   • THEO DÕI token usage: Nếu ước tính đã dùng ~6000 tokens → DỪNG NGAY
-   • ĐÓNG JSON đúng cú pháp: }] }
-
-⚠️ QUY TẮC VÀNG: Summary đầy đủ + Ít segments > Summary + Segments bị cắt ngang
-💡 GỢI Ý: Có thể chỉ làm 10-20 segments đại diện cho phần ĐẦU audio, sau đó dừng lại.`;
+      // 📊 Simplified prompt for chunks (audio is already split into balanced pieces)
+      // Focus on: CONCISE summary + speaker segments
+      const chunkInstructions = `AUDIO CHUNK - XỰ LÝ ĐƠNGIẢN (${durationMinutes} phút):\n\nVì audio đã được chia thành chunks có kích thước cân bằng, bạn chỉ cần:\n1️⃣ Tóm tắt VÔ CÙNG NGẮN GỌN (30-50 từ max)\n2️⃣ Trích xuất segments chính (2-5 segments/chunk là tối ưu)\n3️⃣ Giữ lại: Tên riêng, quyết định, con số quan trọng`;
 
       // Prepare request
       const endpoint = `https://generativelanguage.googleapis.com/${this.GEMINI_API_VERSION}/${modelName}:generateContent?key=${apiKey}`;
@@ -1088,68 +1065,39 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
           parts: [
             {
               text: `BẠN LÀ CHUYÊN GIA GHI CHÉP CUỘC HỌP (AI SCRIBE).
-NHIỆM VỤ: Xử lý file âm thanh đầu vào để tạo ra bản ghi chép và tóm tắt điều hành.
+NHIỆM VỤ: Xử lý đoạn âm thanh (CHUNK) này - Là phần của cuộc họp lớn hơn.
 
-${adaptiveInstruction}
+${chunkInstructions}
 
-📊 NGÂN SÁCH TOKEN (OUTPUT BUDGET):
-Bạn có tối đa ~8000 tokens cho output. Âm thanh dài ${durationMinutes} phút.
+📋 CHI TIẾT HƯỚNG DẪN:
 
-🎯 CHIẾN LƯỢC TỰ THÍCH NGHI:
-• AUDIO NGẮN (<10 phút): Phiên âm CHI TIẾT (Verbatim) từng câu nói
-• AUDIO VỪA (10-30 phút): Chuẩn hóa và gộp câu, giữ đầy đủ ý chính
-• AUDIO DÀI (30-60 phút): Tóm tắt THÔNG MINH mỗi lượt nói, ưu tiên thông tin quan trọng
-• AUDIO RẤT DÀI (>60 phút): Chỉ ghi ý chính + từ khóa, cực kỳ cô đọng
+BƯỚC 1: TÓM TẮT CHUNK (SUMMARY) - VÔ CÙNG NGẮN GỌN
+${summaryPrompt || '• Độ dài: 30-50 từ MAX\n• Bao gồm: Chủ đề chính, quyết định chốt (nếu có)\n• Giữ lại: Tên riêng, số liệu, deadline quan trọng\n• Định dạng: Viết thành 1-2 câu liền mạch (văn xuôi)'}
 
-⚠️ QUY TẮC AN TOÀN (SAFETY BREAK):
-Nếu bạn ước tính mình đã dùng ~70% token budget (khoảng 5600 tokens):
-→ NGAY LẬP TỨC chuyển sang "Chế độ khẩn cấp": Chỉ ghi TÓM TẮT CỰC NGẮN (1 câu/lượt nói) cho phần còn lại
-→ PHẢI đảm bảo ĐÓNG JSON hợp lệ: }} với đủ dấu ngoặc
-→ NGUYÊN TẮC VÀNG: TỐT HƠN LÀ NGẮN GỌN NHƯNG HOÀN CHỈNH, chứ không phải DÀI MÀ BỊ CẮT NGANG
+BƯỚC 2: PHIÊN ÂM SEGMENTS (2-5 segments/chunk tối ưu)
+1. Gán nhãn người nói nhất quán (Speaker 1, Speaker 2, tên nếu biết)
+2. Gắn Timestamp: h:mm:ss tại BẮT ĐẦU lượt nói (VD: 0:30, 1:05)
+3. Tóm tắt NỘI DUNG (bỏ từ thừa, giữ ý chính)
+4. BẮT BUỘC GIỮ LẠI: Quyết định, con số, deadline, action items
 
-HƯỚNG DẪN XỬ LÝ:
+⚠️ QUY TẮC VÀNG:
+• Tôi ước tính ~6000 tokens cho output - segment vừa đủ thôi
+• Nếu thấy sắp hết token: DỪNG, đảm bảo JSON hợp lệ
+• PRIORITY: Summary HOÀN thành + Segments cô đọng > So nhiều mà cắt ngang
 
-PHẦN 1: TÓM TẮT TỔNG QUAN (SUMMARY) - LÀM TRƯỚC
-Sau khi nghe toàn bộ file âm thanh, hãy tóm tắt nội dung cuộc họp dựa trên yêu cầu sau:
-${summaryPrompt || 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'}
-
-CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu gạch đầu dòng. Giữ summary ở mức ~200-300 từ.
-
-PHẦN 2: PHIÊN ÂM/TÓM TẮT SEGMENTS (tùy độ dài audio) - LÀM SAU
-1.  Nghe toàn bộ file âm thanh.
-2.  Trích xuất nội dung chính xác (hoặc tóm tắt nếu cần).
-3.  Gán nhãn người nói nhất quán (Speaker 1, Speaker 2...). Cố gắng nhận diện tên nếu họ tự giới thiệu.
-4.  Gắn Timestamp [h:mm:ss] chính xác tại thời điểm BẮT ĐẦU lượt nói của người đó (ví dụ: 0:30, 1:05:30, 2:15:45).
-5.  Lược bỏ các từ thừa (à, ừ, ờ) nhưng giữ nguyên ý nghĩa.
-6.  Nếu âm thanh không rõ, đánh dấu là "[không rõ]".
-
-🎯 BẮT BUỘC GIỮ LẠI (dù có tóm tắt): 
-   • Số liệu chính xác
-   • Ngày tháng, deadline
-   • Quyết định quan trọng
-   • Yêu cầu hành động (action items)
-
-⚠️ QUAN TRỌNG - THỨ TỰ OUTPUT:
-- Trả về "summary" TRƯỚC (Phần 1)
-- Sau đó mới đến "segments" (Phần 2)
-
-Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, không có lời dẫn. Cấu trúc như sau:
+📤 OUTPUT FORMAT (JSON strictly):
 {
-  "summary": "Nội dung tóm tắt chi tiết về cuộc họp dựa trên yêu cầu ở trên. Viết thành văn xuôi liền mạch.",
+  "summary": "Tóm tắt 30-50 từ của chunk này (1-2 câu)",
   "segments": [
     {
       "timestamp": "0:00",
-      "speaker": "Người nói 1",
-      "text": "nội dung tóm tắt của cả lượt nói"
-    },
-    {
-      "timestamp": "0:45",
-      "speaker": "Người nói 2",
-      "text": "nội dung tóm tắt của cả lượt nói"
+      "speaker": "Speaker 1",
+      "text": "Tóm tắt nội dung lượt nói"
     }
   ]
 }
-HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh trong ngân sách token!`
+
+❗ IMPORTANT: Trả về LUÔN JSON (không markdown, không lời dẫn). Đảm bảo valid JSON!`
             },
             {
               inline_data: {
@@ -2017,27 +1965,32 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
       .map((summary, index) => `### Phần ${index + 1}/${summaries.length}\n${summary.replace(/^Phần \d+\/\d+: /, '')}`)
       .join('\n\n');
 
-    const mergePrompt = `BẠN LÀ CHUYÊN GIA TÓM TẮT CUỘC HỌP.
+    const mergePrompt = `BẠN LÀ CHUYÊN GIA TỔNG HỢP CUỘC HỌP (MULTI-CHUNK MERGE).
 
-NHIỆM VỤ: Tổng hợp các tóm tắt riêng lẻ từ các đoạn audio thành MỘT tóm tắt tổng quan liền mạch cho toàn bộ cuộc họp.
+NHIỆM VỤ: Gộp các tóm tắt ngắn từ nhiều chunks audio thành 1 tóm tắt hoàn chỉnh cho toàn bộ cuộc họp.
+
+CONTEXT:
+• Cuộc họp đã được chia thành ${summaries.length} phần (chunks) xử lý riêng
+• Mỗi phần có 1 tóm tắt NGẮN GỌN (30-100 từ)
+• Bạn cần gộp chúng thành 1 tóm tắt TỔNG THỂ liền mạch
 
 YÊU CẦU:
-1. ĐỌC kỹ tất cả các tóm tắt bên dưới (mỗi tóm tắt tương ứng với 1 đoạn audio)
-2. TỔNG HỢP thành 1 đoạn văn xuôi liền mạch, KHÔNG dùng dấu gạch đầu dòng
-3. GIỮ LẠI toàn bộ thông tin quan trọng: số liệu, ngày tháng, tên riêng, quyết định, action items
-4. SẮP XẾP theo trình tự thời gian logic (từ đầu đến cuối cuộc họp)
-5. LOẠI BỎ thông tin trùng lặp giữa các đoạn
-6. ĐẢM BẢO văn phong chuyên nghiệp, mạch lạc, dễ hiểu
+1. ĐỌC toàn bộ các tóm tắt từng chunk bên dưới (theo thứ tự thời gian)
+2. TÌM thông tin QUAN TRỌNG: chủ đề, quyết định, action items, con số, ngày tháng
+3. LOẠI BỎ trùng lặp giữa chunks
+4. VIẾT thành 1 đoạn văn xuôi (3-5 câu), KHÔNG dấu gạch đầu dòng
+5. GIỮ LẠI toàn bộ thông tin quan trọng (các tên, số, deadline)
+6. ĐẢM BẢO logic nhân quả rõ ràng (A dẫn tới B dẫn tới C)
 
-${userPrompt ? `\nYÊU CẦU BỔ SUNG TỪ NGƯỜI DÙNG:\n${userPrompt}\n` : ''}
+${userPrompt ? `YÊU CẦU THÊM TỪ USER:\n${userPrompt}\n` : ''}
 
-=== CÁC TÓM TẮT RIÊNG LẺ CẦN TỔNG HỢP ===
+=== CHUNKS TO MERGE (THEO THỨ TỰ) ===
 
 ${summariesText}
 
-=== OUTPUT ===
+=== OUTPUT YÊUẾN ===
 
-Hãy trả về MỘT đoạn văn xuôi tổng hợp, KHÔNG có tiêu đề, KHÔNG có dấu gạch đầu dòng, KHÔNG có cấu trúc danh sách.`;
+Trả về ĐÚNG 1 đoạn văn xuôi (3-5 câu), không tiêu đề, không gạch đầu dòng, không markdown.`;
 
     try {
       const endpoint = `https://generativelanguage.googleapis.com/${this.GEMINI_API_VERSION}/${modelName}:generateContent?key=${apiKey}`;
