@@ -352,6 +352,50 @@ export class AIRefinementService {
   }
 
   /**
+   * Get specific model information including outputTokenLimit
+   * Falls back to 8192 if model not found or error occurs
+   */
+  public static async getModelInfo(apiKey: string, modelName: string): Promise<{
+    outputTokenLimit: number;
+    inputTokenLimit: number;
+    displayName: string;
+  }> {
+    try {
+      const response = await this.listGeminiModels(apiKey);
+      const model = response.models?.find((m: any) => m.name === modelName);
+      
+      if (model) {
+        console.log(`📊 Model info for ${modelName}:`, {
+          outputTokenLimit: model.outputTokenLimit,
+          inputTokenLimit: model.inputTokenLimit,
+          displayName: model.displayName
+        });
+        
+        return {
+          outputTokenLimit: model.outputTokenLimit || 8192,
+          inputTokenLimit: model.inputTokenLimit || 1000000,
+          displayName: model.displayName || modelName
+        };
+      } else {
+        console.warn(`⚠️ Model ${modelName} not found, using default outputTokenLimit: 8192`);
+        return {
+          outputTokenLimit: 8192,
+          inputTokenLimit: 1000000,
+          displayName: modelName
+        };
+      }
+    } catch (error: any) {
+      console.error('Error getting model info:', error);
+      console.warn('⚠️ Falling back to default outputTokenLimit: 8192');
+      return {
+        outputTokenLimit: 8192,
+        inputTokenLimit: 1000000,
+        displayName: modelName
+      };
+    }
+  }
+
+  /**
    * Refine transcripts using Gemini AI with automatic batching
    * @param transcriptions - Primary data (user-edited, highest reliability)
    * @param rawData - Supplementary data (original Web Speech API output for reference)
@@ -528,6 +572,10 @@ export class AIRefinementService {
 
       if (onProgress) onProgress(10);
 
+      // Get model info to retrieve outputTokenLimit dynamically
+      const modelInfo = await this.getModelInfo(apiKey, modelName);
+      console.log(`📊 Model ${modelName}: outputTokenLimit = ${modelInfo.outputTokenLimit}`);
+
       // Build endpoint URL with selected model
       const endpoint = `https://generativelanguage.googleapis.com/${this.GEMINI_API_VERSION}/${modelName}:generateContent`;
       console.log(`🤖 Using Gemini model: ${modelName}`);
@@ -544,7 +592,7 @@ export class AIRefinementService {
           temperature: 0.1, // Lowered from 0.2 for better consistency and rule-following
           topK: 40,
           topP: 0.95,
-          maxOutputTokens: 8192,
+          maxOutputTokens: modelInfo.outputTokenLimit, // Dynamic limit based on selected model
           responseMimeType: 'application/json' // Ensure valid JSON output structure
         },
         safetySettings: [
@@ -919,7 +967,8 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
     maxFileSizeMB: number = 20, // Maximum file size in MB (from config)
     meetingStartTime?: Date, // Meeting start time for accurate timestamp calculation
     summaryPrompt?: string, // OPTIONAL: user-provided prompt text for the summary field
-    fileManager?: FileManagerService // Optional: for saving debug logs to project folder
+    fileManager?: FileManagerService, // Optional: for saving debug logs to project folder
+    chunkInfo?: { index: number; total: number } // Optional: chunk info for progress tracking (1-indexed)
   ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
     if (!apiKey || apiKey.trim().length === 0) {
       throw new Error('Gemini API Key is required');
@@ -929,41 +978,78 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
       throw new Error('Please select a Gemini model in Settings');
     }
 
-    // Validate file size (limit from config)
-    // Skip this check when called from transcribeEntireAudioWithGemini (already split into valid chunks)
-    if (!skipSizeCheck) {
-      const MAX_FILE_SIZE = maxFileSizeMB * 1024 * 1024;
-      const fileSizeMB = audioBlob.size / (1024 * 1024);
-      
-      console.log(`📊 File size: ${fileSizeMB.toFixed(2)} MB (Limit: ${maxFileSizeMB} MB)`);
-      
-      if (audioBlob.size > MAX_FILE_SIZE) {
-        // Return special error object with file size info
-        const error: any = new Error('FILE_TOO_LARGE');
-        error.fileSizeMB = fileSizeMB;
-        error.maxSizeMB = maxFileSizeMB;
-        throw error;
-      }
-    }
-
-    if (onProgress) onProgress(10, '🔍 Đang kiểm tra file...');
+    if (onProgress) onProgress(5, '🔍 Đang kiểm tra định dạng file...');
 
     // Declare requestBody outside try block for error logging
     let requestBody: any = null;
 
     try {
-      // Gemini API officially supports: WAV and MP3 only
-      // Convert to optimized WAV (mono, 16kHz) for smaller file size
-      let processedAudio = audioBlob;
+      // ============================================================
+      // BƯỚC 1: PHÂN TÍCH THỜI LƯỢNG AUDIO TỪ FILE GỐC
+      // ============================================================
+      if (onProgress) onProgress(10, '⏱️ Đang phân tích thời lượng audio...');
+      
+      const originalAudioSizeMB = audioBlob.size / (1024 * 1024);
       const audioType = audioBlob.type.toLowerCase();
+      console.log(`📊 Bước 1: Phân tích file gốc - ${originalAudioSizeMB.toFixed(2)}MB • ${audioType}`);
+      
+      const audioDuration = await this.getAudioDuration(audioBlob);
+      const durationMinutes = Math.ceil(audioDuration / 60);
+      
+      console.log(`📊 Thời lượng: ${durationMinutes} phút (${audioDuration}s)`);
+
+      // ⚠️ Tự động chia nhỏ nếu audio quá dài (>60 phút)
+      if (!skipSizeCheck && durationMinutes > 60) {
+        console.warn(`⚠️ Audio quá dài (${durationMinutes} phút > 60 phút)`);
+        console.log(`🔄 Tự động chia nhỏ theo thời lượng - chunks sẽ được convert on-demand`);
+        
+        if (onProgress) {
+          onProgress(15, `📦 Audio dài (${durationMinutes}p), đang chia nhỏ...`);
+        }
+        
+        // Auto-split into chunks based on duration - pass ORIGINAL audioBlob (not converted)
+        // Each chunk will be converted to WAV on-demand during extraction
+        // Wrap progress callback to map 0-100% of auto-split to 15-100% of overall progress
+        const wrappedProgress = onProgress 
+          ? (subProgress: number, msg?: string) => {
+              // Map 0-100% of transcribeEntireAudioWithGemini to 15-100% overall
+              const mappedProgress = 15 + (subProgress * 0.85);
+              onProgress(mappedProgress, msg);
+            }
+          : undefined;
+        
+        const result = await this.transcribeEntireAudioWithGemini(
+          apiKey,
+          audioBlob, // Pass ORIGINAL blob - chunks will be converted on-demand
+          modelName,
+          wrappedProgress, // Use wrapped progress callback
+          maxFileSizeMB,
+          5, // requestDelaySeconds
+          60, // maxDurationMinutes
+          meetingStartTime,
+          summaryPrompt,
+          fileManager
+        );
+        
+        return result;
+      }
+      
+      // ============================================================
+      // BƯỚC 2: CHUYỂN ĐỔI TOÀN BỘ SANG WAV (chỉ khi ≤ 60 phút)
+      // ============================================================
+      // For short audio (≤ 60 min), convert entire file once
+      let processedAudio = audioBlob;
       const isWavOrMp3 = audioType.includes('wav') || audioType.includes('mpeg') || audioType.includes('mp3');
       const needsConversion = !isWavOrMp3;
       
       if (needsConversion) {
-        console.log(`🔄 Converting ${audioType} to optimized WAV (mono, 16kHz)...`);
-        if (onProgress) onProgress(15, `🔄 Đang chuyển đổi sang WAV tối ưu...`);
-        
         const originalSizeMB = audioBlob.size / (1024 * 1024);
+        console.log(`🔄 Bước 2: Converting ${audioType} to optimized WAV (mono, 16kHz)...`);
+        console.log(`📊 Original size: ${originalSizeMB.toFixed(2)} MB`);
+        
+        if (onProgress) {
+          onProgress(18, `🔄 Đang chuyển đổi ${audioType.split('/')[1]?.toUpperCase() || 'audio'} → WAV...`);
+        }
         
         // ✨ Convert to WAV with mono + 16kHz to reduce file size dramatically
         // 16kHz is optimal for speech recognition (telephony quality)
@@ -972,77 +1058,95 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
         
         const newSizeMB = processedAudio.size / (1024 * 1024);
         const reduction = ((1 - newSizeMB / originalSizeMB) * 100).toFixed(1);
-        console.log(`✅ Converted to WAV: ${originalSizeMB.toFixed(2)}MB → ${newSizeMB.toFixed(2)}MB (${reduction}% reduction)`);
+        const reductionType = newSizeMB < originalSizeMB ? 'giảm' : 'tăng';
+        
+        console.log(`✅ Converted to WAV: ${originalSizeMB.toFixed(2)}MB → ${newSizeMB.toFixed(2)}MB (${reductionType} ${Math.abs(parseFloat(reduction))}%)`);
         
         // Display conversion result on UI
         if (onProgress) {
-          const sizeChange = newSizeMB > originalSizeMB ? '📈 Tăng' : '📉 Giảm';
-          onProgress(20, `${sizeChange}: ${originalSizeMB.toFixed(1)}MB → ${newSizeMB.toFixed(1)}MB`);
+          const sizeChange = newSizeMB > originalSizeMB ? '📈' : '📉';
+          onProgress(22, `${sizeChange} Đã chuyển đổi: ${newSizeMB.toFixed(1)}MB (${reductionType} ${Math.abs(parseFloat(reduction))}%)`);
         }
-        
-        // Check again after conversion (only if not skipping size check)
-        // Note: WAV can be LARGER than original compressed format (WebM, MP4, etc.)
-        if (!skipSizeCheck) {
-          const MAX_FILE_SIZE = maxFileSizeMB * 1024 * 1024;
-          
-          if (processedAudio.size > MAX_FILE_SIZE) {
-            // Still too large after WAV optimization - use auto-split
-            console.warn(`⚠️ File sau WAV conversion vẫn quá lớn (${newSizeMB.toFixed(2)}MB > ${maxFileSizeMB}MB)`);
-            console.log(`🔄 Tự động chia nhỏ file và xử lý từng phần...`);
-            
-            if (onProgress) onProgress(30, '📦 File lớn, đang chia nhỏ và xử lý...');
-            
-            // Auto-split into chunks
-            const result = await this.transcribeEntireAudioWithGemini(
-              apiKey,
-              processedAudio,
-              modelName,
-              onProgress,
-              maxFileSizeMB,
-              5, // requestDelaySeconds
-              60, // maxDurationMinutes
-              meetingStartTime,
-              summaryPrompt,
-              fileManager
-            );
-            
-            return result;
-          }
-        }
-        
-        if (onProgress) onProgress(25, `✅ Đã tối ưu: ${newSizeMB.toFixed(2)}MB`);
-      }
-
-      // Calculate audio duration for adaptive prompting
-      if (onProgress) onProgress(30, '⏱️ Đang phân tích thời lượng audio...');
-      const audioDuration = await this.getAudioDuration(processedAudio);
-      const durationMinutes = Math.ceil(audioDuration / 60);
-      
-      console.log(`⏱️ Audio duration: ${durationMinutes} minutes (${audioDuration}s)`);
-
-      // ⚠️ CẢNH BÁO: Audio dài có rủi ro cao bị cắt ngang
-      if (durationMinutes > 60) {
-        console.warn(`⚠️ CẢNH BÁO: Audio quá dài (${durationMinutes} phút > 60 phút)`);
-        console.warn('   Rủi ro: Có thể bị lỗi chuyển đổi do vượt giới hạn token');
-        console.warn('   Khuyến nghị: Sử dụng tính năng "Tự động chia nhỏ và xử lý" để đảm bảo kết quả tốt nhất');
+      } else {
+        const sizeMB = audioBlob.size / (1024 * 1024);
+        console.log(`✅ Bước 2: File đã là ${audioType.includes('wav') ? 'WAV' : 'MP3'} (${sizeMB.toFixed(2)} MB) - không cần convert`);
         
         if (onProgress) {
-          onProgress(35, `⚠️ Audio dài ${durationMinutes} phút - Có thể mất thời gian và rủi ro lỗi`);
+          onProgress(22, `✅ File đã tối ưu: ${sizeMB.toFixed(1)}MB • ${audioType.includes('wav') ? 'WAV' : 'MP3'}`);
         }
       }
+      
+      if (durationMinutes > 60) {
+        console.log(`ℹ️ Audio dài (${durationMinutes} phút) nhưng skipSizeCheck=true, tiếp tục xử lý`);
+      } else {
+        console.log(`✅ Thời lượng phù hợp (${durationMinutes} phút ≤ 60 phút)`);
+      }
+      
+      if (onProgress) {
+        onProgress(25, `✅ Thời lượng: ${durationMinutes} phút`);
+      }
 
+      // ============================================================
+      // BƯỚC 3: MÃ HÓA VÀ CHUẨN BỊ DỮ LIỆU
+      // ============================================================
       // Get MIME type (use WAV if converted)
       const mimeType = processedAudio.type || 'audio/wav';
 
+      // Validate processedAudio before base64 conversion
+      if (!processedAudio || processedAudio.size === 0) {
+        const errorMsg = chunkInfo 
+          ? `Processed audio blob is empty for chunk ${chunkInfo.index}/${chunkInfo.total}. Audio extraction may have failed.`
+          : 'Processed audio blob is empty or invalid. Audio conversion may have failed.';
+        throw new Error(errorMsg);
+      }
+      
+      // Comprehensive validation
+      console.log(`📋 Bước 3: Validating processed audio...`);
+      console.log(`  • Size: ${(processedAudio.size / 1024).toFixed(2)} KB`);
+      console.log(`  • Type: ${mimeType}`);
+      console.log(`  • Is Blob: ${processedAudio instanceof Blob}`);
+      console.log(`  • Constructor: ${processedAudio.constructor.name}`);
+      if (chunkInfo) {
+        console.log(`  • Chunk: ${chunkInfo.index}/${chunkInfo.total}`);
+      }
+      
+      // CRITICAL: Test if blob is actually readable before proceeding
+      try {
+        // Quick test read to validate blob is readable
+        const testSlice = processedAudio.slice(0, Math.min(1024, processedAudio.size));
+        console.log(`  • Test slice: ${testSlice.size} bytes`);
+        
+        // Try to read test slice
+        await new Promise<void>((resolve, reject) => {
+          const testReader = new FileReader();
+          testReader.onloadend = () => {
+            if (testReader.result) {
+              console.log(`  ✅ Blob is readable (test passed)`);
+              resolve();
+            } else {
+              reject(new Error('Test read failed: reader.result is null'));
+            }
+          };
+          testReader.onerror = () => reject(new Error('Test read error: ' + testReader.error?.message));
+          testReader.readAsArrayBuffer(testSlice);
+          
+          // Timeout after 5 seconds
+          setTimeout(() => reject(new Error('Test read timeout after 5s')), 5000);
+        });
+      } catch (testError: any) {
+        console.error('❌ Blob readability test FAILED:', testError);
+        throw new Error(`Blob is not readable: ${testError.message}. Possible causes: corrupted data, browser memory limit, or invalid blob format.`);
+      }
+
       // Convert audio blob to base64
-      if (onProgress) onProgress(38, '💾 Đang mã hóa audio...');
+      if (onProgress) onProgress(28, '💾 Đang mã hóa audio thành base64...');
       const base64Audio = await this.blobToBase64(processedAudio);
 
       // Debug logging before sending
-      const audioSizeMB = processedAudio.size / (1024 * 1024);
+      const processedAudioSizeMB = processedAudio.size / (1024 * 1024);
       const base64SizeKB = (base64Audio.length * 0.75) / 1024; // Approximate size in KB
-      console.log('📤 Sending to Gemini:');
-      console.log('  • Audio size:', audioSizeMB.toFixed(2), 'MB');
+      console.log('📤 Bước 3: Chuẩn bị gửi đến Gemini:');
+      console.log('  • Audio size:', processedAudioSizeMB.toFixed(2), 'MB');
       console.log('  • Duration:', durationMinutes, 'minutes');
       console.log('  • MIME type:', mimeType);
       console.log('  • Base64 size:', base64SizeKB.toFixed(2), 'KB');
@@ -1050,11 +1154,47 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
       
       // Display audio info on UI before sending
       if (onProgress) {
-        onProgress(39, `📊 ${audioSizeMB.toFixed(1)}MB • ${durationMinutes} phút • ${mimeType.split('/')[1].toUpperCase()}`);
+        const format = mimeType.split('/')[1]?.toUpperCase() || 'WAV';
+        onProgress(32, `📊 Đã chuẩn bị: ${processedAudioSizeMB.toFixed(1)}MB • ${durationMinutes}p • ${format}`);
       }
 
+      // ============================================================
+      // BƯỚC 4: LẤY THÔNG TIN MODEL VÀ GIỚI HẠN TOKENS
+      // ============================================================
+      if (onProgress) onProgress(35, '🔍 Đang lấy thông tin model Gemini...');
+      const modelInfo = await this.getModelInfo(apiKey, modelName);
+      console.log(`📊 Bước 4: Model info - ${modelName}`);
+      console.log(`  • Output token limit: ${modelInfo.outputTokenLimit}`);
+      console.log(`  • Input token limit: ${modelInfo.inputTokenLimit}`);
+
+      if (onProgress) {
+        onProgress(38, `✅ Model: ${modelInfo.displayName} (${modelInfo.outputTokenLimit} tokens)`);
+      }
+
+      // ============================================================
+      // BƯỚC 5: GỬI REQUEST ĐẾN GEMINI AI
+      // ============================================================
+      if (onProgress) onProgress(40, '🤖 Đang gửi request đến Gemini AI...');
+
       // 🎯 CHIẾN LƯỢC ƯU TIÊN: Summary trước, Segments sau
-      const adaptiveInstruction = durationMinutes <= 60
+      // Check if this is a chunk from a larger file
+      const isChunk = chunkInfo && chunkInfo.total > 1;
+      
+      const adaptiveInstruction = isChunk
+        ? `⚠️ QUAN TRỌNG: ĐÂY LÀ PHẦN ${chunkInfo!.index}/${chunkInfo!.total} CỦA FILE AUDIO LỚN
+
+🎯 CHIẾN LƯỢC CHO CHUNK:
+1️⃣ SUMMARY: Chỉ tóm tắt NGẮN GỌN (50-100 từ) nội dung chính trong phần này
+   • Tập trung vào các điểm nổi bật, quyết định, action items
+   • Không cần tóm tắt toàn diện (sẽ merge với các phần khác)
+   
+2️⃣ SEGMENTS: Phiên âm CHI TIẾT và ĐẦY ĐỦ từng lượt nói
+   • Giữ nguyên wording, không tóm tắt segments
+   • Timestamp tính từ 0:00 (đầu chunk này, không phải đầu file gốc)
+   • Đảm bảo bắt tất cả nội dung trong phần này
+
+💡 LƯU Ý: Summary ngắn gọn OK, nhưng segments phải đầy đủ và chi tiết!`
+        : durationMinutes <= 60
         ? `AUDIO NGẮN (${durationMinutes} phút): Hãy phiên âm CHI TIẾT từng câu nói, giữ nguyên wording và ngữ điệu.`
         : durationMinutes <= 90
         ? `AUDIO DÀI (${durationMinutes} phút):
@@ -1113,7 +1253,7 @@ PHẦN 1: TÓM TẮT TỔNG QUAN (SUMMARY) - LÀM TRƯỚC
 Sau khi nghe toàn bộ file âm thanh, hãy tóm tắt nội dung cuộc họp dựa trên yêu cầu sau:
 ${summaryPrompt || 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'}
 
-CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu gạch đầu dòng. Giữ summary ở mức ~200-300 từ.
+CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu gạch đầu dòng. ${isChunk ? 'Giữ summary ở mức ~50-100 từ (đây là chunk, sẽ merge sau).' : 'Giữ summary ở mức ~200-300 từ.'}
 
 PHẦN 2: PHIÊN ÂM/TÓM TẮT SEGMENTS (tùy độ dài audio) - LÀM SAU
 1.  Nghe toàn bộ file âm thanh.
@@ -1163,7 +1303,7 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
           temperature: 0.1, // Low temperature for consistent, rule-following behavior
           topK: 40,
           topP: 0.95,
-          maxOutputTokens: 8192,
+          maxOutputTokens: modelInfo.outputTokenLimit, // Dynamic limit based on selected model
           responseMimeType: 'application/json' // Ensure valid JSON output, helps prevent truncation issues
         },
         // 🛡️ Safety Settings: Disable all filters to prevent blocking transcription
@@ -1189,7 +1329,7 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
         ]
       };
 
-      if (onProgress) onProgress(40, '📤 Đang gửi request tới Gemini AI...');
+      if (onProgress) onProgress(48, '📤 Đang gửi request tới Gemini AI...');
 
       // Make API request
       const response = await fetch(endpoint, {
@@ -1200,7 +1340,7 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
         body: JSON.stringify(requestBody)
       });
 
-      if (onProgress) onProgress(70, '📥 Đã nhận response từ Gemini...');
+      if (onProgress) onProgress(70, '📥 Đã nhận response, đang xử lý...');
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -1210,7 +1350,7 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
       }
 
       const data = await response.json();
-      if (onProgress) onProgress(90, '📝 Đang phân tích kết quả...');
+      if (onProgress) onProgress(85, '📝 Đang phân tích và parse kết quả...');
 
       // Debug: Log response structure
       console.log('🔍 Response keys:', Object.keys(data));
@@ -1248,14 +1388,21 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
       // Parse response (now returns { results, summary, isTruncated, truncationWarning })
       const parsed = this.parseGeminiAudioTranscription(data, meetingStartTime);
       
+      // ============================================================
+      // BƯỚC 6: HOÀN THÀNH
+      // ============================================================
+      console.log(`✅ Bước 6: Hoàn thành - ${parsed.results.length} segments${parsed.summary ? ' + summary' : ''}`);
+      
       // Show completion or warning
       if (parsed.isTruncated && parsed.truncationWarning) {
         console.warn(parsed.truncationWarning);
         if (onProgress) {
-          onProgress(100, `⚠️ Hoàn thành (có cảnh báo)`);
+          onProgress(100, `⚠️ Hoàn thành với cảnh báo (${parsed.results.length} segments)`);
         }
       } else {
-        if (onProgress) onProgress(100, '✅ Hoàn thành!');
+        if (onProgress) {
+          onProgress(100, `✅ Hoàn thành! ${parsed.results.length} segments${parsed.summary ? ' + tóm tắt' : ''}`);
+        }
       }
 
       return parsed;
@@ -1283,17 +1430,141 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
   }
 
   /**
-   * Convert Blob to Base64 string
+   * Convert Blob to Base64 string with retry logic
    */
-  private static blobToBase64(blob: Blob): Promise<string> {
+  private static blobToBase64(blob: Blob, retryCount: number = 0): Promise<string> {
     return new Promise((resolve, reject) => {
+      // Validate blob before reading
+      if (!blob) {
+        reject(new Error('Cannot read blob: blob is null or undefined'));
+        return;
+      }
+      
+      if (blob.size === 0) {
+        reject(new Error('Cannot read blob: blob size is 0 bytes'));
+        return;
+      }
+      
+      console.log(`📖 Reading blob (attempt ${retryCount + 1}/3): ${(blob.size / 1024).toFixed(2)} KB, type: ${blob.type || 'unknown'}`);
+      
       const reader = new FileReader();
+      let timeoutId: NodeJS.Timeout | null = null;
+      let completed = false;
+      
+      // Timeout handler - 30 seconds for large files
+      const timeout = Math.max(30000, blob.size / 1024 * 10); // At least 30s, or 10ms per KB
+      timeoutId = setTimeout(() => {
+        if (!completed) {
+          completed = true;
+          console.error(`❌ FileReader timeout after ${timeout}ms`);
+          console.error('   Blob size:', blob.size);
+          console.error('   Reader readyState:', reader.readyState);
+          
+          // Retry logic
+          if (retryCount < 2) {
+            console.warn(`⚠️ Retrying blobToBase64 (attempt ${retryCount + 2}/3)...`);
+            this.blobToBase64(blob, retryCount + 1)
+              .then(resolve)
+              .catch(reject);
+          } else {
+            reject(new Error(`FileReader timeout after ${timeout}ms. Blob may be too large or corrupted.`));
+          }
+        }
+      }, timeout);
+      
       reader.onloadend = () => {
-        const base64 = (reader.result as string).split(',')[1]; // Remove data:audio/...;base64, prefix
+        if (completed) return; // Already handled by timeout
+        completed = true;
+        if (timeoutId) clearTimeout(timeoutId);
+        
+        console.log(`📊 FileReader completed - readyState: ${reader.readyState}, has result: ${!!reader.result}`);
+        
+        if (!reader.result) {
+          console.error('❌ FileReader.result is null after reading blob');
+          console.error('   Blob size:', blob.size);
+          console.error('   Blob type:', blob.type);
+          console.error('   Blob constructor:', blob.constructor.name);
+          console.error('   Reader readyState:', reader.readyState);
+          console.error('   Reader error:', reader.error);
+          
+          // Retry logic
+          if (retryCount < 2) {
+            console.warn(`⚠️ Retrying blobToBase64 after null result (attempt ${retryCount + 2}/3)...`);
+            setTimeout(() => {
+              this.blobToBase64(blob, retryCount + 1)
+                .then(resolve)
+                .catch(reject);
+            }, 1000); // Wait 1s before retry
+          } else {
+            reject(new Error('Failed to read blob: reader.result is null after 3 attempts. Blob may be corrupted or invalid.'));
+          }
+          return;
+        }
+        
+        const resultStr = reader.result as string;
+        const parts = resultStr.split(',');
+        
+        if (parts.length < 2) {
+          console.error('❌ Invalid base64 format - missing comma separator');
+          console.error('   Result preview:', resultStr.substring(0, 100));
+          reject(new Error('Invalid base64 data: missing comma separator'));
+          return;
+        }
+        
+        const base64 = parts[1]; // Remove data:audio/...;base64, prefix
+        
+        if (!base64 || base64.length === 0) {
+          console.error('❌ Base64 data is empty after split');
+          reject(new Error('Failed to extract base64 data: empty result'));
+          return;
+        }
+        
+        console.log(`✅ Successfully converted blob to base64: ${(base64.length / 1024).toFixed(2)} KB`);
         resolve(base64);
       };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
+      
+      reader.onerror = (event) => {
+        if (completed) return; // Already handled
+        completed = true;
+        if (timeoutId) clearTimeout(timeoutId);
+        
+        console.error('❌ FileReader.onerror triggered:', event);
+        console.error('   Reader error:', reader.error);
+        console.error('   Error name:', reader.error?.name);
+        console.error('   Error code:', (reader.error as any)?.code);
+        
+        // Retry logic for errors
+        if (retryCount < 2) {
+          console.warn(`⚠️ Retrying blobToBase64 after error (attempt ${retryCount + 2}/3)...`);
+          setTimeout(() => {
+            this.blobToBase64(blob, retryCount + 1)
+              .then(resolve)
+              .catch(reject);
+          }, 1000);
+        } else {
+          reject(new Error('FileReader error after 3 attempts: ' + (reader.error?.message || 'Unknown error')));
+        }
+      };
+      
+      reader.onabort = () => {
+        if (completed) return; // Already handled
+        completed = true;
+        if (timeoutId) clearTimeout(timeoutId);
+        
+        console.error('❌ FileReader.onabort triggered');
+        reject(new Error('FileReader aborted - possible memory limit or browser constraint'));
+      };
+      
+      // Start reading
+      try {
+        reader.readAsDataURL(blob);
+      } catch (readError: any) {
+        if (completed) return;
+        completed = true;
+        if (timeoutId) clearTimeout(timeoutId);
+        console.error('❌ Exception when calling readAsDataURL:', readError);
+        reject(new Error('Failed to start reading blob: ' + readError.message));
+      }
     });
   }
 
@@ -1343,6 +1614,11 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
       reader.onload = async (e) => {
         try {
           const arrayBuffer = e.target?.result as ArrayBuffer;
+          
+          if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+            throw new Error('Failed to read audio file: ArrayBuffer is empty');
+          }
+          
           const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
           // Resample if needed to reduce file size
@@ -1354,13 +1630,38 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
 
           // Convert to WAV
           const wavBlob = this.audioBufferToWav(finalBuffer);
+          
+          // Validate the output blob
+          if (!wavBlob || wavBlob.size === 0) {
+            throw new Error('Failed to convert audio: Output WAV blob is empty');
+          }
+          
+          // CRITICAL: Verify blob is actually valid
+          console.log(`✅ Converted to WAV: ${(wavBlob.size / 1024).toFixed(2)} KB`);
+          console.log(`   • Blob type: ${wavBlob.type}`);
+          console.log(`   • Blob size: ${wavBlob.size} bytes`);
+          console.log(`   • Is Blob: ${wavBlob instanceof Blob}`);
+          console.log(`   • Constructor: ${wavBlob.constructor.name}`);
+          
           resolve(wavBlob);
         } catch (error) {
+          console.error('❌ Error in convertToWav:', error);
           reject(error);
+        } finally {
+          // Clean up audio context
+          try {
+            await audioContext.close();
+          } catch (e) {
+            // Ignore cleanup errors
+          }
         }
       };
 
-      reader.onerror = reject;
+      reader.onerror = (event) => {
+        console.error('❌ FileReader error in convertToWav:', event);
+        reject(new Error('Failed to read audio file: ' + (reader.error?.message || 'Unknown error')));
+      };
+      
       reader.readAsArrayBuffer(audioBlob);
     });
   }
@@ -1387,6 +1688,11 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
    * Convert AudioBuffer to WAV Blob
    */
   private static audioBufferToWav(audioBuffer: AudioBuffer): Blob {
+    // Validate input
+    if (!audioBuffer || audioBuffer.length === 0) {
+      throw new Error('Cannot convert empty AudioBuffer to WAV');
+    }
+    
     const numberOfChannels = audioBuffer.numberOfChannels;
     const sampleRate = audioBuffer.sampleRate;
     const format = 1; // PCM
@@ -1402,6 +1708,11 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
 
     const interleaved = this.interleave(data);
     const dataLength = interleaved.length * bytesPerSample;
+    
+    if (dataLength === 0) {
+      throw new Error('Cannot create WAV: No audio data to write');
+    }
+    
     const buffer = new ArrayBuffer(44 + dataLength);
     const view = new DataView(buffer);
 
@@ -1443,6 +1754,78 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
 
     return result;
   }
+  
+  /**
+   * Calculate chunk boundaries based on DURATION only WITHOUT extracting blobs
+   * This saves memory by not creating all chunk blobs upfront
+   * Note: With just-in-time extraction, size is no longer a memory concern
+   * @param audioBlob - Audio blob to analyze (should be WAV format)
+   * @param _maxChunkSizeMB - (Unused, kept for API compatibility)
+   * @param maxDurationMinutes - Maximum duration per chunk in minutes (default: 60)
+   * @returns Array of chunk boundaries with startTimeMs, endTimeMs (NO blobs)
+   */
+  public static async calculateChunkBoundaries(
+    audioBlob: Blob,
+    _maxChunkSizeMB: number = 20,
+    maxDurationMinutes: number = 60
+  ): Promise<{ startTimeMs: number; endTimeMs: number }[]> {
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const reader = new FileReader();
+
+    return new Promise((resolve, reject) => {
+      reader.onload = async (e) => {
+        try {
+          const arrayBuffer = e.target?.result as ArrayBuffer;
+          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+          const totalDurationMs = audioBuffer.duration * 1000;
+          const totalDurationMinutes = totalDurationMs / (60 * 1000);
+          const totalSizeMB = audioBlob.size / (1024 * 1024);
+
+          // Calculate number of chunks needed based on DURATION only
+          // (Size is no longer a concern with just-in-time extraction)
+          const numberOfChunks = Math.ceil(totalDurationMinutes / maxDurationMinutes);
+          const chunkDurationMs = totalDurationMs / numberOfChunks;
+          const chunkDurationMinutes = chunkDurationMs / (60 * 1000);
+
+          console.log(`📏 Audio info: ${totalSizeMB.toFixed(2)}MB, ${totalDurationMinutes.toFixed(1)} minutes`);
+          console.log(`📊 Duration limit: ${maxDurationMinutes} minutes per chunk`);
+          console.log(`📦 Will split into ${numberOfChunks} chunks based on duration`);
+          console.log(`⏱️ Each chunk: ~${chunkDurationMinutes.toFixed(1)} minutes (~${(totalSizeMB / numberOfChunks).toFixed(2)}MB)`);
+
+          const boundaries: { startTimeMs: number; endTimeMs: number }[] = [];
+
+          for (let i = 0; i < numberOfChunks; i++) {
+            const startTimeMs = i * chunkDurationMs;
+            const endTimeMs = Math.min((i + 1) * chunkDurationMs, totalDurationMs);
+
+            console.log(`📍 Boundary ${i + 1}/${numberOfChunks}: ${startTimeMs.toFixed(0)}ms - ${endTimeMs.toFixed(0)}ms`);
+
+            boundaries.push({
+              startTimeMs,
+              endTimeMs
+            });
+          }
+
+          resolve(boundaries);
+        } catch (error) {
+          console.error('❌ Error in calculateChunkBoundaries:', error);
+          reject(error);
+        } finally {
+          // Clean up audio context
+          try {
+            await audioContext.close();
+          } catch (e) {
+            // Ignore cleanup errors
+          }
+        }
+      };
+
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(audioBlob);
+    });
+  }
+  
   /**
    * Split audio into chunks based on size AND duration limits
    * Each chunk must satisfy: size <= maxChunkSizeMB AND duration <= maxDurationMinutes
@@ -1494,18 +1877,42 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
 
             console.log(`⏱️ Extracting chunk ${i + 1}/${numberOfChunks}: ${startTimeMs.toFixed(0)}ms - ${endTimeMs.toFixed(0)}ms`);
 
-            const chunkBlob = await this.extractAudioSegment(audioBlob, startTimeMs, endTimeMs);
+            try {
+              const chunkBlob = await this.extractAudioSegment(audioBlob, startTimeMs, endTimeMs);
+              
+              // Validate chunk blob
+              if (!chunkBlob || chunkBlob.size === 0) {
+                throw new Error(`Extracted blob is empty`);
+              }
+              
+              console.log(`  ✅ Chunk ${i + 1}: ${(chunkBlob.size / 1024).toFixed(2)} KB`);
 
-            chunks.push({
-              blob: chunkBlob,
-              startTimeMs,
-              endTimeMs
-            });
+              chunks.push({
+                blob: chunkBlob,
+                startTimeMs,
+                endTimeMs
+              });
+            } catch (error: any) {
+              throw new Error(`Failed to extract chunk ${i + 1}/${numberOfChunks} (${startTimeMs.toFixed(0)}-${endTimeMs.toFixed(0)}ms): ${error.message}`);
+            }
+            
+            // Small delay between extractions to prevent browser overload
+            if (i < numberOfChunks - 1) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
           }
 
           resolve(chunks);
         } catch (error) {
+          console.error('❌ Error in splitAudioIntoChunks:', error);
           reject(error);
+        } finally {
+          // Clean up audio context
+          try {
+            await audioContext.close();
+          } catch (e) {
+            // Ignore cleanup errors
+          }
         }
       };
 
@@ -1533,12 +1940,21 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
       reader.onload = async (e) => {
         try {
           const arrayBuffer = e.target?.result as ArrayBuffer;
+          
+          if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+            throw new Error('Failed to read audio blob: ArrayBuffer is empty');
+          }
+          
           const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
           // Calculate start and end in samples
           const startSample = Math.floor((startTimeMs / 1000) * audioBuffer.sampleRate);
           const endSample = Math.floor((endTimeMs / 1000) * audioBuffer.sampleRate);
           const segmentLength = endSample - startSample;
+          
+          if (segmentLength <= 0) {
+            throw new Error(`Invalid segment length: ${segmentLength} samples (start: ${startSample}, end: ${endSample})`);
+          }
 
           // Create new buffer for the segment
           const segmentBuffer = audioContext.createBuffer(
@@ -1558,13 +1974,36 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
 
           // Convert to WAV
           const wavBlob = this.audioBufferToWav(segmentBuffer);
+          
+          // Validate output blob
+          if (!wavBlob || wavBlob.size === 0) {
+            throw new Error('Failed to create WAV blob: Output is empty');
+          }
+          
+          console.log(`✅ Extracted segment: ${startTimeMs}ms-${endTimeMs}ms`);
+          console.log(`   • Blob size: ${(wavBlob.size / 1024).toFixed(2)} KB`);
+          console.log(`   • Blob type: ${wavBlob.type}`);
+          console.log(`   • Is Blob: ${wavBlob instanceof Blob}`);
+          
           resolve(wavBlob);
         } catch (error) {
+          console.error('❌ Error in extractAudioSegment:', error);
           reject(error);
+        } finally {
+          // CRITICAL: Clean up audio context to prevent browser limits
+          try {
+            await audioContext.close();
+          } catch (e) {
+            // Ignore cleanup errors
+          }
         }
       };
 
-      reader.onerror = reject;
+      reader.onerror = (event) => {
+        console.error('❌ FileReader error in extractAudioSegment:', event);
+        reject(new Error('Failed to read audio blob: ' + (reader.error?.message || 'Unknown error')));
+      };
+      
       reader.readAsArrayBuffer(audioBlob);
     });
   }
@@ -1595,65 +2034,71 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
   ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
     const maxSizeMB = maxFileSizeMB;
 
-    // CRITICAL: Convert to WAV first if needed, THEN split based on size
-    // Gemini API officially supports: WAV and MP3 only
-    // All other formats (WebM, MP4, OGG, AAC, FLAC) must be converted to WAV
-    if (onProgress) onProgress(3, 'Đang kiểm tra định dạng audio...');
+    // ============================================================
+    // BƯỚC 1: TÍNH TOÁN CHUNK BOUNDARIES TỪ FILE GỐC
+    // ============================================================
+    // NOTE: audioBlob is the ORIGINAL file (not converted to WAV yet)
+    // We will extract chunks from original file, and each chunk will be converted to WAV on-demand
+    // This saves memory by not storing the entire WAV file (which can be 500MB+)
+    if (onProgress) onProgress(3, '📦 Đang phân tích và tính toán các phần...');
     
-    let wavBlob = audioBlob;
+    const audioSizeMB = audioBlob.size / (1024 * 1024);
     const audioType = audioBlob.type.toLowerCase();
-    const isWavOrMp3 = audioType.includes('wav') || audioType.includes('mpeg') || audioType.includes('mp3');
-    const needsConversion = !isWavOrMp3;
+    console.log(`📦 Analyzing original file for chunking: ${audioSizeMB.toFixed(2)}MB • ${audioType}`);
     
-    if (needsConversion) {
-      if (onProgress) onProgress(5, `Đang chuyển đổi ${audioType} sang WAV...`);
-      // Convert with lower sample rate for smaller file size
-      const targetSampleRate = 16000; // Lower sample rate = smaller file
-      wavBlob = await this.convertToWav(audioBlob, targetSampleRate);
-      
-      const originalSizeMB = audioBlob.size / (1024 * 1024);
-      const wavSizeMB = wavBlob.size / (1024 * 1024);
-      console.log(`✅ Converted ${audioType}: ${originalSizeMB.toFixed(2)}MB → ${wavSizeMB.toFixed(2)}MB (WAV)`);
-    } else {
-      console.log(`✅ Audio format ${audioType} is supported by Gemini (WAV/MP3) - no conversion needed`);
+    // CRITICAL: Calculate boundaries from ORIGINAL file (no conversion yet)
+    const chunkBoundaries = await this.calculateChunkBoundaries(audioBlob, maxSizeMB, maxDurationMinutes);
+    console.log(`✅ Calculated ${chunkBoundaries.length} chunk boundaries from original file`);
+
+    if (onProgress) {
+      onProgress(10, `✅ Đã tính toán ${chunkBoundaries.length} phần, bắt đầu xử lý...`);
     }
-
-    // Now split the WAV file into chunks based on actual WAV size AND duration
-    if (onProgress) onProgress(8, 'Đang phân tích và chia file WAV...');
-    const chunks = await this.splitAudioIntoChunks(wavBlob, maxSizeMB, maxDurationMinutes);
-
-    if (onProgress) onProgress(10, `Đã chia thành ${chunks.length} phần. Bắt đầu chuyển đổi...`);
 
     const allResults: TranscriptionResult[] = [];
     const allSummaries: string[] = [];
     let hasTruncation = false;
     const truncationWarnings: string[] = [];
+    
+    // Get total duration once for progress estimation
+    // NOTE: We analyze ORIGINAL file, not converted WAV (to save memory)
+    const totalAudioDurationSec = await this.getAudioDuration(audioBlob);
+    const totalOriginalSizeMB = audioBlob.size / (1024 * 1024);
 
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
-      const chunkProgress = 10 + ((i / chunks.length) * 80);
-      const chunkDurationMin = Math.ceil((chunk.endTimeMs - chunk.startTimeMs) / 60000);
-      const chunkSizeMB = (chunk.blob.size / (1024 * 1024)).toFixed(1);
+    for (let i = 0; i < chunkBoundaries.length; i++) {
+      const boundary = chunkBoundaries[i];
+      const chunkProgress = 10 + ((i / chunkBoundaries.length) * 80);
+      const chunkDurationMin = Math.ceil((boundary.endTimeMs - boundary.startTimeMs) / 60000);
+      
+      // Estimate chunk size based on duration ratio (from original file)
+      const chunkDurationSec = (boundary.endTimeMs - boundary.startTimeMs) / 1000;
+      const estimatedSizeMB = (chunkDurationSec / totalAudioDurationSec) * totalOriginalSizeMB;
 
       if (onProgress) {
         onProgress(
           chunkProgress,
-          `📦 Phần ${i + 1}/${chunks.length}: ${chunkSizeMB}MB • ${chunkDurationMin} phút`
+          `📦 Phần ${i + 1}/${chunkBoundaries.length}: ~${estimatedSizeMB.toFixed(1)}MB • ${chunkDurationMin} phút`
         );
       }
 
       try {
+        // CRITICAL: Extract chunk from ORIGINAL file ON-DEMAND (just-in-time)
+        // extractAudioSegment will automatically convert chunk to WAV
+        // This saves memory by not storing entire WAV file (which can be 500MB+)
+        console.log(`🔪 Extracting chunk ${i + 1}/${chunkBoundaries.length} from original file: ${boundary.startTimeMs}ms-${boundary.endTimeMs}ms`);
+        const chunkBlob = await this.extractAudioSegment(audioBlob, boundary.startTimeMs, boundary.endTimeMs);
+        console.log(`  ✅ Extracted & converted to WAV: ${(chunkBlob.size / 1024).toFixed(2)} KB`);
+        
         // Transcribe this chunk (skip size check - already validated and split)
         const parsed = await this.transcribeAudioWithGemini(
           apiKey,
-          chunk.blob,
+          chunkBlob, // Just-in-time extracted chunk
           modelName,
           (subProgress, subMessage) => {
             if (onProgress) {
-              const totalProgress = chunkProgress + (subProgress / chunks.length) * 0.8;
+              const totalProgress = chunkProgress + (subProgress / chunkBoundaries.length) * 0.8;
               const progressMessage = subMessage 
-                ? `📦 ${i + 1}/${chunks.length}: ${subMessage}`
-                : `📦 Phần ${i + 1}/${chunks.length}: ${subProgress.toFixed(0)}%`;
+                ? `📦 ${i + 1}/${chunkBoundaries.length}: ${subMessage}`
+                : `📦 Phần ${i + 1}/${chunkBoundaries.length}: ${subProgress.toFixed(0)}%`;
               onProgress(totalProgress, progressMessage);
             }
           },
@@ -1661,44 +2106,49 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
           maxSizeMB, // Pass maxFileSizeMB to child call
           meetingStartTime, // Pass meeting start time for accurate timestamps
           summaryPrompt, // Pass user-provided summary prompt through
-          fileManager // Pass fileManager for debug logs
+          fileManager, // Pass fileManager for debug logs
+          { index: i + 1, total: chunkBoundaries.length } // Pass chunk info for context-aware prompting
         );
+        
+        // Explicitly clear chunk blob reference to help GC
+        // @ts-ignore
+        chunkBlob = null;
 
         // Adjust timestamps for this chunk
-        const adjustedResults = this.adjustTimestamps(parsed.results, chunk.startTimeMs);
+        const adjustedResults = this.adjustTimestamps(parsed.results, boundary.startTimeMs);
         allResults.push(...adjustedResults);
         
         // Log chunk completion
-        console.log(`✅ Chunk ${i + 1}/${chunks.length}: ${adjustedResults.length} segments (${chunk.startTimeMs}ms - ${chunk.endTimeMs}ms)`);
+        console.log(`✅ Chunk ${i + 1}/${chunkBoundaries.length}: ${adjustedResults.length} segments (${boundary.startTimeMs}ms - ${boundary.endTimeMs}ms)`);
         
         // Collect summary from this chunk
         if (parsed.summary) {
-          allSummaries.push(`Phần ${i + 1}/${chunks.length}: ${parsed.summary}`);
-          console.log(`📝 Chunk ${i + 1}/${chunks.length}: Summary collected (${parsed.summary.length} chars)`);
+          allSummaries.push(`Phần ${i + 1}/${chunkBoundaries.length}: ${parsed.summary}`);
+          console.log(`📝 Chunk ${i + 1}/${chunkBoundaries.length}: Summary collected (${parsed.summary.length} chars)`);
         }
         
         // Track truncation
         if (parsed.isTruncated) {
           hasTruncation = true;
           if (parsed.truncationWarning) {
-            truncationWarnings.push(`Phần ${i + 1}/${chunks.length}: ${parsed.truncationWarning}`);
+            truncationWarnings.push(`Phần ${i + 1}/${chunkBoundaries.length}: ${parsed.truncationWarning}`);
           }
         }
 
         // Show completion for this chunk
         if (onProgress) {
           onProgress(
-            chunkProgress + (80 / chunks.length) * 0.9,
-            `✅ Phần ${i + 1}/${chunks.length}: ${adjustedResults.length} segments`
+            chunkProgress + (80 / chunkBoundaries.length) * 0.9,
+            `✅ Phần ${i + 1}/${chunkBoundaries.length}: ${adjustedResults.length} segments`
           );
         }
 
         // Add delay between chunks to respect rate limits (15 req/min)
-        if (i < chunks.length - 1) {
+        if (i < chunkBoundaries.length - 1) {
           if (onProgress) {
             onProgress(
-              chunkProgress + (80 / chunks.length),
-              `⏳ Đợi ${requestDelaySeconds}s trước khi xử lý phần ${i + 2}/${chunks.length}...`
+              chunkProgress + (80 / chunkBoundaries.length),
+              `⏳ Đợi ${requestDelaySeconds}s trước khi xử lý phần ${i + 2}/${chunkBoundaries.length}...`
             );
           }
           await new Promise(resolve => setTimeout(resolve, requestDelaySeconds * 1000));
@@ -1707,8 +2157,8 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
         // Handle quota errors
         if (error.message.includes('429') || error.message.includes('quota')) {
           throw new Error(
-            `Vượt hạn mức API tại phần ${i + 1}/${chunks.length}.\n\n` +
-            `✅ Đã xử lý: ${i}/${chunks.length} phần\n` +
+            `Vượt hạn mức API tại phần ${i + 1}/${chunkBoundaries.length}.\n\n` +
+            `✅ Đã xử lý: ${i}/${chunkBoundaries.length} phần\n` +
             `❌ Lỗi: ${error.message}\n\n` +
             `💡 Đợi 24 giờ hoặc nâng cấp Paid tier.`
           );
@@ -1720,11 +2170,15 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
     // Sort by timestamp
     allResults.sort((a, b) => (a.audioTimeMs || 0) - (b.audioTimeMs || 0));
 
-    if (onProgress) onProgress(90, `✅ Đã xử lý ${allResults.length} segments từ ${chunks.length} phần`);
-
-    console.log(`✅ Transcribed entire audio: ${allResults.length} segments from ${chunks.length} chunks`);
+    console.log(`✅ Đã xử lý toàn bộ: ${allResults.length} segments từ ${chunkBoundaries.length} chunks`);
     
-    // Combine summaries: Use Gemini to merge if multiple summaries, otherwise return as-is
+    if (onProgress) {
+      onProgress(90, `✅ Hoàn thành xử lý: ${allResults.length} segments từ ${chunkBoundaries.length} phần`);
+    }
+
+    // ============================================================
+    // BƯỚC 3: TỔNG HỢP TÓM TẮT (nếu có nhiều phần)
+    // ============================================================
     let combinedSummary: string | undefined = undefined;
     
     if (allSummaries.length === 0) {
@@ -1733,9 +2187,10 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
     } else if (allSummaries.length === 1) {
       // Only one summary - use directly
       combinedSummary = allSummaries[0].replace(/^Phần \d+\/\d+: /, ''); // Remove "Phần 1/1: " prefix
+      console.log(`✅ Sử dụng 1 tóm tắt trực tiếp (${combinedSummary.length} ký tự)`);
     } else {
       // Multiple summaries - try to merge with Gemini API
-      if (onProgress) onProgress(92, `🔄 Đang tổng hợp ${allSummaries.length} phần tóm tắt...`);
+      if (onProgress) onProgress(92, `📝 Đang tổng hợp ${allSummaries.length} phần tóm tắt...`);
       
       try {
         // Call Gemini to merge summaries into one cohesive summary
@@ -1747,7 +2202,7 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
           fileManager
         );
         
-        if (onProgress) onProgress(98, `✅ Đã tổng hợp tóm tắt hoàn chỉnh`);
+        if (onProgress) onProgress(98, `✅ Đã tổng hợp tóm tắt hoàn chỉnh (${combinedSummary.length} ký tự)`);
         console.log(`✅ Merged ${allSummaries.length} summaries with Gemini API`);
       } catch (mergeError: any) {
         // Fallback: Manual concatenation if Gemini merge fails
@@ -1828,6 +2283,10 @@ ${summariesText}
 Hãy trả về MỘT đoạn văn xuôi tổng hợp, KHÔNG có tiêu đề, KHÔNG có dấu gạch đầu dòng, KHÔNG có cấu trúc danh sách.`;
 
     try {
+      // Get model info to retrieve outputTokenLimit dynamically
+      const modelInfo = await this.getModelInfo(apiKey, modelName);
+      console.log(`📊 Model ${modelName} (merge summaries): outputTokenLimit = ${modelInfo.outputTokenLimit}`);
+
       const endpoint = `https://generativelanguage.googleapis.com/${this.GEMINI_API_VERSION}/${modelName}:generateContent?key=${apiKey}`;
 
       const requestBody = {
@@ -1838,7 +2297,7 @@ Hãy trả về MỘT đoạn văn xuôi tổng hợp, KHÔNG có tiêu đề, K
           temperature: 0.2, // Lower temperature for more focused, consistent merging
           topK: 40,
           topP: 0.95,
-          maxOutputTokens: 8192,
+          maxOutputTokens: modelInfo.outputTokenLimit, // Dynamic limit based on selected model
           responseMimeType: 'text/plain' // Plain text for summary merging
         },
         safetySettings: [

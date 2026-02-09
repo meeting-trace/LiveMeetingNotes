@@ -15,11 +15,12 @@ import { speechToTextService, SpeechToTextService } from './services/speechToTex
 import { AIRefinementService, type RawTranscriptData } from './services/aiRefinement';
 import { updateManager, UpdateManagerService } from './services/updateManager';
 import type { MeetingInfo, SpeechToTextConfig, TranscriptionResult } from './types/types';
-import { message, Modal } from 'antd';
+import { message, App as AntdApp, Progress } from 'antd';
 import { ExclamationCircleOutlined } from '@ant-design/icons';
 import './styles/global.css';
 
 export const App: React.FC = () => {
+  const { modal } = AntdApp.useApp();
   const [folderPath, setFolderPath] = useState<string>('');
   const [isRecording, setIsRecording] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
@@ -138,7 +139,7 @@ export const App: React.FC = () => {
             }
             
             if (warningMessage) {
-              Modal.info({
+              modal.info({
                 title: '💡 Khuyến nghị trình duyệt & thiết bị',
                 content: (
                   <div>
@@ -284,7 +285,7 @@ export const App: React.FC = () => {
     const maxDurationMinutes = config?.maxAudioDurationMinutes || 60;
 
     // Show options modal: Auto-split vs Manual selection
-    Modal.confirm({
+    modal.confirm({
       title: (
         <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#fa8c16' }}>
           ⚠️ File audio quá lớn
@@ -326,7 +327,6 @@ export const App: React.FC = () => {
             cursor: 'pointer'
           }}
           onClick={() => {
-            Modal.destroyAll();
             handleAutoSplitTranscription();
           }}
           >
@@ -350,7 +350,6 @@ export const App: React.FC = () => {
             cursor: 'pointer'
           }}
           onClick={() => {
-            Modal.destroyAll();
             showManualSegmentSelectionModal(fileSizeMB, maxSizeMB);
           }}
           >
@@ -396,7 +395,7 @@ export const App: React.FC = () => {
     let startTimeInput: HTMLInputElement | null = null;
     let endTimeInput: HTMLInputElement | null = null;
 
-    Modal.confirm({
+    modal.confirm({
       title: (
         <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#1890ff' }}>
           ✂️ Chọn đoạn cần chuyển đổi
@@ -524,7 +523,7 @@ export const App: React.FC = () => {
     if (durationMinutes > 60) {
       // Hiện cảnh báo cho audio dài, nhưng với tone khác (tính năng này đã được tối ưu cho audio dài)
       const confirmed = await new Promise<boolean>((resolve) => {
-        Modal.warning({
+        modal.warning({
           title: '⚠️ Audio rất dài',
           width: 600,
           content: (
@@ -597,7 +596,7 @@ export const App: React.FC = () => {
 
     try {
       // Show progress modal
-      progressModal = Modal.info({
+      progressModal = modal.info({
         title: '🤖 Đang xử lý toàn bộ file...',
         width: 600,
         closable: false,
@@ -640,7 +639,7 @@ export const App: React.FC = () => {
       
       // Show truncation warning if detected
       if (parsed.isTruncated && parsed.truncationWarning) {
-        Modal.warning({
+        modal.warning({
           title: '⚠️ Cảnh báo: Kết quả bị cắt ngắn',
           width: 600,
           content: (
@@ -670,7 +669,7 @@ export const App: React.FC = () => {
 
     } catch (error: any) {
       if (progressModal) progressModal.destroy();
-      Modal.error({
+      modal.error({
         title: '❌ Lỗi chuyển đổi',
         width: 480,
         content: (
@@ -800,7 +799,7 @@ export const App: React.FC = () => {
           
           // Show truncation warning if detected
           if (parsed.isTruncated && parsed.truncationWarning) {
-            Modal.warning({
+            modal.warning({
               title: '⚠️ Cảnh báo: Kết quả bị cắt ngắn',
               width: 600,
               content: (
@@ -843,7 +842,7 @@ export const App: React.FC = () => {
 
   // Show modal to ask user: merge or replace?
   const showMergeOrReplaceModal = (newResults: TranscriptionResult[]) => {
-    Modal.confirm({
+    modal.confirm({
       title: (
         <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#52c41a' }}>
           ✅ Chuyển đổi thành công!
@@ -964,20 +963,27 @@ export const App: React.FC = () => {
       // Get config from event detail or settings
       let apiKey: string | undefined;
       let modelName: string | undefined;
+      let maxDurationMinutes: number;
+      let maxFileSizeMB: number;
       
       if (customEvent.detail) {
         apiKey = customEvent.detail.apiKey;
         modelName = customEvent.detail.modelName;
+        const config = speechToTextService.getConfig();
+        maxDurationMinutes = config?.maxAudioDurationMinutes || 60;
+        maxFileSizeMB = config?.maxFileSizeMB || 20;
       } else {
         // Fallback to getting from settings
         const config = speechToTextService.getConfig();
         apiKey = config?.geminiApiKey;
         modelName = config?.geminiModel;
+        maxDurationMinutes = config?.maxAudioDurationMinutes || 60;
+        maxFileSizeMB = config?.maxFileSizeMB || 20;
       }
 
       // Check if API key is provided
       if (!apiKey || apiKey.trim().length === 0) {
-        Modal.error({
+        modal.error({
           title: '⚠️ Thiếu Gemini API Key',
           content: (
             <div style={{ marginTop: 16 }}>
@@ -998,7 +1004,7 @@ export const App: React.FC = () => {
 
       // Validate model is selected
       if (!modelName || !modelName.startsWith('models/')) {
-        Modal.error({
+        modal.error({
           title: '⚠️ Chưa chọn Gemini Model',
           content: (
             <div style={{ marginTop: 16 }}>
@@ -1029,36 +1035,37 @@ export const App: React.FC = () => {
       const isLongAudio = durationMinutes > 60;
 
       // Show confirmation modal with enhanced UI
-      Modal.confirm({
+      modal.confirm({
         title: (
           <span style={{ fontSize: '18px', fontWeight: 'bold', color: isLongAudio ? '#ff4d4f' : '#667eea' }}>
-            <span style={{ fontSize: '24px' }}>{isLongAudio ? '⚠️' : '🤖'}</span> Chuyển đổi giọng nói với Gemini AI{isLongAudio ? ' - Audio quá dài!' : ' - Gemini AI có thể đưa ra thông tin không chính xác, HÃY THẬN TRỌNG!!!'}
+            <span style={{ fontSize: '24px' }}>{isLongAudio ? '🤖' : '🤖'}</span> Chuyển đổi giọng nói với Gemini AI{isLongAudio ? ' - Sẽ tự động chia nhỏ' : ' - Gemini AI có thể đưa ra thông tin không chính xác, HÃY THẬN TRỌNG!!!'}
           </span>
         ),
         width: 600,
         icon: null,
         content: (
           <div style={{ marginTop: 16 }}>
-            {/* ⚠️ CẢNH BÁO ƯU TIÊN cho audio dài */}
+            {/* ℹ️ THÔNG BÁO cho audio dài - sẽ tự động xử lý */}
             {isLongAudio && (
               <div style={{ 
                 padding: '16px', 
-                background: '#fff2e8',
-                border: '2px solid #ff7a45',
+                background: 'linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%)',
+                border: '2px solid #1890ff',
                 borderRadius: '8px',
                 marginBottom: '16px'
               }}>
-                <div style={{ fontSize: '15px', color: '#d4380d', lineHeight: '1.8' }}>
-                  <strong style={{ fontSize: '16px' }}>⚠️ CẢNH BÁO: Audio quá dài ({durationMinutes} phút)</strong><br /><br />
-                  <strong>Rủi ro cao:</strong><br />
-                  • Có thể bị lỗi do vượt giới hạn token của Gemini<br />
-                  • Kết quả có thể bị cắt ngắn hoặc không đầy đủ<br />
-                  • Thời gian xử lý rất lâu ({Math.ceil(durationMinutes / 10)}-{Math.ceil(durationMinutes / 5)} phút)<br />
-                  • Tốn token API nhiều<br /><br />
-                  <strong style={{ color: '#ff4d4f' }}>🔧 KHUYẾN NGHỊ:</strong><br />
-                  • Sử dụng tính năng <strong>"Tự động chia nhỏ và xử lý"</strong><br />
-                  • Hoặc chọn đoạn audio ngắn hơn (&lt;60 phút) để chuyển đổi<br />
-                  • Kết quả sẽ chính xác và hoàn chỉnh hơn
+                <div style={{ fontSize: '15px', color: '#0050b3', lineHeight: '1.8' }}>
+                  <strong style={{ fontSize: '16px' }}>🤖 Audio dài ({durationMinutes} phút) - Tự động xử lý thông minh</strong><br /><br />
+                  <strong style={{ color: '#1890ff' }}>✨ Hệ thống sẽ tự động:</strong><br />
+                  • 📦 Chia file thành các phần nhỏ (≤ {maxDurationMinutes}p hoặc ≤ {maxFileSizeMB}MB/phần)<br />
+                  • 🔄 Xử lý tuần tự từng phần với Gemini AI<br />
+                  • 🧩 Tự động ghép kết quả theo timeline<br />
+                  • 📝 Tổng hợp tóm tắt hoàn chỉnh<br /><br />
+                  <strong style={{ color: '#0050b3' }}>⏱️ Thời gian dự kiến:</strong><br />
+                  • Khoảng {Math.ceil(durationMinutes / 15)}-{Math.ceil(durationMinutes / 10)} phút để xử lý toàn bộ<br />
+                  • Có delay 5s giữa các phần (tuân thủ rate limit)<br />
+                  • Bạn có thể theo dõi tiến trình trực tiếp<br /><br />
+                  <strong style={{ color: '#52c41a' }}>✅ Ưu điểm:</strong> Kết quả chính xác, đầy đủ, không bị cắt ngang!
                 </div>
               </div>
             )}
@@ -1072,7 +1079,7 @@ export const App: React.FC = () => {
               <div style={{ fontSize: '15px', marginBottom: '12px' }}>
                 <strong>🎯 Thông tin chuyển đổi:</strong><br />
                 • Model: <span style={{ fontWeight: 'bold', color: '#667eea' }}>{modelName.replace('models/', '')}</span><br />
-                • Kích thước file: <span style={{ fontWeight: 'bold' }}>{(audioBlob.size / (1024 * 1024)).toFixed(2)} MB</span><br />
+                • Kích thước file gốc: <span style={{ fontWeight: 'bold' }}>{(audioBlob.size / (1024 * 1024)).toFixed(2)} MB</span><br />
                 {audioDurationMs > 0 && (
                   <>
                     • Thời lượng: <span style={{ fontWeight: 'bold', color: isLongAudio ? '#ff4d4f' : 'inherit' }}>
@@ -1112,26 +1119,69 @@ export const App: React.FC = () => {
               color: '#666'
             }}>
               <strong>⏳ Thời gian xử lý:</strong> {isLongAudio 
-                ? `RẤT LÂU (~${Math.ceil(durationMinutes / 10)}-${Math.ceil(durationMinutes / 5)} phút) và có thể thất bại` 
+                ? `Khoảng ${Math.ceil(durationMinutes / 15)}-${Math.ceil(durationMinutes / 10)} phút (tự động chia nhỏ)` 
                 : 'Tùy thuộc vào độ dài audio (khoảng 1-3 phút cho file 10-20 phút)'}<br />
               <strong>💰 Chi phí:</strong> Gemini API miễn phí cho mục đích cá nhân (250K tokens/ngày)
-              {isLongAudio && <><br /><strong style={{ color: '#ff4d4f' }}>⚠️ Audio dài tốn nhiều token!</strong></>}
+              {isLongAudio && <><br /><strong style={{ color: '#1890ff' }}>ℹ️ Audio dài sẽ được xử lý thông minh, an toàn!</strong></>}
             </div>
           </div>
         ),
-        okText: isLongAudio ? '⚠️ Vẫn tiếp tục (Không khuyến nghị)' : '🚀 Bắt đầu chuyển đổi',
-        cancelText: isLongAudio ? '✅ Hủy (Khuyến nghị)' : 'Hủy',
+        okText: isLongAudio ? '🤖 Bắt đầu (Tự động chia nhỏ)' : '🚀 Bắt đầu chuyển đổi',
+        cancelText: 'Hủy',
         okButtonProps: { 
           size: 'large',
-          danger: isLongAudio,
+          danger: false,
           style: { 
             height: '40px',
-            background: isLongAudio ? undefined : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
             border: 'none'
           }
         },
         cancelButtonProps: { size: 'large', style: { height: '40px' } },
         onOk: async () => {
+          // Create progress modal
+          let progressPercent = 0;
+          let progressMessage = 'Đang khởi tạo...';
+          
+          const progressModal = modal.info({
+            title: (
+              <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#667eea' }}>
+                <span style={{ fontSize: '24px' }}>🤖</span> Đang xử lý với Gemini AI
+              </span>
+            ),
+            icon: null,
+            width: 600,
+            okText: 'Chạy nền',
+            okButtonProps: { style: { display: 'none' } }, // Hide button initially
+            closable: false,
+            maskClosable: false,
+            content: (
+              <div style={{ marginTop: 16 }}>
+                <Progress 
+                  percent={progressPercent} 
+                  status="active"
+                  strokeColor={{
+                    '0%': '#667eea',
+                    '100%': '#764ba2',
+                  }}
+                />
+                <div style={{ 
+                  marginTop: 12, 
+                  padding: '12px 16px',
+                  background: 'linear-gradient(135deg, #f0f5ff 0%, #e6f7ff 100%)',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  color: '#0050b3',
+                  minHeight: '60px',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}>
+                  {progressMessage}
+                </div>
+              </div>
+            )
+          });
+
           try {
             const config = speechToTextService.getConfig();
             const maxFileSizeMB = config?.maxFileSizeMB || 20;
@@ -1141,10 +1191,44 @@ export const App: React.FC = () => {
               apiKey,
               audioBlob,
               modelName,
-              (progress, message) => {
+              (progress, msg) => {
                 // Update progress with message
-                const displayMsg = message || `Xử lý: ${progress.toFixed(0)}%`;
-                console.log(`Transcription progress: ${progress.toFixed(0)}% - ${displayMsg}`);
+                progressPercent = Math.round(progress);
+                progressMessage = msg || `Xử lý: ${progressPercent}%`;
+                
+                // Update modal content
+                progressModal.update({
+                  content: (
+                    <div style={{ marginTop: 16 }}>
+                      <Progress 
+                        percent={progressPercent} 
+                        status={progressPercent === 100 ? 'success' : 'active'}
+                        strokeColor={{
+                          '0%': '#667eea',
+                          '100%': '#764ba2',
+                        }}
+                      />
+                      <div style={{ 
+                        marginTop: 12, 
+                        padding: '12px 16px',
+                        background: progressPercent === 100 
+                          ? 'linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%)'
+                          : 'linear-gradient(135deg, #f0f5ff 0%, #e6f7ff 100%)',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        color: progressPercent === 100 ? '#237804' : '#0050b3',
+                        minHeight: '60px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        lineHeight: '1.6'
+                      }}>
+                        {progressMessage}
+                      </div>
+                    </div>
+                  )
+                });
+                
+                console.log(`Transcription progress: ${progressPercent}% - ${progressMessage}`);
               },
               false,
               maxFileSizeMB,
@@ -1152,6 +1236,9 @@ export const App: React.FC = () => {
               config?.summaryPrompt,
               fileManagerRef.current // Pass fileManager for debug logs
             );
+            
+            // Close progress modal on success
+            progressModal.destroy();
 
             // Save summary if available
             if (parsed.summary) {
@@ -1161,7 +1248,7 @@ export const App: React.FC = () => {
             
             // Show truncation warning if detected
             if (parsed.isTruncated && parsed.truncationWarning) {
-              Modal.warning({
+              modal.warning({
                 title: '⚠️ Cảnh báo: Kết quả bị cắt ngắn',
                 width: 600,
                 content: (
@@ -1186,6 +1273,9 @@ export const App: React.FC = () => {
             showMergeOrReplaceModal(parsed.results);
 
           } catch (error: any) {
+            // Close progress modal on error
+            progressModal.destroy();
+            
             // Check if error is FILE_TOO_LARGE
             if (error.message === 'FILE_TOO_LARGE') {
               // Show segment selection modal
@@ -1194,7 +1284,7 @@ export const App: React.FC = () => {
             }
             
             // Show error modal
-            Modal.error({
+            modal.error({
               title: '❌ Lỗi chuyển đổi',
               width: 480,
               content: (
@@ -1530,7 +1620,7 @@ export const App: React.FC = () => {
   const handleEditTranscription = useCallback((id: string, newText: string, newSpeaker: string, newStartTime?: string, newAudioTimeMs?: number) => {
     // Check if user deleted all text (wants to remove segment)
     if (!newText || newText.trim() === '') {
-      Modal.confirm({
+      modal.confirm({
         title: '🗑️ Xóa segment này?',
         icon: <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />,
         content: (
@@ -1769,7 +1859,7 @@ export const App: React.FC = () => {
     }
 
     // Show warning modal with better design
-    Modal.confirm({
+    modal.confirm({
       title: (
         <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1890ff' }}>
           🤖 Chuẩn hóa văn bản bằng Gemini AI - Gemini AI có thể đưa ra thông tin không chính xác, HÃY THẬN TRỌNG!!!
@@ -1949,7 +2039,7 @@ export const App: React.FC = () => {
         const estimatedTokens = Math.ceil(totalChars / 3) + 1000;
         const quotaPercent = Math.round((estimatedTokens / 250000) * 100);
         
-        Modal.confirm({
+        modal.confirm({
           title: (
             <div style={{ fontSize: '18px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span>{statusIcon}</span>
@@ -2127,7 +2217,7 @@ export const App: React.FC = () => {
       
       // Show truncation warning if detected
       if (refinedResult.isTruncated && refinedResult.truncationWarning) {
-        Modal.warning({
+        modal.warning({
           title: '⚠️ Cảnh báo: Kết quả bị cắt ngắn',
           width: 600,
           content: (
@@ -2160,7 +2250,7 @@ export const App: React.FC = () => {
       
       // Show detailed error modal for quota issues
       if (error.message.includes('quota') || error.message.includes('429') || error.message.includes('Vượt hạn mức')) {
-        Modal.error({
+        modal.error({
           title: '🚫 Vượt hạn mức Gemini API',
           width: 600,
           content: (
@@ -2207,7 +2297,8 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="app-container">
+    <AntdApp>
+      <div className="app-container">
       {/* Backup Restoration Dialog */}
       {showBackupDialog && (
         <div style={{
@@ -2381,6 +2472,7 @@ export const App: React.FC = () => {
         updateConfig={updateConfig}
         onUpdateConfigChange={handleUpdateConfigChange}
       />
-    </div>
+      </div>
+    </AntdApp>
   );
 };
