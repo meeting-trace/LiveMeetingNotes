@@ -151,6 +151,7 @@ export const TranscriptionConfig: React.FC<Props> = ({
         maxAudioDurationMinutes: values.maxAudioDurationMinutes || 180,
         maxFileSizeMB: values.maxFileSizeMB || 300,
         requestDelaySeconds: values.requestDelaySeconds || 5,
+        transcriptionMode: values.transcriptionMode || 'gist',
         summaryPrompt: values.summaryPrompt || 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'
       };
 
@@ -514,6 +515,22 @@ export const TranscriptionConfig: React.FC<Props> = ({
                       style={{ width: '100%' }}
                       addonAfter="giây"
                     />
+                  </Form.Item>
+
+                  <Form.Item
+                    label="Chế độ phiên âm"
+                    name="transcriptionMode"
+                    initialValue="gist"
+                    extra="Gist Mode: Tóm tắt ý chính (tối ưu cho mục lục) | Verbatim Mode: Ghi nguyên văn"
+                  >
+                    <Select placeholder="Chọn chế độ phiên âm">
+                      <Select.Option value="gist">
+                        📋 Gist Mode - Tóm tắt ý chính (Khuyến nghị)
+                      </Select.Option>
+                      <Select.Option value="verbatim">
+                        📝 Verbatim Mode - Ghi nguyên văn
+                      </Select.Option>
+                    </Select>
                   </Form.Item>
 
                   <Form.Item

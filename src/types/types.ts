@@ -76,6 +76,7 @@ export interface SpeechToTextConfig {
   geminiApiKey?: string; // Optional: API key for Gemini AI (for AI refinement feature)
   geminiModel?: string; // Selected Gemini model (e.g., "models/gemini-2.5-flash")
   languageCode: string;
+  transcriptionMode?: 'gist' | 'verbatim'; // Transcription mode: 'gist' (condensed, for TOC) or 'verbatim' (full transcript)
   enableSpeakerDiarization: boolean;
   enableAutomaticPunctuation: boolean;
   maxAlternatives?: number; // Number of alternative transcriptions (1-5)

@@ -31,6 +31,14 @@ export class AIRefinementService {
     TPD: 250000        // Tokens per day (250K) - Main limit users hit
   };
 
+  // Output token configuration
+  // Note: These are advisory limits only. Gemini API will enforce actual limits per model.
+  // We set high values to allow maximum flexibility. The API will return what it can generate.
+  private static readonly OUTPUT_TOKEN_LIMITS = {
+    AUDIO_TRANSCRIPTION: 65536,  // Audio transcription can produce long JSON with many segments
+    TEXT_MERGE: 16000             // Merging summaries needs less output
+  };
+
   // Batch processing configuration
   private static readonly BATCH_SIZE = 30; // Reduced from 50 to 30 segments per batch (~5000 tokens)
   private static readonly BATCH_DELAY_MS = 6000; // Increased from 5000 to 6000ms (6 seconds) between batches to avoid rate limit
@@ -49,30 +57,50 @@ export class AIRefinementService {
   }
 
   /**
-   * Get prompts based on language code
-   * Returns: { summaryPrompt, segmentPrompt, outputFormat }
+   * Get prompts based on language code and mode
+   * Returns: { role, summary, segments, format }
+   * Mode: 'gist' = Condensed summary (for navigation), 'verbatim' = Full transcript
    */
   private static getPromptsForLanguage(
-    languageCode: string = 'vi-VN'
+    languageCode: string = 'vi-VN',
+    mode: 'verbatim' | 'gist' = 'gist'
   ): { summary: string; segments: string; format: string; role: string } {
     const lang = languageCode.toLowerCase();
     
     if (lang.startsWith('en')) {
       // English prompts
-      return {
-        role: 'You are an expert meeting scribe, please process the content of this audio segment.',
-        summary: 'Briefly summarize the content of this audio segment',
-        segments: 'Convert the speech to text in this audio segment:\n1. Assign speaker labels (Speaker 1, Speaker 2, names if known)\n2. Attach Timestamps: h:mm:ss at the START of the utterance (e.g., 0:30, 1:05)',
-        format: '{"summary":"Brief summary of this audio segment","segments":[{"timestamp":"0:00","speaker":"Speaker 1","text":"Summary of speaker\'s statement"}]}'
-      };
+      if (mode === 'gist') {
+        return {
+          role: 'You are a concise meeting scribe.',
+          summary: 'Overall summary of this audio chunk in maximum 2 sentences.',
+          segments: 'CONDENSED TURNS (GIST PER TURN):\n1. Speaker label and Timestamp [h:mm:ss].\n2. Gist: Only key information (decisions, numbers, tasks, questions, or code). Remove filler words and small talk.\n3. If technical specs or code present, extract EXACTLY, do not summarize.',
+          format: '{"chunk_summary":"Overall summary...","entries":[{"time":"h:mm:ss","who":"Speaker A","gist":"Gist of this turn..."}]}'
+        };
+      } else {
+        return {
+          role: 'You are an expert meeting scribe, please process the content of this audio segment.',
+          summary: 'Briefly summarize the content of this audio segment',
+          segments: 'Convert the speech to text in this audio segment:\n1. Assign speaker labels (Speaker 1, Speaker 2, names if known)\n2. Attach Timestamps: h:mm:ss at the START of the utterance (e.g., 0:30, 1:05)',
+          format: '{"summary":"Brief summary of this audio segment","segments":[{"timestamp":"0:00","speaker":"Speaker 1","text":"Summary of speaker\'s statement"}]}'
+        };
+      }
     } else {
       // Vietnamese (default) prompts
-      return {
-        role: 'Bạn là chuyên gia ghi chép cuộc họp, hãy xử lý nội dung đoạn âm thanh này.',
-        summary: 'tóm tắt ngắn gọn nội dung đoạn âm thanh này',
-        segments: 'Chuyển đổi giọng nói sang văn bản trong đoạn âm thanh này:\n1. Gán nhãn người nói (Speaker 1, Speaker 2, tên nếu biết)\n2. Gắn Timestamp: h:mm:ss tại BẮT ĐẦU lượt nói (VD: 0:30, 1:05)',
-        format: '{"summary":"tóm tắt ngắn gọn nội dung đoạn âm thanh này)","segments":[{"timestamp":"0:00","speaker":"Speaker 1","text":"Summary of speaker\'s statement"}]}'
-      };
+      if (mode === 'gist') {
+        return {
+          role: 'Bạn là chuyên gia ghi chép cuộc họp tinh gọn.',
+          summary: 'Tóm tắt nội dung chính của toàn bộ đoạn audio này trong tối đa 2 câu.',
+          segments: 'CONDENSED TURNS (GIST PER TURN):\n1. Gắn nhãn người nói và Timestamp [h:mm:ss].\n2. Gist: Chỉ ghi lại những thông tin có giá trị (quyết định, con số, task, câu hỏi, hoặc mã code).\n3. Loại bỏ hoàn toàn các phần rườm rà, xã giao.\n4. Nếu có mã code hoặc thông số kỹ thuật, hãy trích xuất CHÍNH XÁC, không tóm tắt.',
+          format: '{"chunk_summary":"Tóm tắt tổng quát...","entries":[{"time":"h:mm:ss","who":"Speaker A","gist":"Nội dung tóm tắt của lượt nói này..."}]}'
+        };
+      } else {
+        return {
+          role: 'Bạn là chuyên gia phân tích hội thoại và AI Transcriber cao cấp.',
+          summary: 'Tóm tắt ngắn gọn nội dung chính được thảo luận trong đoạn này.',
+          segments: 'Verbatim Transcript - Chuyển đổi chính xác lời nói sang văn bản:\n1. Nhận diện người nói (Dùng tên riêng nếu được nhắc tới, nếu không dùng Speaker A, Speaker B...).\n2. Gắn Timestamp định dạng [h:mm:ss].\n3. Giữ nguyên nội dung, chỉ loại bỏ các từ đệm vô nghĩa (à, ờ, ừm).',
+          format: '{"summary":"Nội dung tóm tắt...","segments":[{"timestamp":"h:mm:ss","speaker":"Tên/Nhãn","text":"Nội dung lời nói thực tế"}]}'
+        };
+      }
     }
   }
 
@@ -84,7 +112,7 @@ export class AIRefinementService {
   private static async saveGeminiDebugLog(
     requestBody: any,
     responseData: any,
-    metadata: { type: 'text' | 'audio'; timestamp: string; error?: string },
+    metadata: { type: 'text' | 'audio'; timestamp: string; error?: string; rawJsonText?: string },
     fileManager?: FileManagerService
   ): Promise<void> {
     try {
@@ -134,7 +162,8 @@ export class AIRefinementService {
           note: 'Audio base64 data excluded to reduce file size'
         },
         request: requestSummary,
-        response: responseData
+        response: responseData,
+        rawJsonText: metadata.rawJsonText || undefined
       };
 
       // Save to project folder's debug-logs/ if fileManager has folder selected
@@ -153,8 +182,43 @@ export class AIRefinementService {
       } else {
         console.log(`ℹ️ Debug log not saved (fileManager not available): ${filename}`);
       }
+
+      // Also try to save to Downloads folder for easy access
+      await this.saveJsonToDownloads(`gemini-${metadata.type}-${timestamp}`, debugData);
     } catch (error) {
       console.error('Failed to prepare debug log:', error);
+    }
+  }
+
+  /**
+   * Save JSON response to Downloads folder for easy debugging
+   */
+  private static async saveJsonToDownloads(baseFilename: string, data: any): Promise<void> {
+    try {
+      // Create a blob with JSON data
+      const jsonString = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      // Create hidden link and trigger download
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${baseFilename}.json`;
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      
+      // Cleanup
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      console.log(`💾 JSON exported to Downloads folder: ${link.download}`);
+    } catch (error: any) {
+      // Silently fail - browsers may block downloads from some contexts
+      // User can still access files from project's debug-logs/ folder
+      if (error.message?.includes('not allowed')) {
+        console.log(`ℹ️ Auto-download to Downloads blocked (browser security). Files saved to project's debug-logs/ folder instead.`);
+      }
     }
   }
 
@@ -572,7 +636,7 @@ export class AIRefinementService {
           temperature: 0.1, // Lowered from 0.2 for better consistency and rule-following
           topK: 40,
           topP: 0.95,
-          maxOutputTokens: 8192,
+          maxOutputTokens: 65000,
           responseMimeType: 'application/json' // Ensure valid JSON output structure
         },
         safetySettings: [
@@ -748,7 +812,7 @@ Format: {
 ${dataJson}
 ${hasRawData ? `\n=== DỮ LIỆU BỔ TRỢ (tham khảo) ===\n${rawDataJson}` : ''}
 
-Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC, rồi segments sau. HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh!`;
+Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC, rồi segments sau.`;
   }
 
   /**
@@ -925,7 +989,8 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
     meetingStartTime?: Date, // Meeting start time for accurate timestamp calculation
     summaryPrompt?: string, // OPTIONAL: user-provided prompt text for the summary field
     fileManager?: FileManagerService, // Optional: for saving debug logs to project folder
-    languageCode: string = 'vi-VN' // Target language code (default: Vietnamese)
+    languageCode: string = 'vi-VN', // Target language code (default: Vietnamese)
+    transcriptionMode: 'gist' | 'verbatim' = 'gist' // Transcription mode: 'gist' (condensed) or 'verbatim' (full)
   ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
     if (!apiKey || apiKey.trim().length === 0) {
       throw new Error('Gemini API Key is required');
@@ -1066,8 +1131,8 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
       // Prepare request
       const endpoint = `https://generativelanguage.googleapis.com/${this.GEMINI_API_VERSION}/${modelName}:generateContent?key=${apiKey}`;
 
-      // Get language-specific prompts
-      const prompts = this.getPromptsForLanguage(languageCode);
+      // Get language-specific prompts with transcription mode
+      const prompts = this.getPromptsForLanguage(languageCode, transcriptionMode);
 
       requestBody = {
         contents: [{
@@ -1075,7 +1140,21 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
             {
               text: `${prompts.role}
 
-${languageCode.toLowerCase().startsWith('vi') ? 'TASK: Process this audio chunk - Part of a larger meeting.\n\nSTEP 1: SUMMARY - EXTREMELY CONCISE\n' + prompts.summary + '\n\nSTEP 2: EXTRACT SEGMENTS (2-5 per chunk)\n' + prompts.segments + '\n\nOUTPUT FORMAT (JSON only):\n' + prompts.format + '\n\nIMPORTANT: Return valid JSON only (no markdown, no text before/after).' : 'Là phần của cuộc họp lớn hơn.\n\nBƯỚC 1: TÓM TẮT CHUNK (SUMMARY) - VÔ CÙNG NGẮN GỌN\n' + (summaryPrompt || prompts.summary) + '\n\nBƯỚC 2: PHIÊN ÂM SEGMENTS (2-5 segments/chunk tối ưu)\n' + prompts.segments + '\n\nĐẶC BIỆT LƯU Ý:\n• Nếu thấy sắp hết token: DỪNG, đảm bảo JSON hợp lệ\n• KHÔNG thêm bất kỳ văn bản nào ngoài JSON\n\n📤 OUTPUT FORMAT (JSON strictly):\n' + prompts.format + '\nQuan trọng: Chỉ trả về JSON chuẩn (không markdown, không lời dẫn).'}`
+Context: Dưới đây là một phần âm thanh (chunk) từ một cuộc họp lớn hơn.
+
+Task: Thực hiện 2 bước phân tích và trả về kết quả dưới định dạng JSON duy nhất.
+
+Step 1: Summary - ${prompts.summary}
+
+Step 2: Verbatim Transcript - ${prompts.segments}
+
+Constraint:
+• Chỉ trả về JSON hợp lệ.
+• KHÔNG có lời dẫn (ví dụ: "Here is your JSON").
+• KHÔNG sử dụng Markdown code blocks.
+
+Output Schema:
+${prompts.format}`
             },
             {
               inline_data: {
@@ -1089,7 +1168,7 @@ ${languageCode.toLowerCase().startsWith('vi') ? 'TASK: Process this audio chunk 
           temperature: 0.1, // Low temperature for consistent, rule-following behavior
           topK: 40,
           topP: 0.95,
-          maxOutputTokens: 8192,
+          maxOutputTokens: this.OUTPUT_TOKEN_LIMITS.AUDIO_TRANSCRIPTION,
           responseMimeType: 'application/json' // Ensure valid JSON output, helps prevent truncation issues
         },
         // 🛡️ Safety Settings: Disable all filters to prevent blocking transcription
@@ -1164,11 +1243,15 @@ ${languageCode.toLowerCase().startsWith('vi') ? 'TASK: Process this audio chunk 
         throw new Error('No transcription results from Gemini API. The response may have been blocked or empty.');
       }
 
+      // Extract raw JSON text from response for debugging
+      const rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      
       // 💾 Save debug log with request and response
       await this.saveGeminiDebugLog(requestBody, data, {
         type: 'audio',
         timestamp: new Date().toISOString(),
-        error: data.error ? data.error.message : undefined
+        error: data.error ? data.error.message : undefined,
+        rawJsonText: rawJsonText
       }, fileManager);
 
       // Parse response (now returns { results, summary, isTruncated, truncationWarning })
@@ -1711,7 +1794,8 @@ ${languageCode.toLowerCase().startsWith('vi') ? 'TASK: Process this audio chunk 
     summaryPrompt?: string,
     fileManager?: FileManagerService,
     languageCode: string = 'vi-VN', // Target language code
-    preferMP3: boolean = true
+    preferMP3: boolean = true,
+    transcriptionMode: 'gist' | 'verbatim' = 'gist' // Transcription mode (condensed or full)
   ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('📋 BƯỚC 1: Kiểm tra & chuyển đổi định dạng audio');
@@ -1838,7 +1922,8 @@ ${languageCode.toLowerCase().startsWith('vi') ? 'TASK: Process this audio chunk 
           meetingStartTime,
           summaryPrompt,
           fileManager,
-          languageCode
+          languageCode,
+          transcriptionMode
         );
 
         // Step 3.2: Adjust timestamps for this chunk
@@ -2078,7 +2163,7 @@ Trả về ĐÚNG 1 đoạn văn xuôi (3-5 câu), không tiêu đề, không g�
           temperature: 0.2, // Lower temperature for more focused, consistent merging
           topK: 40,
           topP: 0.95,
-          maxOutputTokens: 8192,
+          maxOutputTokens: this.OUTPUT_TOKEN_LIMITS.TEXT_MERGE,
           responseMimeType: 'text/plain' // Plain text for summary merging
         },
         safetySettings: [
@@ -2102,11 +2187,15 @@ Trả về ĐÚNG 1 đoạn văn xuôi (3-5 câu), không tiêu đề, không g�
 
       const data = await response.json();
 
+      // Extract raw JSON text from response for debugging
+      const rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
       // Save debug log
       await this.saveGeminiDebugLog(requestBody, data, {
         type: 'text',
         timestamp: new Date().toISOString(),
-        error: data.error ? data.error.message : undefined
+        error: data.error ? data.error.message : undefined,
+        rawJsonText: rawJsonText
       }, fileManager);
 
       // Extract merged summary from response

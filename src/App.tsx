@@ -657,7 +657,9 @@ export const App: React.FC = () => {
         meetingStartTime,
         config.summaryPrompt,
         fileManagerRef.current, // Pass fileManager for debug logs
-        config.languageCode // Target language for Gemini output (matches Web Speech API config)
+        config.languageCode, // Target language for Gemini output (matches Web Speech API config)
+        true, // preferMP3
+        config.transcriptionMode || 'gist' // Transcription mode: 'gist' or 'verbatim'
       );
 
       progressModal.destroy();
