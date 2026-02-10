@@ -102,6 +102,12 @@ export const NotesEditor: React.FC<Props> = ({
   const isEditingRef = useRef<boolean>(false);
   const editingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
+  // Track previous notes to detect project changes
+  const previousNotesRef = useRef<string>(notes);
+  
+  // Track expected notes value after our own sync (to avoid false "external change" detection)
+  const expectedNotesRef = useRef<string | null>(null);
+  
   // Multi-line selection states
   const [selectedLines, setSelectedLines] = useState<Set<number>>(new Set());
   const [lastClickedLine, setLastClickedLine] = useState<number | null>(null);
@@ -113,17 +119,41 @@ export const NotesEditor: React.FC<Props> = ({
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Sync lines when parent props change (load project, undo/redo from parent)
-  // But only if user is not actively editing
   React.useEffect(() => {
-    if (!isEditingRef.current) {
-      const newLines = legacyFormatToLines(notes, timestampMap, initialSpeakers || new Map());
-      setLines(newLines);
+    // Check if notes prop changed from previous render
+    const notesChanged = notes !== previousNotesRef.current;
+    
+    if (notesChanged) {
+      // Check if this is OUR OWN SYNC (internal edit) or EXTERNAL CHANGE (load project)
+      // If notes matches what we expect from our last sync, it's internal
+      const isInternalSync = expectedNotesRef.current === notes;
+      const isExternalChange = !isInternalSync;
+      
+      if (!isEditingRef.current || isExternalChange) {
+        const newLines = legacyFormatToLines(notes, timestampMap, initialSpeakers || new Map());
+        setLines(newLines);
+        
+        // 🔥 CRITICAL FIX: Reset history when loading new project (external change)
+        // This prevents Ctrl+Z from restoring old project data
+        if (isExternalChange) {
+          setHistory([]);
+          setHistoryIndex(-1);
+          isEditingRef.current = false; // Reset editing flag when project changes
+        }
+      }
+      
+      previousNotesRef.current = notes;
+      expectedNotesRef.current = null; // Clear expected value after processing
     }
   }, [notes, timestampMap, initialSpeakers]);
   
   // ✅ Sync to parent (convert NoteLine[] back to legacy format)
   const syncToParent = useCallback((newLines: NoteLine[]) => {
     const { notesString, timestampMap: newTimestampMap, speakersMap } = linesToLegacyFormat(newLines);
+    
+    // Store expected notes value to detect our own sync in useEffect
+    expectedNotesRef.current = notesString;
+    
     onNotesChange(notesString);
     onTimestampMapChange(newTimestampMap);
     if (onSpeakersChange) {
@@ -136,6 +166,7 @@ export const NotesEditor: React.FC<Props> = ({
     if (syncDebounceRef.current) {
       clearTimeout(syncDebounceRef.current);
     }
+    
     syncDebounceRef.current = setTimeout(() => {
       syncToParent(newLines);
     }, 300);
