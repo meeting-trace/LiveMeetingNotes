@@ -737,61 +737,34 @@ export class AIRefinementService {
     const rawDataJson = hasRawData ? JSON.stringify(rawMetadata) : null;
     const segmentCount = transcriptData.length;
 
-    // OPTIMIZED: Shortened prompt to reduce token count while maintaining quality
-    return `Vai trò: Thư ký chuyên nghiệp soạn biên bản họp.
+    // Prompt for refining existing transcription segments
+    return `Vai trò: Thư ký chuyên nghiệp chuẩn hóa biên bản họp.
 
-Nhiệm vụ: Chuẩn hóa văn bản speech-to-text:
-1. Sửa lỗi nhận diện từ
-2. Xóa từ đệm (à, ừm, thì, là, mà)
+Nhiệm vụ: Chuẩn hóa văn bản speech-to-text CHO TỪNG SEGMENT, giữ nguyên số lượng và chi tiết:
+1. Sửa lỗi nhận diện từ (ví dụ: "công ti" → "công ty")
+2. Xóa từ đệm vô nghĩa (à, ừm, ờ) nhưng GIỮ NGUYÊN nội dung có ý nghĩa
 3. Thêm dấu câu, viết hoa danh từ riêng
-4. Giữ nguyên nội dung, không thêm bớt ý
+4. KHÔNG tóm tắt, KHÔNG gộp, KHÔNG bỏ sót segment nào
 5. Tóm tắt toàn bộ nội dung cuộc họp dựa trên các segment
 
-📊 NGÂN SÁCH TOKEN (OUTPUT BUDGET):
-Bạn có tối đa ~8000 tokens cho output. Hiện có ${segmentCount} segments cần xử lý.
-
-🎯 CHIẾN LƯỢC 2 BƯỚC - ƯU TIÊN SUMMARY:
-
-📝 BƯỚC 1 - BẮT BUỘC HOÀN THÀNH TRƯỚC:
-   • Tạo "summary" HOÀN CHỈNH (~300-400 từ)
-   • Bao gồm: Chủ đề chính, quyết định, kết luận
-   • GIỮ LẠI: Tên riêng, số liệu, deadline, Action Items
-   • ƯỚC TÍNH: Summary tốn ~500-800 tokens
-
-🔢 BƯỚC 2 - XỬ LÝ SEGMENTS (nếu còn token):
-   • NẾU ÍT SEGMENTS (<30): Chuẩn hóa CHI TIẾT từng câu
-   • NẾU VỪA (30-100): GỘP các câu liên quan, cô đọng nhẹ
-   • NẾU NHIỀU (>100): GỘP MẠNH, chỉ giữ ý chính
-   
-⚠️ QUY TẮC TỰ ĐỘNG DỪNG (AUTO-STOP):
-   • THEO DÕI token usage khi xử lý segments
-   • NẾU ước tính đã dùng ~6000 tokens (75% budget):
-     → DỪNG NGAY việc thêm segments
-     → ĐÓNG JSON đúng cú pháp: }] }
-     → KHÔNG cần xử lý hết segments
-   • TỐT HƠN: Summary đầy đủ + Segments một phần
-   • TỆ HƠN: JSON bị cắt ngang không hợp lệ
-
-💡 CHIẾN THUẬT THÔNG MINH:
-   • Nếu có >50 segments: Chỉ xử lý 20-30 segments ĐẦU TIÊN đại diện
-   • Nếu có >100 segments: Chỉ xử lý 10-15 segments QUAN TRỌNG NHẤT
-   • Ưu tiên segments có số liệu, quyết định, kết luận
-
-⚠️ QUAN TRỌNG - THỨ TỰ OUTPUT:
-- Trả về "summary" TRƯỚC (đầy đủ, hoàn chỉnh)
-- Sau đó "segments" (có thể chỉ một phần nếu hết token)
+⚠️ NGUYÊN TẮC QUAN TRỌNG:
+   • Trả về ĐÚNG SỐ LƯỢNG segments như input (${segmentCount} segments)
+   • Mỗi segment input → đúng 1 segment output tương ứng
+   • GIỮ NGUYÊN timestamp và audioTimeMs gốc
+   • KHÔNG gộp nhiều segments thành một
+   • KHÔNG bỏ sót segment nào
 
 Output: CHỈ JSON object, KHÔNG markdown/giải thích
 Format: {
-  "summary": "Tóm tắt nội dung cuộc họp dạng văn xuôi, bao gồm các chủ đề chính, quyết định quan trọng, kết luận.",
+  "summary": "Tóm tắt nội dung cuộc họp dạng văn xuôi (~200-400 từ), bao gồm các chủ đề chính, quyết định quan trọng, kết luận.",
   "segments": [{"timestamp":"...","audioTimeMs":123,"text":"..."},...]
 }
 
 === DỮ LIỆU CHÍNH (${segmentCount} segments) ===
 ${dataJson}
-${hasRawData ? `\n=== DỮ LIỆU BỔ TRỢ (tham khảo) ===\n${rawDataJson}` : ''}
+${hasRawData ? `\n=== DỮ LIỆU BỔ TRỢ (tham khảo - dùng để đối chiếu sửa lỗi) ===\n${rawDataJson}` : ''}
 
-Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC, rồi segments sau. HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh!`;
+Giữ timestamp/audioTimeMs gốc. Trả về JSON với summary TRƯỚC, rồi segments (đúng ${segmentCount} segments).`;
   }
 
   /**
@@ -968,7 +941,8 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
     meetingStartTime?: Date, // Meeting start time for accurate timestamp calculation
     summaryPrompt?: string, // OPTIONAL: user-provided prompt text for the summary field
     fileManager?: FileManagerService, // Optional: for saving debug logs to project folder
-    chunkInfo?: { index: number; total: number } // Optional: chunk info for progress tracking (1-indexed)
+    chunkInfo?: { index: number; total: number }, // Optional: chunk info for progress tracking (1-indexed)
+    languageCode?: string // Optional: language code from Web Speech API config (e.g., 'vi-VN', 'en-US', 'ja-JP')
   ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
     if (!apiKey || apiKey.trim().length === 0) {
       throw new Error('Gemini API Key is required');
@@ -1029,7 +1003,8 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
           60, // maxDurationMinutes
           meetingStartTime,
           summaryPrompt,
-          fileManager
+          fileManager,
+          languageCode // Pass language code through
         );
         
         return result;
@@ -1184,113 +1159,97 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
       const adaptiveInstruction = isChunk
         ? `⚠️ QUAN TRỌNG: ĐÂY LÀ PHẦN ${chunkInfo!.index}/${chunkInfo!.total} CỦA FILE AUDIO LỚN
 
-🎯 CHIẾN LƯỢC CHO CHUNK:
-1️⃣ SUMMARY: Chỉ tóm tắt NGẮN GỌN (100-200 từ) nội dung chính trong phần này
+🎯 YÊU CẦU CHO CHUNK:
+1️⃣ SEGMENTS: Phiên âm CHI TIẾT và ĐẦY ĐỦ từng lượt nói
+   • Ghi lại CHÍNH XÁC nội dung từng câu nói (verbatim transcription)
+   • Giữ nguyên wording, KHÔNG tóm tắt hay lược bỏ nội dung
+   • Timestamp tính từ 0:00 (đầu chunk này, không phải đầu file gốc)
+   • Đảm bảo bắt TẤT CẢ nội dung trong phần này
+
+2️⃣ SUMMARY: Tóm tắt NGẮN GỌN nội dung chính trong phần này
    • Tập trung vào các điểm nổi bật, quyết định, action items
    • Không cần tóm tắt toàn diện (sẽ merge với các phần khác)
-   
-2️⃣ SEGMENTS: Phiên âm CHI TIẾT và ĐẦY ĐỦ từng lượt nói
-   • Giữ nguyên wording, không tóm tắt segments
-   • Timestamp tính từ 0:00 (đầu chunk này, không phải đầu file gốc)
-   • Đảm bảo bắt tất cả nội dung trong phần này
 
-💡 LƯU Ý: Summary ngắn gọn OK, nhưng segments phải đầy đủ và chi tiết!`
-        : durationMinutes <= 60
-        ? `AUDIO NGẮN (${durationMinutes} phút): Hãy phiên âm CHI TIẾT từng câu nói, giữ nguyên wording và ngữ điệu.`
-        : durationMinutes <= 90
-        ? `AUDIO DÀI (${durationMinutes} phút):
-1️⃣ ƯU TIÊN: Tạo summary HOÀN CHỈNH trước (~300-400 từ)
-2️⃣ SAU ĐÓ: Tóm tắt segments cô đọng, nhóm nhiều câu thành 1 segment
-3️⃣ NẾU GẦN HẾT TOKEN (ước tính ~6000 tokens đã dùng): DỪNG NGAY, đóng JSON hợp lệ. TỐT HƠN CÓ SUMMARY ĐẦY ĐỦ + ÍT SEGMENTS, hơn là BỊ CẮT NGANG.
-
-⚠️ LƯU Ý: Chỉ làm segments cho phần ĐẦU của audio nếu thấy không đủ token cho toàn bộ.`
-        : `AUDIO RẤT DÀI (${durationMinutes} phút):
-🎯 CHIẾN LƯỢC 2 BƯỚC:
-
-1️⃣ BƯỚC 1 - BẮT BUỘC: Tạo summary HOÀN CHỈNH
-   • Độ dài: ~400-500 từ
-   • Bao gồm: Chủ đề chính, quyết định quan trọng, kết luận
-   • GIỮ LẠI: Tên riêng, số liệu, deadline
-
-2️⃣ BƯỚC 2 - NẾU CÒN TOKEN: Tạo segments cực kỳ cô đọng
-   • GỘP 5-10 câu liên quan thành 1 segment
-   • CHỈ GHI ý chính, bỏ chi tiết không quan trọng
-   • THEO DÕI token usage: Nếu ước tính đã dùng ~6000 tokens → DỪNG NGAY
-   • ĐÓNG JSON đúng cú pháp: }] }
-
-⚠️ QUY TẮC VÀNG: Summary đầy đủ + Ít segments > Summary + Segments bị cắt ngang
-💡 GỢI Ý: Có thể chỉ làm 10-20 segments đại diện cho phần ĐẦU audio, sau đó dừng lại.`;
+💡 ƯU TIÊN: Segments chi tiết đầy đủ > Summary dài dòng`
+        : `AUDIO ${durationMinutes} PHÚT: Phiên âm CHI TIẾT từng câu nói, ghi lại CHÍNH XÁC nội dung (verbatim). Giữ nguyên wording và ngữ điệu.`;
 
       // Prepare request
       const endpoint = `https://generativelanguage.googleapis.com/${this.GEMINI_API_VERSION}/${modelName}:generateContent?key=${apiKey}`;
+
+      // Determine output language based on languageCode config
+      const langMap: Record<string, string> = {
+        'vi': 'Tiếng Việt', 'vi-VN': 'Tiếng Việt',
+        'en': 'English', 'en-US': 'English', 'en-GB': 'English', 'en-AU': 'English',
+        'ja': '日本語', 'ja-JP': '日本語',
+        'ko': '한국어', 'ko-KR': '한국어',
+        'zh': '中文', 'zh-CN': '中文 (简体)', 'zh-TW': '中文 (繁體)',
+        'fr': 'Français', 'fr-FR': 'Français',
+        'de': 'Deutsch', 'de-DE': 'Deutsch',
+        'es': 'Español', 'es-ES': 'Español',
+        'pt': 'Português', 'pt-BR': 'Português',
+        'th': 'ภาษาไทย', 'th-TH': 'ภาษาไทย',
+        'id': 'Bahasa Indonesia', 'id-ID': 'Bahasa Indonesia',
+      };
+      const outputLanguage = languageCode ? (langMap[languageCode] || languageCode) : 'Tiếng Việt';
+      const languageInstruction = `\n🌐 NGÔN NGỮ OUTPUT: Toàn bộ kết quả (summary và segments) PHẢI viết bằng ${outputLanguage}.`;
 
       requestBody = {
         contents: [{
           parts: [
             {
-              text: `BẠN LÀ CHUYÊN GIA GHI CHÉP CUỘC HỌP (AI SCRIBE).
-NHIỆM VỤ: Xử lý file âm thanh đầu vào để tạo ra bản ghi chép và tóm tắt điều hành.
+              text: `BẠN LÀ CHUYÊN GIA PHIÊN ÂM CUỘC HỌP (AI TRANSCRIBER).
+NHIỆM VỤ: Nghe file âm thanh và phiên âm CHI TIẾT (verbatim transcription) từng lượt nói.
 
 ${adaptiveInstruction}
+${languageInstruction}
 
 📊 NGÂN SÁCH TOKEN (OUTPUT BUDGET):
-Bạn có tối đa ~8000 tokens cho output. Âm thanh dài ${durationMinutes} phút.
+Bạn có tối đa ~${modelInfo.outputTokenLimit} tokens cho output. Âm thanh dài ${durationMinutes} phút.
 
-🎯 CHIẾN LƯỢC TỰ THÍCH NGHI:
-• AUDIO NGẮN (<10 phút): Phiên âm CHI TIẾT (Verbatim) từng câu nói
-• AUDIO VỪA (10-30 phút): Chuẩn hóa và gộp câu, giữ đầy đủ ý chính
-• AUDIO DÀI (30-60 phút): Tóm tắt THÔNG MINH mỗi lượt nói, ưu tiên thông tin quan trọng
-• AUDIO RẤT DÀI (>60 phút): Chỉ ghi ý chính + từ khóa, cực kỳ cô đọng
+HƯỚNG DẪN PHIÊN ÂM:
 
-⚠️ QUY TẮC AN TOÀN (SAFETY BREAK):
-Nếu bạn ước tính mình đã dùng ~70% token budget (khoảng 5600 tokens):
-→ NGAY LẬP TỨC chuyển sang "Chế độ khẩn cấp": Chỉ ghi TÓM TẮT CỰC NGẮN (1 câu/lượt nói) cho phần còn lại
-→ PHẢI đảm bảo ĐÓNG JSON hợp lệ: }} với đủ dấu ngoặc
-→ NGUYÊN TẮC VÀNG: TỐT HƠN LÀ NGẮN GỌN NHƯNG HOÀN CHỈNH, chứ không phải DÀI MÀ BỊ CẮT NGANG
+PHẦN 1: TÓM TẮT TỔNG QUAN (SUMMARY) - XUẤT RA TRƯỚC
+Sau khi nghe toàn bộ file âm thanh, tóm tắt nội dung cuộc họp:
+${summaryPrompt || 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, theo trình tự thời gian. Bao gồm chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'}
+Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu gạch đầu dòng. ${isChunk ? 'Giữ summary ở mức ~50-100 từ (đây là chunk, sẽ merge sau).' : 'Giữ summary ở mức ~200-400 từ.'}
 
-HƯỚNG DẪN XỬ LÝ:
-
-PHẦN 1: TÓM TẮT TỔNG QUAN (SUMMARY) - LÀM TRƯỚC
-Sau khi nghe toàn bộ file âm thanh, hãy tóm tắt nội dung cuộc họp dựa trên yêu cầu sau:
-${summaryPrompt || 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'}
-
-CHÚ Ý: Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu gạch đầu dòng. ${isChunk ? 'Giữ summary ở mức ~50-100 từ (đây là chunk, sẽ merge sau).' : 'Giữ summary ở mức ~200-300 từ.'}
-
-PHẦN 2: PHIÊN ÂM/TÓM TẮT SEGMENTS (tùy độ dài audio) - LÀM SAU
+PHẦN 2: PHIÊN ÂM CHI TIẾT (SEGMENTS) - ƯU TIÊN CAO NHẤT
 1.  Nghe toàn bộ file âm thanh.
-2.  Trích xuất nội dung chính xác (hoặc tóm tắt nếu cần).
-3.  Gán nhãn người nói nhất quán (Speaker 1, Speaker 2...). Cố gắng nhận diện tên nếu họ tự giới thiệu.
-4.  Gắn Timestamp [h:mm:ss] chính xác tại thời điểm BẮT ĐẦU lượt nói của người đó (ví dụ: 0:30, 1:05:30, 2:15:45).
-5.  Lược bỏ các từ thừa (à, ừ, ờ) nhưng giữ nguyên ý nghĩa.
-6.  Nếu âm thanh không rõ, đánh dấu là "[không rõ]".
+2.  Phiên âm CHÍNH XÁC từng câu nói (verbatim), giữ nguyên nội dung gốc.
+3.  Gán nhãn người nói nhất quán (Speaker 1, Speaker 2...). Nhận diện tên nếu họ tự giới thiệu.
+4.  Gắn Timestamp [h:mm:ss] chính xác tại thời điểm BẮT ĐẦU lượt nói (ví dụ: 0:30, 1:05:30).
+5.  Lược bỏ từ đệm vô nghĩa (à, ừ, ờ, ừm) nhưng GIỮ NGUYÊN toàn bộ nội dung có ý nghĩa.
+6.  Sửa lỗi nhận dạng giọng nói rõ ràng (ví dụ: "công ti" → "công ty").
+7.  Thêm dấu câu, viết hoa danh từ riêng.
+8.  Nếu âm thanh không rõ, đánh dấu "[không rõ]".
 
-🎯 BẮT BUỘC GIỮ LẠI (dù có tóm tắt): 
-   • Số liệu chính xác
-   • Ngày tháng, deadline
-   • Quyết định quan trọng
-   • Yêu cầu hành động (action items)
+⚠️ NGUYÊN TẮC QUAN TRỌNG:
+   • KHÔNG tóm tắt hoặc rút gọn nội dung segments
+   • KHÔNG gộp nhiều lượt nói thành một segment
+   • KHÔNG bỏ sót câu nói nào có nội dung
+   • Mỗi lượt nói liên tục của một người = 1 segment
+   • GIỮ LẠI: Số liệu, ngày tháng, deadline, tên riêng, quyết định, action items
 
-⚠️ QUAN TRỌNG - THỨ TỰ OUTPUT:
-- Trả về "summary" TRƯỚC (Phần 1)
-- Sau đó mới đến "segments" (Phần 2)
+⚠️ QUY TẮC AN TOÀN:
+Nếu gần hết token budget → ĐÓNG JSON hợp lệ ngay. Summary đã xuất trước nên an toàn.
+PHẢI đảm bảo JSON luôn hợp lệ dù segments bị cắt ngắn.
 
-Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, không có lời dẫn. Cấu trúc như sau:
+Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, không có lời dẫn. Cấu trúc:
 {
-  "summary": "Nội dung tóm tắt chi tiết về cuộc họp dựa trên yêu cầu ở trên. Viết thành văn xuôi liền mạch.",
+  "summary": "Tóm tắt nội dung cuộc họp dạng văn xuôi liền mạch.",
   "segments": [
     {
       "timestamp": "0:00",
       "speaker": "Người nói 1",
-      "text": "nội dung tóm tắt của cả lượt nói"
+      "text": "nội dung phiên âm chi tiết của lượt nói"
     },
     {
       "timestamp": "0:45",
       "speaker": "Người nói 2",
-      "text": "nội dung tóm tắt của cả lượt nói"
+      "text": "nội dung phiên âm chi tiết của lượt nói"
     }
   ]
-}
-HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh trong ngân sách token!`
+}`
             },
             {
               inline_data: {
@@ -2162,7 +2121,8 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
     maxDurationMinutes: number = 60,
     meetingStartTime?: Date, // Meeting start time for accurate timestamp calculation
     summaryPrompt?: string, // OPTIONAL: user-provided prompt text for the summary field
-    fileManager?: FileManagerService // Optional: for saving debug logs to project folder
+    fileManager?: FileManagerService, // Optional: for saving debug logs to project folder
+    languageCode?: string // Optional: language code from Web Speech API config
   ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
     const maxSizeMB = maxFileSizeMB;
 
@@ -2298,7 +2258,8 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
           meetingStartTime, // Pass meeting start time for accurate timestamps
           summaryPrompt, // Pass user-provided summary prompt through
           fileManager, // Pass fileManager for debug logs
-          { index: i + 1, total: chunkBoundaries.length } // Pass chunk info for context-aware prompting
+          { index: i + 1, total: chunkBoundaries.length }, // Pass chunk info for context-aware prompting
+          languageCode // Pass language code through
         );
         
         // Adjust timestamps for this chunk

@@ -826,7 +826,9 @@ export const App: React.FC = () => {
             maxFileSizeMB,
             meetingStartTime,
             config.summaryPrompt,
-            fileManagerRef.current // Pass fileManager for debug logs
+            fileManagerRef.current, // Pass fileManager for debug logs
+            undefined, // chunkInfo
+            config.languageCode // Pass language code for output language
           );
 
           // Adjust timestamps to match original audio
@@ -1331,7 +1333,9 @@ export const App: React.FC = () => {
               maxFileSizeMB,
               meetingStartTime,
               config?.summaryPrompt,
-              fileManagerRef.current // Pass fileManager for debug logs
+              fileManagerRef.current, // Pass fileManager for debug logs
+              undefined, // chunkInfo
+              config?.languageCode // Pass language code for output language
             );
             
             // Close progress notification on success
