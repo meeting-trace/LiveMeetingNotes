@@ -1211,7 +1211,7 @@ HƯỚNG DẪN PHIÊN ÂM:
 PHẦN 1: TÓM TẮT TỔNG QUAN (SUMMARY) - XUẤT RA TRƯỚC
 Sau khi nghe toàn bộ file âm thanh, tóm tắt nội dung cuộc họp:
 ${summaryPrompt || 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, theo trình tự thời gian. Bao gồm chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'}
-Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu gạch đầu dòng. ${isChunk ? 'Giữ summary ở mức ~50-100 từ (đây là chunk, sẽ merge sau).' : 'Giữ summary ở mức ~200-400 từ.'}
+Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu gạch đầu dòng. ${isChunk ? 'Giữ summary ở mức ~100-200 từ (đây là chunk, sẽ merge sau).' : 'Giữ summary ở mức ~300-500 từ.'}
 
 PHẦN 2: PHIÊN ÂM CHI TIẾT (SEGMENTS) - ƯU TIÊN CAO NHẤT
 1.  Nghe toàn bộ file âm thanh.
@@ -2393,7 +2393,8 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
           modelName,
           allSummaries,
           summaryPrompt,
-          fileManager
+          fileManager,
+          languageCode
         );
         
         if (onProgress) onProgress(98, `✅ Đã tổng hợp tóm tắt hoàn chỉnh (${combinedSummary.length} ký tự)`);
@@ -2455,7 +2456,8 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
     modelName: string,
     summaries: string[],
     userPrompt?: string,
-    fileManager?: FileManagerService
+    fileManager?: FileManagerService,
+    languageCode?: string
   ): Promise<string> {
     if (summaries.length === 0) {
       throw new Error('No summaries to merge');
@@ -2471,17 +2473,44 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
       .map((summary, index) => `### Phần ${index + 1}/${summaries.length}\n${summary.replace(/^Phần \d+\/\d+: /, '')}`)
       .join('\n\n');
 
+    // Determine output language
+    const langMap: Record<string, string> = {
+      'vi': 'Tiếng Việt', 'vi-VN': 'Tiếng Việt',
+      'en': 'English', 'en-US': 'English', 'en-GB': 'English', 'en-AU': 'English',
+      'ja': '日本語', 'ja-JP': '日本語',
+      'ko': '한국어', 'ko-KR': '한국어',
+      'zh': '中文', 'zh-CN': '中文 (简体)', 'zh-TW': '中文 (繁體)',
+      'fr': 'Français', 'fr-FR': 'Français',
+      'de': 'Deutsch', 'de-DE': 'Deutsch',
+      'es': 'Español', 'es-ES': 'Español',
+      'pt': 'Português', 'pt-BR': 'Português',
+      'th': 'ภาษาไทย', 'th-TH': 'ภาษาไทย',
+      'id': 'Bahasa Indonesia', 'id-ID': 'Bahasa Indonesia',
+    };
+    const outputLanguage = languageCode ? (langMap[languageCode] || languageCode) : 'Tiếng Việt';
+
     const mergePrompt = `BẠN LÀ CHUYÊN GIA TÓM TẮT CUỘC HỌP.
 
 NHIỆM VỤ: Tổng hợp các tóm tắt riêng lẻ từ các đoạn audio thành MỘT tóm tắt tổng quan liền mạch cho toàn bộ cuộc họp.
 
+🌐 NGÔN NGỮ: Viết toàn bộ kết quả bằng ${outputLanguage}.
+
 YÊU CẦU:
 1. ĐỌC kỹ tất cả các tóm tắt bên dưới (mỗi tóm tắt tương ứng với 1 đoạn audio)
-2. TỔNG HỢP thành 1 đoạn văn xuôi liền mạch, KHÔNG dùng dấu gạch đầu dòng
+2. TỔNG HỢP thành 1 bài viết dạng VĂN XUÔI liền mạch gồm nhiều đoạn (paragraphs)
 3. GIỮ LẠI toàn bộ thông tin quan trọng: số liệu, ngày tháng, tên riêng, quyết định, action items
 4. SẮP XẾP theo trình tự thời gian logic (từ đầu đến cuối cuộc họp)
 5. LOẠI BỎ thông tin trùng lặp giữa các đoạn
 6. ĐẢM BẢO văn phong chuyên nghiệp, mạch lạc, dễ hiểu
+
+🚫 TUYỆT ĐỐI CẤM (STRICTLY FORBIDDEN):
+   • KHÔNG dùng dấu gạch đầu dòng (-, •, *, ▪)
+   • KHÔNG dùng danh sách đánh số (1. 2. 3.)
+   • KHÔNG dùng tiêu đề/heading (##, ###, **Tiêu đề:**)
+   • KHÔNG chia thành các mục riêng biệt
+   • CHỈ viết VĂN XUÔI thuần túy, nối các ý bằng liên từ và câu chuyển tiếp
+
+✅ ĐÚNG FORMAT: Các đoạn văn (paragraphs) nối tiếp nhau, mỗi đoạn 3-5 câu, cách nhau bởi 1 dòng trống.
 
 ${userPrompt ? `\nYÊU CẦU BỔ SUNG TỪ NGƯỜI DÙNG:\n${userPrompt}\n` : ''}
 
@@ -2491,7 +2520,7 @@ ${summariesText}
 
 === OUTPUT ===
 
-Hãy trả về MỘT đoạn văn xuôi tổng hợp, KHÔNG có tiêu đề, KHÔNG có dấu gạch đầu dòng, KHÔNG có cấu trúc danh sách.`;
+Hãy trả về MỘT bài viết dạng văn xuôi tổng hợp. Nhớ: TUYỆT ĐỐI KHÔNG dùng bullet points, danh sách đánh số, hay bất kỳ dạng list nào.`;
 
     try {
       // Get model info to retrieve outputTokenLimit dynamically
