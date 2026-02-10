@@ -91,7 +91,6 @@ export const NotesEditor: React.FC<Props> = ({
   const speakerRefs = useRef<Map<number, TextAreaRef>>(new Map());
   const textRefs = useRef<Map<number, TextAreaRef>>(new Map());
   const syncDebounceRef = useRef<NodeJS.Timeout | null>(null);
-  const undoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // ✅ NEW CLEAN STATE: Single source of truth - array of NoteLine objects
   const [lines, setLines] = useState<NoteLine[]>(() => 
@@ -116,7 +115,6 @@ export const NotesEditor: React.FC<Props> = ({
   // Undo/Redo history (now stores NoteLine[] directly)
   const [history, setHistory] = useState<Array<NoteLine[]>>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Sync lines when parent props change (load project, undo/redo from parent)
   React.useEffect(() => {
@@ -376,16 +374,6 @@ export const NotesEditor: React.FC<Props> = ({
     }
     setHistory(newHistory);
   }, [lines, history, historyIndex]);
-  
-  // ✅ Debounced auto-save to history (for typing)
-  const debouncedSaveToHistory = useCallback(() => {
-    if (undoTimeoutRef.current) {
-      clearTimeout(undoTimeoutRef.current);
-    }
-    undoTimeoutRef.current = setTimeout(() => {
-      saveToHistory();
-    }, 1000); // Save after 1 second of inactivity
-  }, [saveToHistory]);
   
   // Handle delete selected lines
   // ✅ Handle delete selected lines (REFACTORED with NoteLine[])
