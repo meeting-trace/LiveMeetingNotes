@@ -42,6 +42,14 @@ export interface TimestampEntry {
   text: string;
 }
 
+// NoteLine: Clean data structure for notes editor
+// Each line is a self-contained object (no more separate Maps)
+export interface NoteLine {
+  content: string;        // Text content of the line
+  timestamp?: number;     // Timestamp in milliseconds (optional)
+  speaker?: string;       // Speaker name (optional)
+}
+
 export interface AudioRecorderState {
   isRecording: boolean;
   duration: number;

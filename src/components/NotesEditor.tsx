@@ -1,6 +1,7 @@
 import React, { useRef, useState, useCallback } from 'react';
 import { Input } from 'antd';
 import type { TextAreaRef } from 'antd/es/input/TextArea';
+import type { NoteLine } from '../types/types';
 
 const { TextArea } = Input;
 
@@ -15,6 +16,61 @@ interface Props {
   initialSpeakers?: Map<number, string>; // Initial speakers data when loading project
   timestampDelay?: number; // Timestamp delay in seconds (from config, default: 8)
 }
+
+// Helper: Convert NoteLine[] to legacy format (for parent compatibility)
+const linesToLegacyFormat = (lines: NoteLine[]) => {
+  const BLOCK_SEPARATOR = '§§§';
+  const notesString = lines.map(l => l.content).join(BLOCK_SEPARATOR);
+  
+  const timestampMap = new Map<number, number>();
+  const speakersMap = new Map<number, string>();
+  
+  let pos = 0;
+  lines.forEach((line, index) => {
+    if (line.timestamp !== undefined) {
+      timestampMap.set(pos, line.timestamp);
+    }
+    if (line.speaker) {
+      speakersMap.set(index, line.speaker);
+    }
+    pos += line.content.length;
+    if (index < lines.length - 1) {
+      pos += BLOCK_SEPARATOR.length;
+    }
+  });
+  
+  return { notesString, timestampMap, speakersMap };
+};
+
+// Helper: Convert legacy format to NoteLine[]
+const legacyFormatToLines = (
+  notes: string,
+  timestampMap: Map<number, number>,
+  speakersMap: Map<number, string>
+): NoteLine[] => {
+  const BLOCK_SEPARATOR = '§§§';
+  const contentArray = notes.split(BLOCK_SEPARATOR);
+  
+  const lines: NoteLine[] = contentArray.map((content, index) => ({
+    content,
+    timestamp: undefined,
+    speaker: speakersMap.get(index)
+  }));
+  
+  // Map position-based timestamps to line indices
+  let pos = 0;
+  lines.forEach((line, index) => {
+    if (timestampMap.has(pos)) {
+      line.timestamp = timestampMap.get(pos);
+    }
+    pos += line.content.length;
+    if (index < lines.length - 1) {
+      pos += BLOCK_SEPARATOR.length;
+    }
+  });
+  
+  return lines;
+};
 
 export const NotesEditor: React.FC<Props> = ({
   notes,
@@ -35,240 +91,89 @@ export const NotesEditor: React.FC<Props> = ({
   const speakerRefs = useRef<Map<number, TextAreaRef>>(new Map());
   const textRefs = useRef<Map<number, TextAreaRef>>(new Map());
   const syncDebounceRef = useRef<NodeJS.Timeout | null>(null);
-  const notesDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const undoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Local notes state for immediate UI updates
-  const [localNotes, setLocalNotes] = useState<string>(notes);
+  // ✅ NEW CLEAN STATE: Single source of truth - array of NoteLine objects
+  const [lines, setLines] = useState<NoteLine[]>(() => 
+    legacyFormatToLines(notes, timestampMap, initialSpeakers || new Map())
+  );
+  
+  // Track if user is actively editing to prevent sync conflicts
+  const isEditingRef = useRef<boolean>(false);
+  const editingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Multi-line selection states
   const [selectedLines, setSelectedLines] = useState<Set<number>>(new Set());
   const [lastClickedLine, setLastClickedLine] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   
-  // Undo/Redo history
-  const [history, setHistory] = useState<Array<{ notes: string; timestamps: Map<number, number>; speakers: Map<number, string> }>>([]);
+  // Undo/Redo history (now stores NoteLine[] directly)
+  const [history, setHistory] = useState<Array<NoteLine[]>>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastSavedNotesRef = useRef<string>('');
   
-  // Use line-index-based timestamps (lineIndex → dateTimeMs) as source of truth
-  const BLOCK_SEPARATOR = '§§§';
-  
-  // Track if user is actively editing to prevent sync conflicts
-  const isEditingRef = useRef<boolean>(false);
-  const editingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Sync localNotes when notes prop changes (e.g., load project, undo/redo from parent)
-  // But only if user is not actively editing to avoid overwriting their changes
+  // Sync lines when parent props change (load project, undo/redo from parent)
+  // But only if user is not actively editing
   React.useEffect(() => {
-    if (!isEditingRef.current && notes !== localNotes) {
-      setLocalNotes(notes);
+    if (!isEditingRef.current) {
+      const newLines = legacyFormatToLines(notes, timestampMap, initialSpeakers || new Map());
+      setLines(newLines);
     }
-  }, [notes, localNotes]);
+  }, [notes, timestampMap, initialSpeakers]);
   
-  const [lineTimestamps, setLineTimestamps] = useState<Map<number, number>>(() => {
-    // Initialize from parent's timestampMap only once on mount
-    const initialLineTimestamps = new Map<number, number>();
-    const lines = notes.split(BLOCK_SEPARATOR);
-    
-    timestampMap.forEach((time, position) => {
-      let currentPos = 0;
-      for (let i = 0; i < lines.length; i++) {
-        const lineStartPos = i === 0 ? 0 : currentPos;
-        if (position === lineStartPos) {
-          initialLineTimestamps.set(i, time);
-          break;
-        }
-        currentPos += lines[i].length + 1;
-      }
-    });
-    
-    return initialLineTimestamps;
-  });
-  
-  // Speaker names for each line (lineIndex → speakerName)
-  const [lineSpeakers, setLineSpeakers] = useState<Map<number, string>>(() => {
-    // Initialize from initialSpeakers if provided (when loading project)
-    return initialSpeakers ? new Map(initialSpeakers) : new Map();
-  });
-
-  // Sync lineTimestamps when parent timestampMap changes (e.g., when loading project)
-  React.useEffect(() => {
-    const newLineTimestamps = new Map<number, number>();
-    const lines = notes.split(BLOCK_SEPARATOR);
-    
-    timestampMap.forEach((time, position) => {
-      let currentPos = 0;
-      for (let i = 0; i < lines.length; i++) {
-        const lineStartPos = i === 0 ? 0 : currentPos;
-        if (position === lineStartPos) {
-          newLineTimestamps.set(i, time);
-          break;
-        }
-        currentPos += lines[i].length + (i < lines.length - 1 ? BLOCK_SEPARATOR.length : 0);
-      }
-    });
-    
-    setLineTimestamps(newLineTimestamps);
-    // console.log('📊 NotesEditor synced lineTimestamps:', {
-    //   timestampMapSize: timestampMap.size,
-    //   lineTimestampsSize: newLineTimestamps.size,
-    //   linesCount: lines.length,
-    //   sampleLineTimestamps: Array.from(newLineTimestamps.entries()).slice(0, 3)
-    // });
-  }, [timestampMap, notes]);
-  
-  // Sync lineSpeakers ONLY when initialSpeakers is externally updated (restore/load), not during typing
-  const lastSyncedInitialSpeakersRef = React.useRef<Map<number, string>>(new Map());
-  const lineSpeakersRef = React.useRef<Map<number, string>>(lineSpeakers);
-  
-  // Keep ref in sync with state
-  React.useEffect(() => {
-    lineSpeakersRef.current = lineSpeakers;
-  }, [lineSpeakers]);
-  
-  React.useEffect(() => {
-    if (!initialSpeakers) return;
-    
-    // Check if initialSpeakers is different from what we last synced
-    let isDifferentFromLastSync = initialSpeakers.size !== lastSyncedInitialSpeakersRef.current.size;
-    if (!isDifferentFromLastSync) {
-      for (const [key, value] of initialSpeakers.entries()) {
-        if (lastSyncedInitialSpeakersRef.current.get(key) !== value) {
-          isDifferentFromLastSync = true;
-          break;
-        }
-      }
-    }
-    
-    // Also check if it's different from current lineSpeakers (using ref to avoid dependency)
-    let isDifferentFromCurrent = initialSpeakers.size !== lineSpeakersRef.current.size;
-    if (!isDifferentFromCurrent) {
-      for (const [key, value] of initialSpeakers.entries()) {
-        if (lineSpeakersRef.current.get(key) !== value) {
-          isDifferentFromCurrent = true;
-          break;
-        }
-      }
-    }
-    
-    // Only sync if initialSpeakers changed externally (not from our own updates)
-    if (isDifferentFromLastSync && isDifferentFromCurrent) {
-      // console.log('🔄 Syncing lineSpeakers from initialSpeakers:', { 
-      //   initialSize: initialSpeakers.size, 
-      //   currentSize: lineSpeakersRef.current.size,
-      //   initialEntries: Array.from(initialSpeakers.entries()),
-      //   currentEntries: Array.from(lineSpeakersRef.current.entries())
-      // });
-      setLineSpeakers(new Map(initialSpeakers));
-      lastSyncedInitialSpeakersRef.current = new Map(initialSpeakers);
-    }
-  }, [initialSpeakers]); // REMOVED lineSpeakers from deps - use ref instead
-  
-  // Sync speakers back to parent when they change (with deep equality check to avoid loops)
-  const lastNotifiedSpeakersRef = React.useRef<Map<number, string>>(new Map());
-  React.useEffect(() => {
+  // ✅ Sync to parent (convert NoteLine[] back to legacy format)
+  const syncToParent = useCallback((newLines: NoteLine[]) => {
+    const { notesString, timestampMap: newTimestampMap, speakersMap } = linesToLegacyFormat(newLines);
+    onNotesChange(notesString);
+    onTimestampMapChange(newTimestampMap);
     if (onSpeakersChange) {
-      // Deep compare with last notified state
-      let isDifferent = lineSpeakers.size !== lastNotifiedSpeakersRef.current.size;
-      if (!isDifferent) {
-        for (const [key, value] of lineSpeakers.entries()) {
-          if (lastNotifiedSpeakersRef.current.get(key) !== value) {
-            isDifferent = true;
-            break;
-          }
-        }
-      }
-      
-      if (isDifferent) {
-        // console.log('🔔 Notifying parent about speaker changes:', { 
-        //   size: lineSpeakers.size, 
-        //   entries: Array.from(lineSpeakers.entries()) 
-        // });
-        onSpeakersChange(lineSpeakers);
-        lastNotifiedSpeakersRef.current = new Map(lineSpeakers);
-      }
+      onSpeakersChange(speakersMap);
     }
-  }, [lineSpeakers, onSpeakersChange]);
+  }, [onNotesChange, onTimestampMapChange, onSpeakersChange]);
   
-  // Listen for insert-note-at-time event from AudioPlayer
+  // Debounced sync to reduce parent updates during typing
+  const debouncedSyncToParent = useCallback((newLines: NoteLine[]) => {
+    if (syncDebounceRef.current) {
+      clearTimeout(syncDebounceRef.current);
+    }
+    syncDebounceRef.current = setTimeout(() => {
+      syncToParent(newLines);
+    }, 300);
+  }, [syncToParent]);
+  
+  // ✅ Listen for insert-note-at-time event from AudioPlayer (SIMPLIFIED)
   React.useEffect(() => {
     const handleInsertNote = (event: CustomEvent) => {
       const { time } = event.detail; // time in seconds
       const timestampMs = recordingStartTime + time * 1000;
       
-      // console.log('📝 Insert note at time:', { time, timestampMs, recordingStartTime });
-      
-      // Build a mapping of line index to timestamp for all current lines
-      const lines = notes.split(BLOCK_SEPARATOR);
-      
-      // Build array of [lineIndex, timestamp] for lines with timestamps
-      const timestampedLines: Array<[number, number]> = [];
-      for (let i = 0; i < lines.length; i++) {
-        const ts = lineTimestamps.get(i);
-        if (ts !== undefined) {
-          timestampedLines.push([i, ts]);
-        }
-      }
-      
-      // Sort by timestamp
-      timestampedLines.sort((a, b) => a[1] - b[1]);
-      
-      // Find where to insert in the PHYSICAL array (not the sorted array)
-      // We need to insert after the last line whose timestamp is < timestampMs
+      // Find where to insert based on timestamp order
       let insertIndex = lines.length; // Default: append at end
       
-      for (let i = timestampedLines.length - 1; i >= 0; i--) {
-        const [lineIdx, lineTime] = timestampedLines[i];
-        if (lineTime < timestampMs) {
-          // Insert right after this line
-          insertIndex = lineIdx + 1;
+      for (let i = lines.length - 1; i >= 0; i--) {
+        if (lines[i].timestamp !== undefined && lines[i].timestamp! < timestampMs) {
+          insertIndex = i + 1;
           break;
         }
       }
       
       // If all lines have timestamps > new timestamp, insert at beginning
-      if (insertIndex === lines.length && timestampedLines.length > 0) {
-        const firstLineTime = timestampedLines[0][1];
-        if (timestampMs < firstLineTime) {
-          insertIndex = 0;
-        }
+      if (insertIndex === lines.length && lines.length > 0 && lines[0].timestamp !== undefined && timestampMs < lines[0].timestamp!) {
+        insertIndex = 0;
       }
       
-      // console.log('📍 Inserting at index:', insertIndex, 'with timestamp:', timestampMs);
+      // ✅ Create new line and insert (ONE operation, no shifting needed!)
+      const newLine: NoteLine = {
+        content: '',
+        timestamp: timestampMs,
+        speaker: undefined
+      };
       
-      // Insert new empty line at the calculated position
-      lines.splice(insertIndex, 0, '');
+      const newLines = [...lines];
+      newLines.splice(insertIndex, 0, newLine);
       
-      // Update lineTimestamps: shift all lines at or after insertIndex
-      const newLineTimestamps = new Map<number, number>();
-      lineTimestamps.forEach((time, lineIndex) => {
-        if (lineIndex < insertIndex) {
-          newLineTimestamps.set(lineIndex, time);
-        } else {
-          newLineTimestamps.set(lineIndex + 1, time);
-        }
-      });
-      newLineTimestamps.set(insertIndex, timestampMs);
-      
-      // Update lineSpeakers: shift all speakers at or after insertIndex
-      const newLineSpeakers = new Map<number, string>();
-      lineSpeakers.forEach((speaker, lineIndex) => {
-        if (lineIndex < insertIndex) {
-          newLineSpeakers.set(lineIndex, speaker);
-        } else {
-          newLineSpeakers.set(lineIndex + 1, speaker);
-        }
-      });
-      // New line has no speaker initially (empty)
-      
-      // console.log('📊 Speaker map before:', Array.from(lineSpeakers.entries()));
-      // console.log('📊 Speaker map after:', Array.from(newLineSpeakers.entries()));
-      
-      setLineTimestamps(newLineTimestamps);
-      setLineSpeakers(newLineSpeakers);
-      updateNotesImmediate(lines);
-      syncToParentTimestampMap(lines, newLineTimestamps);
+      setLines(newLines);
+      syncToParent(newLines);
       
       // Focus the new line
       setTimeout(() => {
@@ -284,7 +189,7 @@ export const NotesEditor: React.FC<Props> = ({
     return () => {
       window.removeEventListener('insert-note-at-time', handleInsertNote as EventListener);
     };
-  }, [notes, lineTimestamps, lineSpeakers, recordingStartTime, onNotesChange]);
+  }, [lines, recordingStartTime, syncToParent]); // ✅ Clean dependencies
 
   const formatDatetime = (datetimeMs: number): string => {
     const date = new Date(datetimeMs);
@@ -329,8 +234,9 @@ export const NotesEditor: React.FC<Props> = ({
     return date.getTime();
   };
 
+  // ✅ Datetime click (REFACTORED with NoteLine[])
   const handleDatetimeClick = (index: number) => {
-    const timeMs = lineTimestamps.get(index);
+    const timeMs = lines[index].timestamp;
     if (timeMs !== undefined) {
       setEditingDatetimeIndex(index);
       setEditingDatetimeValue(formatDatetime(timeMs));
@@ -341,16 +247,15 @@ export const NotesEditor: React.FC<Props> = ({
     setEditingDatetimeValue(value);
   };
 
+  // ✅ Datetime blur (REFACTORED with NoteLine[])
   const handleDatetimeBlur = () => {
     if (editingDatetimeIndex !== null) {
       const newTimeMs = parseDatetime(editingDatetimeValue);
       if (newTimeMs !== null) {
-        const newLineTimestamps = new Map(lineTimestamps);
-        newLineTimestamps.set(editingDatetimeIndex, newTimeMs);
-        setLineTimestamps(newLineTimestamps);
-        
-        const lines = notes.split(BLOCK_SEPARATOR);
-        syncToParentTimestampMap(lines, newLineTimestamps);
+        const newLines = [...lines];
+        newLines[editingDatetimeIndex] = { ...newLines[editingDatetimeIndex], timestamp: newTimeMs };
+        setLines(newLines);
+        syncToParent(newLines);
       }
     }
     setEditingDatetimeIndex(null);
@@ -425,65 +330,63 @@ export const NotesEditor: React.FC<Props> = ({
     }
   };
   
+  // ✅ Save current state to history (REFACTORED with NoteLine[])
+  const saveToHistory = useCallback(() => {
+    const newHistory = history.slice(0, historyIndex + 1);
+    // Deep clone lines to avoid reference issues
+    const linesCopy = lines.map(line => ({ ...line }));
+    newHistory.push(linesCopy);
+    
+    // Limit history to 50 entries
+    if (newHistory.length > 50) {
+      newHistory.shift();
+    } else {
+      setHistoryIndex(historyIndex + 1);
+    }
+    setHistory(newHistory);
+  }, [lines, history, historyIndex]);
+  
+  // ✅ Debounced auto-save to history (for typing)
+  const debouncedSaveToHistory = useCallback(() => {
+    if (undoTimeoutRef.current) {
+      clearTimeout(undoTimeoutRef.current);
+    }
+    undoTimeoutRef.current = setTimeout(() => {
+      saveToHistory();
+    }, 1000); // Save after 1 second of inactivity
+  }, [saveToHistory]);
+  
   // Handle delete selected lines
-  const handleDeleteSelected = () => {
+  // ✅ Handle delete selected lines (REFACTORED with NoteLine[])
+  const handleDeleteSelected = useCallback(() => {
     if (selectedLines.size === 0) return;
     
     saveToHistory();
     
-    const lines = notes.split(BLOCK_SEPARATOR);
-    const indicesToDelete = Array.from(selectedLines).sort((a, b) => b - a); // Delete from end to start
+    // Delete from end to start to maintain correct indices
+    const indicesToDelete = Array.from(selectedLines).sort((a, b) => b - a);
+    const newLines = [...lines];
     
     indicesToDelete.forEach(idx => {
-      lines.splice(idx, 1);
+      newLines.splice(idx, 1);
     });
     
-    // Update timestamps
-    const newLineTimestamps = new Map<number, number>();
-    const deletedSet = new Set(indicesToDelete);
-    let offset = 0;
-    
-    lineTimestamps.forEach((time, lineIndex) => {
-      if (deletedSet.has(lineIndex)) {
-        offset++;
-      } else {
-        const newIndex = lineIndex - offset;
-        newLineTimestamps.set(newIndex, time);
-      }
-    });
-    
-    // Update speakers - same logic as timestamps
-    const newLineSpeakers = new Map<number, string>();
-    offset = 0;
-    
-    lineSpeakers.forEach((speaker, lineIndex) => {
-      if (deletedSet.has(lineIndex)) {
-        offset++;
-      } else {
-        const newIndex = lineIndex - offset;
-        newLineSpeakers.set(newIndex, speaker);
-      }
-    });
-    
-    setLineTimestamps(newLineTimestamps);
-    setLineSpeakers(newLineSpeakers);
+    setLines(newLines);
     setSelectedLines(new Set());
-    updateNotesImmediate(lines);
-    syncToParentTimestampMap(lines, newLineTimestamps);
-  };
+    syncToParent(newLines);
+  }, [selectedLines, lines, saveToHistory, syncToParent]);
   
-  // Handle copy selected lines
-  const handleCopySelected = () => {
+  // ✅ Handle copy selected lines (REFACTORED with NoteLine[])
+  const handleCopySelected = useCallback(() => {
     if (selectedLines.size === 0) return;
     
-    const lines = notes.split(BLOCK_SEPARATOR);
     const selectedIndices = Array.from(selectedLines).sort((a, b) => a - b);
-    const textToCopy = selectedIndices.map(idx => lines[idx]).join('\n');
+    const textToCopy = selectedIndices.map(idx => lines[idx].content).join('\n');
     
     navigator.clipboard.writeText(textToCopy).then(() => {
       // console.log('📋 Copied selected lines to clipboard');
     });
-  };
+  }, [selectedLines, lines]);
   
   // Global mouse up handler to end drag selection
   React.useEffect(() => {
@@ -497,42 +400,33 @@ export const NotesEditor: React.FC<Props> = ({
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
   }, [isDragging]);
   
-  // Global keyboard handler
+  // ✅ Global keyboard handler (REFACTORED with NoteLine[])
   React.useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+Z: Undo (works even when textarea is focused)
+      // Ctrl+Z: Undo
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         if (historyIndex > 0) {
           e.preventDefault();
           const prevState = history[historyIndex - 1];
           setHistoryIndex(historyIndex - 1);
-          onNotesChange(prevState.notes);
-          setLineTimestamps(new Map(prevState.timestamps));
-          setLineSpeakers(new Map(prevState.speakers));
-          const lines = prevState.notes.split(BLOCK_SEPARATOR);
-          syncToParentTimestampMap(lines, prevState.timestamps);
-          // Clear selection after undo
+          setLines(prevState);
+ syncToParent(prevState);
           setSelectedLines(new Set());
         }
       }
-      // Ctrl+Shift+Z or Ctrl+Y: Redo (works even when textarea is focused)
+      // Ctrl+Shift+Z or Ctrl+Y: Redo
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) {
         if (historyIndex < history.length - 1) {
           e.preventDefault();
           const nextState = history[historyIndex + 1];
           setHistoryIndex(historyIndex + 1);
-          onNotesChange(nextState.notes);
-          setLineTimestamps(new Map(nextState.timestamps));
-          setLineSpeakers(new Map(nextState.speakers));
-          const lines = nextState.notes.split(BLOCK_SEPARATOR);
-          syncToParentTimestampMap(lines, nextState.timestamps);
-          // Clear selection after redo
+          setLines(nextState);
+          syncToParent(nextState);
           setSelectedLines(new Set());
         }
       }
       // Ctrl+C: Copy selected lines
       else if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedLines.size > 0) {
-        // Only handle if not inside textarea (let textarea handle its own copy)
         if (document.activeElement?.tagName !== 'TEXTAREA') {
           e.preventDefault();
           handleCopySelected();
@@ -540,7 +434,6 @@ export const NotesEditor: React.FC<Props> = ({
       }
       // Delete or Backspace: Delete selected lines
       else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedLines.size > 0) {
-        // Only handle if not inside textarea
         if (document.activeElement?.tagName !== 'TEXTAREA') {
           e.preventDefault();
           handleDeleteSelected();
@@ -550,13 +443,10 @@ export const NotesEditor: React.FC<Props> = ({
     
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [history, historyIndex, selectedLines, notes, lineTimestamps]);
+  }, [history, historyIndex, selectedLines, syncToParent, handleCopySelected, handleDeleteSelected]);
 
+  // ✅ Handle line content change (SIMPLIFIED with NoteLine[])
   const handleLineChange = (index: number, value: string) => {
-    const BLOCK_SEPARATOR = '§§§';
-    const lines = localNotes.split(BLOCK_SEPARATOR);
-    const oldLine = lines[index];
-    
     // Mark as actively editing
     isEditingRef.current = true;
     if (editingTimeoutRef.current) {
@@ -564,184 +454,58 @@ export const NotesEditor: React.FC<Props> = ({
     }
     editingTimeoutRef.current = setTimeout(() => {
       isEditingRef.current = false;
-    }, 500); // Consider editing stopped after 500ms of inactivity
+    }, 500);
     
-    // Don't auto-delete line when it becomes empty
-    // Let user explicitly delete via Backspace/Delete keys (handled in handleKeyDown)
-    // Just update the content
-    lines[index] = value;
-    const newNotes = lines.join(BLOCK_SEPARATOR);
+    const oldLine = lines[index];
+    const newLines = [...lines];
+    newLines[index] = { ...oldLine, content: value };
     
-    // Update local state immediately for responsive UI
-    setLocalNotes(newNotes);
-    
-    // Use short debounce (100ms) to reduce re-renders while maintaining responsiveness
-    // This balances between autosave functionality and performance
-    debouncedNotesChange(newNotes);
+    setLines(newLines);
     
     // Auto-create timestamp: Only in Live Mode when line goes from empty to having content
     if (isLiveMode) {
-      const oldLineEmpty = oldLine.trim().length === 0;
+      const oldLineEmpty = oldLine.content.trim().length === 0;
       const newLineHasContent = value.trim().length > 0;
       
-      if (oldLineEmpty && newLineHasContent && !lineTimestamps.has(index)) {
-        // Save datetime with delay offset (định gõ note thường chậm hơn người nói)
+      if (oldLineEmpty && newLineHasContent && oldLine.timestamp === undefined) {
         const currentDatetime = Date.now() - (timestampDelay * 1000);
-        // console.log('✅ Creating timestamp:', { index, currentDatetime, delay: timestampDelay });
-        
-        const newLineTimestamps = new Map(lineTimestamps);
-        newLineTimestamps.set(index, currentDatetime);
-        setLineTimestamps(newLineTimestamps);
-        
-        // Immediate sync for timestamp creation
-        onNotesChange(newNotes); // Call immediately for timestamp creation
-        syncToParentTimestampMap(lines, newLineTimestamps);
+        newLines[index].timestamp = currentDatetime;
+        setLines(newLines);
+        syncToParent(newLines); // Immediate sync for timestamp creation
         return;
       }
     }
-    // In Loaded Mode: Never auto-create timestamp, user must use right-click on waveform
     
-    // Use debounced callbacks for heavy operations to improve performance
-    debouncedSyncToParent(lines, lineTimestamps); // Debounced sync
-    debouncedSaveToHistory(); // Auto-save after typing
+    // Debounced sync to parent
+    debouncedSyncToParent(newLines);
   };
   
-  // Handle speaker change with auto-timestamp
+  // ✅ Handle speaker change (SIMPLIFIED with NoteLine[])
   const handleSpeakerChange = (index: number, value: string) => {
-    const oldSpeaker = lineSpeakers.get(index) || '';
+    const oldLine = lines[index];
+    const newLines = [...lines];
+    newLines[index] = { ...oldLine, speaker: value || undefined };
     
-    console.log('🎤 handleSpeakerChange:', { index, oldSpeaker, newValue: value });
-    
-    // Update speakers map
-    const newSpeakers = new Map(lineSpeakers);
-    if (value) {
-      newSpeakers.set(index, value);
-    } else {
-      newSpeakers.delete(index);
-    }
-    setLineSpeakers(newSpeakers);
-    
-    // console.log('📝 Updated lineSpeakers:', { 
-    //   size: newSpeakers.size, 
-    //   entries: Array.from(newSpeakers.entries()) 
-    // });
+    setLines(newLines);
     
     // Auto-create timestamp: Only in Live Mode when speaker goes from empty to having content
     if (isLiveMode) {
-      const oldSpeakerEmpty = oldSpeaker.trim().length === 0;
+      const oldSpeakerEmpty = !oldLine.speaker || oldLine.speaker.trim().length === 0;
       const newSpeakerHasContent = value.trim().length > 0;
       
-      // console.log('⏰ Auto-timestamp check (Speaker):', { 
-      //   index, 
-      //   oldSpeakerEmpty, 
-      //   newSpeakerHasContent, 
-      //   hasTimestamp: lineTimestamps.has(index),
-      //   isLiveMode 
-      // });
-      
-      if (oldSpeakerEmpty && newSpeakerHasContent && !lineTimestamps.has(index)) {
-        // Save datetime with delay offset
+      if (oldSpeakerEmpty && newSpeakerHasContent && oldLine.timestamp === undefined) {
         const currentDatetime = Date.now() - (timestampDelay * 1000);
-        // console.log('✅ Creating timestamp (Speaker):', { index, currentDatetime, delay: timestampDelay });
-        
-        const newLineTimestamps = new Map(lineTimestamps);
-        newLineTimestamps.set(index, currentDatetime);
-        setLineTimestamps(newLineTimestamps);
-        
-        const lines = localNotes.split('§§§');
-        syncToParentTimestampMap(lines, newLineTimestamps);
+        newLines[index].timestamp = currentDatetime;
+        setLines(newLines);
+        syncToParent(newLines); // Immediate sync
+        return;
       }
     }
+    
+    debouncedSyncToParent(newLines);
   };
   
-  // Convert line-based timestamps to position-based for parent state
-  const syncToParentTimestampMap = useCallback((lines: string[], lineTimestamps: Map<number, number>) => {
-    const BLOCK_SEPARATOR = '§§§';
-    const newMap = new Map<number, number>();
-    
-    lineTimestamps.forEach((time, lineIndex) => {
-      // Calculate position for this line
-      let pos = 0;
-      for (let i = 0; i < lineIndex && i < lines.length; i++) {
-        pos += lines[i].length;
-        if (i < lines.length - 1) {
-          pos += BLOCK_SEPARATOR.length;
-        }
-      }
-      newMap.set(pos, time);
-    });
-    
-    onTimestampMapChange(newMap);
-  }, [onTimestampMapChange]);
-  
-  // Debounced sync to reduce parent updates during typing
-  const debouncedSyncToParent = useCallback((lines: string[], lineTimestamps: Map<number, number>) => {
-    if (syncDebounceRef.current) {
-      clearTimeout(syncDebounceRef.current);
-    }
-    
-    syncDebounceRef.current = setTimeout(() => {
-      syncToParentTimestampMap(lines, lineTimestamps);
-    }, 300); // 300ms debounce - reduces updates while typing
-  }, [syncToParentTimestampMap]);
-  
-  // Debounced onNotesChange with short delay (100ms) to balance responsiveness and performance
-  // Shorter than original 300ms to ensure autosave triggers promptly while reducing re-renders
-  const debouncedNotesChange = useCallback((newNotes: string) => {
-    if (notesDebounceRef.current) {
-      clearTimeout(notesDebounceRef.current);
-    }
-    
-    notesDebounceRef.current = setTimeout(() => {
-      onNotesChange(newNotes);
-    }, 100); // 100ms debounce - optimal balance
-  }, [onNotesChange]);
-  
-  // Helper to get current lines from localNotes
-  const getLines = useCallback(() => {
-    return localNotes.split(BLOCK_SEPARATOR);
-  }, [localNotes]);
-  
-  // Helper to update notes immediately (for operations like Enter, Delete)
-  const updateNotesImmediate = useCallback((newLines: string[]) => {
-    const newNotes = newLines.join(BLOCK_SEPARATOR);
-    setLocalNotes(newNotes);
-    onNotesChange(newNotes);
-  }, [onNotesChange]);
-  
-  // Save current state to history
-  const saveToHistory = () => {
-    // Don't save if no actual changes
-    if (notes === lastSavedNotesRef.current) {
-      return;
-    }
-    
-    const newHistory = history.slice(0, historyIndex + 1);
-    newHistory.push({
-      notes: notes,
-      timestamps: new Map(lineTimestamps),
-      speakers: new Map(lineSpeakers)
-    });
-    // Limit history to 50 entries
-    if (newHistory.length > 50) {
-      newHistory.shift();
-    } else {
-      setHistoryIndex(historyIndex + 1);
-    }
-    setHistory(newHistory);
-    lastSavedNotesRef.current = notes;
-  };
-  
-  // Debounced auto-save to history (for typing)
-  const debouncedSaveToHistory = () => {
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-    saveTimeoutRef.current = setTimeout(() => {
-      saveToHistory();
-    }, 1000); // Save after 1 second of inactivity
-  };
-
+  // ✅ Handle speaker keyboard navigation (REFACTORED with NoteLine[])
   const handleSpeakerKeyDown = (index: number, e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const target = e.target as HTMLTextAreaElement;
     const cursorPos = target.selectionStart;
@@ -761,7 +525,7 @@ export const NotesEditor: React.FC<Props> = ({
     // Shift+Enter: Allow natural newline in speaker textarea (default behavior)
 
     // ArrowRight: Move to text column if cursor at end
-    if (e.key === 'ArrowRight' && cursorPos === speakerText.length) {
+    if (e.key === 'Arrow Right' && cursorPos === speakerText.length) {
       e.preventDefault();
       const textAreaRef = textRefs.current.get(index);
       const textArea = textAreaRef?.resizableTextArea?.textArea;
@@ -785,7 +549,7 @@ export const NotesEditor: React.FC<Props> = ({
     }
 
     // ArrowDown: Move to next speaker textarea if cursor at end of last line
-    if (e.key === 'ArrowDown' && cursorPos === speakerText.length && index < notes.split('§§§').length - 1) {
+    if (e.key === 'ArrowDown' && cursorPos === speakerText.length && index < lines.length - 1) {
       e.preventDefault();
       const nextSpeakerRef = speakerRefs.current.get(index + 1);
       const nextSpeaker = nextSpeakerRef?.resizableTextArea?.textArea;
@@ -797,9 +561,8 @@ export const NotesEditor: React.FC<Props> = ({
     }
   };
 
+  // ✅ Handle text keyboard input (REFACTORED with NoteLine[]) - no more shifting Maps!
   const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    const BLOCK_SEPARATOR = '§§§';
-    const lines = getLines();
     const currentLine = lines[index];
     const target = e.target as HTMLTextAreaElement;
     const cursorPos = target.selectionStart;
@@ -829,7 +592,7 @@ export const NotesEditor: React.FC<Props> = ({
     }
 
     // ArrowDown: Move to next textarea if cursor at end
-    if (e.key === 'ArrowDown' && cursorPos === currentLine.length && index < lines.length - 1) {
+    if (e.key === 'ArrowDown' && cursorPos === currentLine.content.length && index < lines.length - 1) {
       e.preventDefault();
       const nextTextRef = textRefs.current.get(index + 1);
       const nextText = nextTextRef?.resizableTextArea?.textArea;
@@ -840,55 +603,33 @@ export const NotesEditor: React.FC<Props> = ({
       return;
     }
 
+    // ===== ENTER KEY =====
     if (e.key === 'Enter' && !e.shiftKey) {
       // In Loaded Mode: Let Enter behave like Shift+Enter (newline within the same textarea)
       if (!isLiveMode) {
-        // Don't preventDefault - let textarea handle Enter naturally (creates newline in text)
-        return;
+        return; // Don't preventDefault - let textarea handle Enter naturally
       }
       
       // In Live Mode: Enter creates new line (new block) with timestamp
       e.preventDefault();
-      
-      // Save to history before creating new line
-      saveToHistory();
+      saveToHistory(); // Save to history before creating new line
       
       // Split current line at cursor
-      const beforeCursor = currentLine.substring(0, cursorPos);
-      const afterCursor = currentLine.substring(cursorPos);
+      const beforeCursor = currentLine.content.substring(0, cursorPos);
+      const afterCursor = currentLine.content.substring(cursorPos);
       
-      lines[index] = beforeCursor;
-      lines.splice(index + 1, 0, afterCursor);
+      const newLines = [...lines];
+      newLines[index] = { ...currentLine, content: beforeCursor };
       
-      // Shift timestamps for lines after the split
-      const newLineTimestamps = new Map<number, number>();
-      lineTimestamps.forEach((time, lineIndex) => {
-        if (lineIndex < index + 1) {
-          newLineTimestamps.set(lineIndex, time);
-        } else {
-          newLineTimestamps.set(lineIndex + 1, time);
-        }
+      // ✅ Insert new line after current (ONE splice, no shifting needed!)
+      newLines.splice(index + 1, 0, {
+        content: afterCursor,
+        timestamp: undefined, // Will be created when user types (handleLineChange)
+        speaker: undefined
       });
       
-      // Shift speakers for lines after the split
-      const newLineSpeakers = new Map<number, string>();
-      lineSpeakers.forEach((speaker, lineIndex) => {
-        if (lineIndex < index + 1) {
-          newLineSpeakers.set(lineIndex, speaker);
-        } else {
-          newLineSpeakers.set(lineIndex + 1, speaker);
-        }
-      });
-      // New line starts with empty speaker (user can fill in manually)
-      
-      // Don't auto-assign timestamp to new line
-      // Timestamp will be created when user types first character (in handleLineChange)
-      
-      setLineTimestamps(newLineTimestamps);
-      setLineSpeakers(newLineSpeakers);
-      
-      updateNotesImmediate(lines);
-      syncToParentTimestampMap(lines, newLineTimestamps);
+      setLines(newLines);
+      syncToParent(newLines);
       
       // Focus next line after React re-renders
       setTimeout(() => {
@@ -899,56 +640,28 @@ export const NotesEditor: React.FC<Props> = ({
           nextText.setSelectionRange(0, 0);
         }
       }, 10);
+      return;
     }
-    // Shift+Enter: Allow natural newline (browser default behavior)
-    // No preventDefault for Shift+Enter - let textarea handle it naturally
+    // Shift+Enter: Allow natural newline (default browser behavior)
     
+    // ===== BACKSPACE KEY =====
     if (e.key === 'Backspace' && cursorPos === 0 && index > 0) {
       // Check if user has selected text
-      const selectionStart = target.selectionStart;
-      const selectionEnd = target.selectionEnd;
-      const hasSelection = selectionStart !== selectionEnd;
-      
-      // If user is selecting text (e.g., select all), let textarea handle it naturally
-      // Don't merge lines
+      const hasSelection = target.selectionStart !== target.selectionEnd;
       if (hasSelection) {
-        return; // Let default behavior handle selection deletion
+        return; // Let textarea handle selection deletion
       }
       
-      // Backspace at start with no selection: merge with previous line only if current line is empty
       e.preventDefault();
+      saveToHistory(); // Save before merge/delete
       
-      // Save to history before merge/delete
-      saveToHistory();
+      const newLines = [...lines];
       
-      if (currentLine.trim().length === 0) {
-        // Current line is empty, just remove it
-        lines.splice(index, 1);
-        
-        // Remove timestamp for deleted line and shift others
-        const newLineTimestamps = new Map<number, number>();
-        lineTimestamps.forEach((time, lineIndex) => {
-          if (lineIndex < index) {
-            newLineTimestamps.set(lineIndex, time);
-          } else if (lineIndex > index) {
-            newLineTimestamps.set(lineIndex - 1, time);
-          }
-        });
-        setLineTimestamps(newLineTimestamps);
-        
-        // Remove speaker for deleted line and shift others
-        const newLineSpeakers = new Map<number, string>();
-        lineSpeakers.forEach((speaker, lineIndex) => {
-          if (lineIndex < index) {
-            newLineSpeakers.set(lineIndex, speaker);
-          } else if (lineIndex > index) {
-            newLineSpeakers.set(lineIndex - 1, speaker);
-          }
-        });
-        setLineSpeakers(newLineSpeakers);
-        
-        updateNotesImmediate(lines);
-        syncToParentTimestampMap(lines, newLineTimestamps);
+      if (currentLine.content.trim().length === 0) {
+        // Current line is empty → just remove it (ONE splice!)
+        newLines.splice(index, 1);
+        setLines(newLines);
+        syncToParent(newLines);
         
         // Focus previous line at end
         setTimeout(() => {
@@ -960,39 +673,16 @@ export const NotesEditor: React.FC<Props> = ({
           }
         }, 10);
       } else {
-        // Current line has content, merge with previous
-        const prevLine = lines[index - 1];
-        const prevLength = prevLine.length;
+        // Current line has content → merge with previous
+        const prevLine = newLines[index - 1];
+        const prevLength = prevLine.content.length;
         
-        lines[index - 1] = prevLine + currentLine;
-        lines.splice(index, 1);
+        newLines[index - 1] = { ...prevLine, content: prevLine.content + currentLine.content };
+        newLines.splice(index, 1); // Remove current line
+        setLines(newLines);
+        syncToParent(newLines);
         
-        // Remove timestamp for deleted line and shift others
-        const newLineTimestamps = new Map<number, number>();
-        lineTimestamps.forEach((time, lineIndex) => {
-          if (lineIndex < index) {
-            newLineTimestamps.set(lineIndex, time);
-          } else if (lineIndex > index) {
-            newLineTimestamps.set(lineIndex - 1, time);
-          }
-        });
-        setLineTimestamps(newLineTimestamps);
-        
-        // Remove speaker for deleted line and shift others
-        const newLineSpeakers = new Map<number, string>();
-        lineSpeakers.forEach((speaker, lineIndex) => {
-          if (lineIndex < index) {
-            newLineSpeakers.set(lineIndex, speaker);
-          } else if (lineIndex > index) {
-            newLineSpeakers.set(lineIndex - 1, speaker);
-          }
-        });
-        setLineSpeakers(newLineSpeakers);
-        
-        onNotesChange(lines.join(BLOCK_SEPARATOR));
-        syncToParentTimestampMap(lines, newLineTimestamps);
-        
-        // Focus previous line
+        // Focus previous line at merge point
         setTimeout(() => {
           const prevTextRef = textRefs.current.get(index - 1);
           const prevText = prevTextRef?.resizableTextArea?.textArea;
@@ -1005,39 +695,20 @@ export const NotesEditor: React.FC<Props> = ({
       return;
     }
     
-    // Delete key: delete entire line if it's empty
-    if (e.key === 'Delete' && currentLine.trim().length === 0 && lines.length > 1) {
+    // ===== DELETE KEY =====
+    if (e.key === 'Delete' && currentLine.content.trim().length === 0 && lines.length > 1) {
       e.preventDefault();
-      lines.splice(index, 1);
+      saveToHistory();
       
-      // Remove timestamp for deleted line and shift others
-      const newLineTimestamps = new Map<number, number>();
-      lineTimestamps.forEach((time, lineIndex) => {
-        if (lineIndex < index) {
-          newLineTimestamps.set(lineIndex, time);
-        } else if (lineIndex > index) {
-          newLineTimestamps.set(lineIndex - 1, time);
-        }
-      });
-      setLineTimestamps(newLineTimestamps);
-      
-      // Remove speaker for deleted line and shift others
-      const newLineSpeakers = new Map<number, string>();
-      lineSpeakers.forEach((speaker, lineIndex) => {
-        if (lineIndex < index) {
-          newLineSpeakers.set(lineIndex, speaker);
-        } else if (lineIndex > index) {
-          newLineSpeakers.set(lineIndex - 1, speaker);
-        }
-      });
-      setLineSpeakers(newLineSpeakers);
-      
-      updateNotesImmediate(lines);
-      syncToParentTimestampMap(lines, newLineTimestamps);
+      // Delete empty line (ONE splice!)
+      const newLines = [...lines];
+      newLines.splice(index, 1);
+      setLines(newLines);
+      syncToParent(newLines);
       
       // Focus current position (which will now be the next line)
       setTimeout(() => {
-        const focusIndex = Math.min(index, lines.length - 1);
+        const focusIndex = Math.min(index, newLines.length - 1);
         const focusTextRef = textRefs.current.get(focusIndex);
         const focusText = focusTextRef?.resizableTextArea?.textArea;
         if (focusText) {
@@ -1047,9 +718,10 @@ export const NotesEditor: React.FC<Props> = ({
     }
   };
 
+  // ✅ Datetime double-click for audio seek (REFACTORED with NoteLine[])
   const handleDatetimeDoubleClick = (e: React.MouseEvent, lineIndex: number) => {
     e.stopPropagation();
-    const datetimeMs = lineTimestamps.get(lineIndex);
+    const datetimeMs = lines[lineIndex].timestamp;
     if (datetimeMs !== undefined && recordingStartTime > 0) {
       // Convert datetime to relative time from recording start
       const relativeTimeMs = datetimeMs - recordingStartTime;
@@ -1061,12 +733,7 @@ export const NotesEditor: React.FC<Props> = ({
     }
   };
 
-  // Use localNotes for rendering to ensure immediate UI updates
-  const lines = localNotes.split(BLOCK_SEPARATOR);
-  if (lines.length === 0 || (lines.length === 1 && lines[0] === '')) {
-    lines[0] = '';
-  }
-
+  // ✅ Render section (REFACTORED with NoteLine[])
   return (
     <div className="notes-editor-container">
       <div className="editor-header">
@@ -1099,7 +766,7 @@ export const NotesEditor: React.FC<Props> = ({
         }}
       >
         {lines.map((line, index) => {
-        const timeMs = lineTimestamps.get(index);
+        const timeMs = line.timestamp; // ✅ Read from NoteLine object
         const isSelected = selectedLines.has(index);
           return (
             <div
@@ -1112,7 +779,7 @@ export const NotesEditor: React.FC<Props> = ({
                 backgroundColor: isSelected ? 'rgba(24, 144, 255, 0.15)' : 'transparent',
                 outline: isSelected ? '2px solid rgba(24, 144, 255, 0.5)' : 'none',
                 outlineOffset: '-2px',
-                userSelect: 'none' // Prevent text selection during drag
+                userSelect: 'none'
               }}
             >
               {/* Timestamp Column */}
@@ -1181,7 +848,7 @@ export const NotesEditor: React.FC<Props> = ({
                       speakerRefs.current.delete(index);
                     }
                   }}
-                  value={lineSpeakers.get(index) || ''}
+                  value={line.speaker || ''} // ✅ Read from NoteLine object
                   onChange={(e) => handleSpeakerChange(index, e.target.value)}
                   onKeyDown={(e) => handleSpeakerKeyDown(index, e)}
                   placeholder="Người nói ..."
@@ -1209,7 +876,7 @@ export const NotesEditor: React.FC<Props> = ({
                     textRefs.current.delete(index);
                   }
                 }}
-                value={line}
+                value={line.content} // ✅ Read from NoteLine object
                 onChange={(e) => handleLineChange(index, e.target.value)}
                 onKeyDown={(e) => handleKeyDown(index, e)}
                 onMouseDown={(e) => {
