@@ -73,7 +73,7 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(({ audioBlob, trans
 
   // Initialize WaveSurfer
   useEffect(() => {
-    if (!waveformRef.current || !audioUrl) return;
+    if (!waveformRef.current || !audioBlob) return;
 
     // Destroy existing instance
     if (wavesurferRef.current) {
@@ -97,8 +97,8 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(({ audioBlob, trans
         hideScrollbar: false,
       });
 
-      // Load audio with error handling
-      wavesurfer.load(audioUrl);
+      // Load audio with error handling - use loadBlob to avoid fetch() issues with File objects
+      wavesurfer.loadBlob(audioBlob);
 
       // Event listeners
       wavesurfer.on('ready', () => {
@@ -375,7 +375,7 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(({ audioBlob, trans
       // Return empty cleanup function
       return () => {};
     }
-  }, [audioUrl]);
+  }, [audioBlob]);
 
   // Setup audio element event listeners
   useEffect(() => {
