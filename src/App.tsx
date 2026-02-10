@@ -285,7 +285,7 @@ export const App: React.FC = () => {
     const maxDurationMinutes = config?.maxAudioDurationMinutes || 60;
 
     // Show options modal: Auto-split vs Manual selection
-    modal.confirm({
+    const optionsModal = modal.confirm({
       title: (
         <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#fa8c16' }}>
           ⚠️ File audio quá lớn
@@ -327,6 +327,7 @@ export const App: React.FC = () => {
             cursor: 'pointer'
           }}
           onClick={() => {
+            optionsModal.destroy(); // Close modal immediately
             handleAutoSplitTranscription();
           }}
           >
@@ -350,6 +351,7 @@ export const App: React.FC = () => {
             cursor: 'pointer'
           }}
           onClick={() => {
+            optionsModal.destroy(); // Close modal immediately
             showManualSegmentSelectionModal(fileSizeMB, maxSizeMB);
           }}
           >
@@ -1150,57 +1152,60 @@ export const App: React.FC = () => {
           }
         },
         cancelButtonProps: { size: 'large', style: { height: '40px' } },
-        onOk: async () => {
-          // Create progress notification at bottom-right (non-blocking)
-          let progressPercent = 0;
-          let progressMessage = 'Đang khởi tạo...';
-          const notificationKey = `gemini-progress-${Date.now()}`;
-          
-          notification.open({
-            key: notificationKey,
-            message: (
-              <span style={{ fontSize: '16px', fontWeight: 'bold', color: '#667eea' }}>
-                <span style={{ fontSize: '20px' }}>🤖</span> Gemini AI
-              </span>
-            ),
-            description: (
-              <div style={{ width: 320 }}>
-                <Progress 
-                  percent={progressPercent} 
-                  status="active"
-                  strokeColor={{
-                    '0%': '#667eea',
-                    '100%': '#764ba2',
-                  }}
-                  size="small"
-                />
-                <div style={{ 
-                  marginTop: 8, 
-                  padding: '8px 12px',
-                  background: 'linear-gradient(135deg, #f0f5ff 0%, #e6f7ff 100%)',
-                  borderRadius: '6px',
-                  fontSize: '13px',
-                  color: '#0050b3',
-                  minHeight: '50px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  wordBreak: 'break-word'
-                }}>
-                  {progressMessage}
+        onOk: () => {
+          // CRITICAL: Don't use async onOk - modal will stay open until Promise resolves
+          // Instead, start processing in background and return immediately to close modal
+          const startProcessing = async () => {
+            // Create progress notification at bottom-right (non-blocking)
+            let progressPercent = 0;
+            let progressMessage = 'Đang khởi tạo...';
+            const notificationKey = `gemini-progress-${Date.now()}`;
+            
+            notification.open({
+              key: notificationKey,
+              message: (
+                <span style={{ fontSize: '16px', fontWeight: 'bold', color: '#667eea' }}>
+                  <span style={{ fontSize: '20px' }}>🤖</span> Gemini AI
+                </span>
+              ),
+              description: (
+                <div style={{ width: 320 }}>
+                  <Progress 
+                    percent={progressPercent} 
+                    status="active"
+                    strokeColor={{
+                      '0%': '#667eea',
+                      '100%': '#764ba2',
+                    }}
+                    size="small"
+                  />
+                  <div style={{ 
+                    marginTop: 8, 
+                    padding: '8px 12px',
+                    background: 'linear-gradient(135deg, #f0f5ff 0%, #e6f7ff 100%)',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    color: '#0050b3',
+                    minHeight: '50px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    wordBreak: 'break-word'
+                  }}>
+                    {progressMessage}
+                  </div>
                 </div>
-              </div>
-            ),
-            placement: 'bottomRight',
-            duration: 0, // Don't auto close
-            style: {
-              width: 400,
-            }
-          });
+              ),
+              placement: 'bottomRight',
+              duration: 0, // Don't auto close
+              style: {
+                width: 400,
+              }
+            });
 
-          try {
-            const config = speechToTextService.getConfig();
-            const maxFileSizeMB = config?.maxFileSizeMB || 20;
-            const meetingStartTime = getValidMeetingStartTime();
+            try {
+              const config = speechToTextService.getConfig();
+              const maxFileSizeMB = config?.maxFileSizeMB || 20;
+              const meetingStartTime = getValidMeetingStartTime();
             
             const parsed = await AIRefinementService.transcribeAudioWithGemini(
               apiKey,
@@ -1349,6 +1354,13 @@ export const App: React.FC = () => {
             });
             console.error('Gemini transcription error:', error);
           }
+          }; // End of startProcessing function
+          
+          // Start processing in background (don't await - let modal close immediately)
+          startProcessing();
+          
+          // Return immediately to close modal
+          return Promise.resolve();
         }
       });
     };

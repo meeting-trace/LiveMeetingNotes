@@ -2301,10 +2301,6 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
           { index: i + 1, total: chunkBoundaries.length } // Pass chunk info for context-aware prompting
         );
         
-        // Explicitly clear chunk blob reference to help GC
-        // @ts-ignore
-        chunkBlob = null;
-
         // Adjust timestamps for this chunk
         const adjustedResults = this.adjustTimestamps(parsed.results, boundary.startTimeMs);
         allResults.push(...adjustedResults);
