@@ -1211,13 +1211,38 @@ HƯỚNG DẪN PHIÊN ÂM:
 PHẦN 1: TÓM TẮT TỔNG QUAN (SUMMARY) - XUẤT RA TRƯỚC
 Sau khi nghe toàn bộ file âm thanh, tóm tắt nội dung cuộc họp:
 ${summaryPrompt || 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, theo trình tự thời gian. Bao gồm chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'}
-Viết tóm tắt bằng văn xuôi (paragraph), KHÔNG dùng dấu gạch đầu dòng. ${isChunk ? 'Giữ summary ở mức ~100-200 từ (đây là chunk, sẽ merge sau).' : 'Giữ summary ở mức ~300-500 từ.'}
+
+✅ FORMAT KHUYẾN KHÍCH:
+   • Sử dụng gạch đầu dòng (-, •, *) hoặc danh sách đánh số (1. 2. 3.) để tổ chức nội dung rõ ràng
+   • Nhóm các ý theo chủ đề/người nói
+   • Có thể dùng tiêu đề ngắn gọn (vd: **Quyết định chính:**, **Action items:**) để phân chia rõ ràng
+   • Ưu tiên tính dễ đọc và dễ quét thông tin
+
+${isChunk ? 'Giữ summary ở mức ~100-200 từ (đây là chunk, sẽ merge sau).' : 'Giữ summary ở mức ~300-500 từ.'}
 
 PHẦN 2: PHIÊN ÂM CHI TIẾT (SEGMENTS) - ƯU TIÊN CAO NHẤT
 1.  Nghe toàn bộ file âm thanh.
 2.  Phiên âm CHÍNH XÁC từng câu nói (verbatim), giữ nguyên nội dung gốc.
 3.  Gán nhãn người nói nhất quán (Speaker 1, Speaker 2...). Nhận diện tên nếu họ tự giới thiệu.
-4.  Gắn Timestamp [h:mm:ss] chính xác tại thời điểm BẮT ĐẦU lượt nói (ví dụ: 0:30, 1:05:30).
+4.  Gắn Timestamp chính xác tại thời điểm BẮT ĐẦU lượt nói:
+    📍 FORMAT TIMESTAMP:
+       • Nếu audio < 60 phút: dùng [mm:ss] - Ví dụ: "5:30", "23:45"
+       • Nếu audio >= 60 phút: dùng [h:mm:ss] - Ví dụ: "1:05:30", "2:18:00"
+    
+    🚨 VALIDATION TIMESTAMP (CỰC KỲ QUAN TRỌNG):
+       • File audio này dài ${durationMinutes} phút (${Math.floor(audioDuration/60)}:${String(Math.floor(audioDuration%60)).padStart(2,'0')})
+       • Timestamp PHẢI nằm trong khoảng từ 0:00 đến ${Math.floor(audioDuration/60)}:${String(Math.floor(audioDuration%60)).padStart(2,'0')}
+       • TUYỆT ĐỐI KHÔNG tạo timestamp vượt quá độ dài audio
+       • Kiểm tra kỹ từng timestamp trước khi xuất ra
+       
+    ✅ VÍ DỤ TIMESTAMP ĐÚNG (cho file ${durationMinutes}p):
+       • "0:00", "5:30", "12:45", "25:18", "${Math.min(60, Math.floor(audioDuration/60))}:30"
+       
+    ❌ VÍ DỤ TIMESTAMP SAI (TUYỆT ĐỐI TRÁNH):
+       • "${Math.floor(audioDuration/60) + 20}:00:00" (vượt quá độ dài audio)
+       • "99:99:99" (không hợp lệ)
+       • "25:70:30" (giây/phút > 59)
+
 5.  Lược bỏ từ đệm vô nghĩa (à, ừ, ờ, ừm) nhưng GIỮ NGUYÊN toàn bộ nội dung có ý nghĩa.
 6.  Sửa lỗi nhận dạng giọng nói rõ ràng (ví dụ: "công ti" → "công ty").
 7.  Thêm dấu câu, viết hoa danh từ riêng.
@@ -2497,20 +2522,17 @@ NHIỆM VỤ: Tổng hợp các tóm tắt riêng lẻ từ các đoạn audio t
 
 YÊU CẦU:
 1. ĐỌC kỹ tất cả các tóm tắt bên dưới (mỗi tóm tắt tương ứng với 1 đoạn audio)
-2. TỔNG HỢP thành 1 bài viết dạng VĂN XUÔI liền mạch gồm nhiều đoạn (paragraphs)
+2. TỔNG HỢP thành 1 bài tóm tắt tổng quan dễ đọc và dễ quét thông tin
 3. GIỮ LẠI toàn bộ thông tin quan trọng: số liệu, ngày tháng, tên riêng, quyết định, action items
 4. SẮP XẾP theo trình tự thời gian logic (từ đầu đến cuối cuộc họp)
 5. LOẠI BỎ thông tin trùng lặp giữa các đoạn
 6. ĐẢM BẢO văn phong chuyên nghiệp, mạch lạc, dễ hiểu
 
-🚫 TUYỆT ĐỐI CẤM (STRICTLY FORBIDDEN):
-   • KHÔNG dùng dấu gạch đầu dòng (-, •, *, ▪)
-   • KHÔNG dùng danh sách đánh số (1. 2. 3.)
-   • KHÔNG dùng tiêu đề/heading (##, ###, **Tiêu đề:**)
-   • KHÔNG chia thành các mục riêng biệt
-   • CHỈ viết VĂN XUÔI thuần túy, nối các ý bằng liên từ và câu chuyển tiếp
-
-✅ ĐÚNG FORMAT: Các đoạn văn (paragraphs) nối tiếp nhau, mỗi đoạn 3-5 câu, cách nhau bởi 1 dòng trống.
+✅ FORMAT KHUYẾN KHÍCH:
+   • SỬ DỤNG gạch đầu dòng (-, •, *) hoặc danh sách đánh số (1. 2. 3.) để tổ chức nội dung
+   • CÓ THỂ thêm tiêu đề ngắn gọn (vd: **Chủ đề chính:**, **Quyết định:**, **Action items:**) để phân chia các phần
+   • NHÓM các ý theo chủ đề/người nói/giai đoạn cuộc họp
+   • Ưu tiên tính READABLE - người đọc có thể quét nhanh và nắm được nội dung chính
 
 ${userPrompt ? `\nYÊU CẦU BỔ SUNG TỪ NGƯỜI DÙNG:\n${userPrompt}\n` : ''}
 
@@ -2520,7 +2542,8 @@ ${summariesText}
 
 === OUTPUT ===
 
-Hãy trả về MỘT bài viết dạng văn xuôi tổng hợp. Nhớ: TUYỆT ĐỐI KHÔNG dùng bullet points, danh sách đánh số, hay bất kỳ dạng list nào.`;
+Hãy trả về MỘT bài tóm tắt tổng hợp có cấu trúc rõ ràng, dễ đọc. Ưu tiên sử dụng bullets/lists/headings để tổ chức thông tin.`;
+
 
     try {
       // Get model info to retrieve outputTokenLimit dynamically
