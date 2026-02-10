@@ -20,7 +20,7 @@ import { ExclamationCircleOutlined } from '@ant-design/icons';
 import './styles/global.css';
 
 export const App: React.FC = () => {
-  const { modal } = AntdApp.useApp();
+  const { modal, notification } = AntdApp.useApp();
   const [folderPath, setFolderPath] = useState<string>('');
   const [isRecording, setIsRecording] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
@@ -562,49 +562,56 @@ export const App: React.FC = () => {
       if (!confirmed) return;
     }
 
-    let progressModal: any = null;
+    // Create progress notification at bottom-right (non-blocking)
     let currentProgress = 0;
     let currentMessage = '🚀 Đang bắt đầu...';
-
-    // Create a container div that we'll update
-    const progressContainer = document.createElement('div');
+    const notificationKey = `gemini-auto-split-${Date.now()}`;
     
-    const updateProgressUI = () => {
-      progressContainer.innerHTML = `
-        <div style="margin-top: 16px;">
-          <div style="padding: 16px; background: linear-gradient(135deg, #667eea22 0%, #764ba222 100%); border-radius: 8px; margin-bottom: 16px;">
-            <div style="margin-bottom: 12px; font-size: 14px; font-weight: bold; color: #333;">
-              ${currentMessage}
-            </div>
-            <div style="width: 100%; height: 24px; background: #f0f0f0; border-radius: 12px; overflow: hidden;">
-              <div style="width: ${currentProgress}%; height: 100%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); transition: width 0.3s ease; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: bold;">
-                ${currentProgress > 5 ? `${currentProgress.toFixed(0)}%` : ''}
+    const updateProgressNotification = () => {
+      notification.open({
+        key: notificationKey,
+        message: (
+          <span style={{ fontSize: '16px', fontWeight: 'bold', color: '#667eea' }}>
+            <span style={{ fontSize: '20px' }}>🤖</span> Xử lý toàn bộ file
+          </span>
+        ),
+        description: (
+          <div style={{ width: 320 }}>
+            <div style={{ 
+              padding: '12px', 
+              background: 'linear-gradient(135deg, #667eea22 0%, #764ba222 100%)', 
+              borderRadius: '6px', 
+              marginBottom: '12px' 
+            }}>
+              <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: 'bold', color: '#333' }}>
+                {currentMessage}
               </div>
+              <Progress 
+                percent={currentProgress} 
+                status={currentProgress === 100 ? 'success' : 'active'}
+                strokeColor={{
+                  '0%': '#667eea',
+                  '100%': '#764ba2',
+                }}
+                size="small"
+              />
+            </div>
+            <div style={{ fontSize: '12px', color: '#666', lineHeight: '1.5' }}>
+              💡 Đang xử lý từng phần với delay để tuân thủ rate limit
             </div>
           </div>
-          <div style="font-size: 13px; color: #666; line-height: 1.6;">
-            💡 <strong>Lưu ý:</strong><br />
-            • Hệ thống đang tự động chia file và xử lý từng phần<br />
-            • Có delay ${requestDelaySeconds}s giữa các phần để tuân thủ rate limit<br />
-            • Vui lòng không đóng trình duyệt
-          </div>
-        </div>
-      `;
+        ),
+        placement: 'bottomRight',
+        duration: 0,
+        style: {
+          width: 400,
+        }
+      });
     };
 
-    updateProgressUI();
+    updateProgressNotification();
 
     try {
-      // Show progress modal
-      progressModal = modal.info({
-        title: '🤖 Đang xử lý toàn bộ file...',
-        width: 600,
-        closable: false,
-        maskClosable: false,
-        okButtonProps: { style: { display: 'none' } },
-        content: <div dangerouslySetInnerHTML={{ __html: progressContainer.innerHTML }} />
-      });
-
       // Start transcription with progress callback and config values
       // Get valid meeting start time (fallback to transcription time or current time if meetingInfo is empty)
       const meetingStartTime = getValidMeetingStartTime();
@@ -618,8 +625,8 @@ export const App: React.FC = () => {
           currentProgress = progress;
           currentMessage = msg || '⏳ Đang xử lý...';
           
-          // Update UI by re-rendering the container
-          updateProgressUI();
+          // Update notification
+          updateProgressNotification();
         },
         maxFileSizeMB,
         requestDelaySeconds,
@@ -629,7 +636,11 @@ export const App: React.FC = () => {
         fileManagerRef.current // Pass fileManager for debug logs
       );
 
-      progressModal.destroy();
+      // Close progress notification on success
+      notification.destroy(notificationKey);
+      
+      // Show success message
+      message.success('✅ Gemini xử lý hoàn tất!');
       
       // Save summary
       if (parsed.summary) {
@@ -668,7 +679,8 @@ export const App: React.FC = () => {
       showMergeOrReplaceModal(parsed.results);
 
     } catch (error: any) {
-      if (progressModal) progressModal.destroy();
+      // Close progress notification on error
+      notification.destroy(notificationKey);
       modal.error({
         title: '❌ Lỗi chuyển đổi',
         width: 480,
@@ -1139,24 +1151,20 @@ export const App: React.FC = () => {
         },
         cancelButtonProps: { size: 'large', style: { height: '40px' } },
         onOk: async () => {
-          // Create progress modal
+          // Create progress notification at bottom-right (non-blocking)
           let progressPercent = 0;
           let progressMessage = 'Đang khởi tạo...';
+          const notificationKey = `gemini-progress-${Date.now()}`;
           
-          const progressModal = modal.info({
-            title: (
-              <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#667eea' }}>
-                <span style={{ fontSize: '24px' }}>🤖</span> Đang xử lý với Gemini AI
+          notification.open({
+            key: notificationKey,
+            message: (
+              <span style={{ fontSize: '16px', fontWeight: 'bold', color: '#667eea' }}>
+                <span style={{ fontSize: '20px' }}>🤖</span> Gemini AI
               </span>
             ),
-            icon: null,
-            width: 600,
-            okText: 'Chạy nền',
-            okButtonProps: { style: { display: 'none' } }, // Hide button initially
-            closable: false,
-            maskClosable: false,
-            content: (
-              <div style={{ marginTop: 16 }}>
+            description: (
+              <div style={{ width: 320 }}>
                 <Progress 
                   percent={progressPercent} 
                   status="active"
@@ -1164,22 +1172,29 @@ export const App: React.FC = () => {
                     '0%': '#667eea',
                     '100%': '#764ba2',
                   }}
+                  size="small"
                 />
                 <div style={{ 
-                  marginTop: 12, 
-                  padding: '12px 16px',
+                  marginTop: 8, 
+                  padding: '8px 12px',
                   background: 'linear-gradient(135deg, #f0f5ff 0%, #e6f7ff 100%)',
-                  borderRadius: '8px',
-                  fontSize: '14px',
+                  borderRadius: '6px',
+                  fontSize: '13px',
                   color: '#0050b3',
-                  minHeight: '60px',
+                  minHeight: '50px',
                   display: 'flex',
-                  alignItems: 'center'
+                  alignItems: 'center',
+                  wordBreak: 'break-word'
                 }}>
                   {progressMessage}
                 </div>
               </div>
-            )
+            ),
+            placement: 'bottomRight',
+            duration: 0, // Don't auto close
+            style: {
+              width: 400,
+            }
           });
 
           try {
@@ -1196,10 +1211,16 @@ export const App: React.FC = () => {
                 progressPercent = Math.round(progress);
                 progressMessage = msg || `Xử lý: ${progressPercent}%`;
                 
-                // Update modal content
-                progressModal.update({
-                  content: (
-                    <div style={{ marginTop: 16 }}>
+                // Update notification content
+                notification.open({
+                  key: notificationKey,
+                  message: (
+                    <span style={{ fontSize: '16px', fontWeight: 'bold', color: progressPercent === 100 ? '#52c41a' : '#667eea' }}>
+                      <span style={{ fontSize: '20px' }}>🤖</span> Gemini AI
+                    </span>
+                  ),
+                  description: (
+                    <div style={{ width: 320 }}>
                       <Progress 
                         percent={progressPercent} 
                         status={progressPercent === 100 ? 'success' : 'active'}
@@ -1207,25 +1228,32 @@ export const App: React.FC = () => {
                           '0%': '#667eea',
                           '100%': '#764ba2',
                         }}
+                        size="small"
                       />
                       <div style={{ 
-                        marginTop: 12, 
-                        padding: '12px 16px',
+                        marginTop: 8, 
+                        padding: '8px 12px',
                         background: progressPercent === 100 
                           ? 'linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%)'
                           : 'linear-gradient(135deg, #f0f5ff 0%, #e6f7ff 100%)',
-                        borderRadius: '8px',
-                        fontSize: '14px',
+                        borderRadius: '6px',
+                        fontSize: '13px',
                         color: progressPercent === 100 ? '#237804' : '#0050b3',
-                        minHeight: '60px',
+                        minHeight: '50px',
                         display: 'flex',
                         alignItems: 'center',
-                        lineHeight: '1.6'
+                        lineHeight: '1.6',
+                        wordBreak: 'break-word'
                       }}>
                         {progressMessage}
                       </div>
                     </div>
-                  )
+                  ),
+                  placement: 'bottomRight',
+                  duration: 0,
+                  style: {
+                    width: 400,
+                  }
                 });
                 
                 console.log(`Transcription progress: ${progressPercent}% - ${progressMessage}`);
@@ -1237,8 +1265,11 @@ export const App: React.FC = () => {
               fileManagerRef.current // Pass fileManager for debug logs
             );
             
-            // Close progress modal on success
-            progressModal.destroy();
+            // Close progress notification on success
+            notification.destroy(notificationKey);
+            
+            // Show success message
+            message.success('✅ Gemini xử lý hoàn tất!');
 
             // Save summary if available
             if (parsed.summary) {
@@ -1273,8 +1304,8 @@ export const App: React.FC = () => {
             showMergeOrReplaceModal(parsed.results);
 
           } catch (error: any) {
-            // Close progress modal on error
-            progressModal.destroy();
+            // Close progress notification on error
+            notification.destroy(notificationKey);
             
             // Check if error is FILE_TOO_LARGE
             if (error.message === 'FILE_TOO_LARGE') {

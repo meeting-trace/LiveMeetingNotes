@@ -1001,14 +1001,15 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
       // ⚠️ Tự động chia nhỏ nếu audio quá dài (>60 phút)
       if (!skipSizeCheck && durationMinutes > 60) {
         console.warn(`⚠️ Audio quá dài (${durationMinutes} phút > 60 phút)`);
-        console.log(`🔄 Tự động chia nhỏ theo thời lượng - chunks sẽ được convert on-demand`);
+        console.log(`🔄 Tự động chia nhỏ theo thời lượng - file sẽ được convert toàn bộ sang WAV một lần`);
         
         if (onProgress) {
           onProgress(15, `📦 Audio dài (${durationMinutes}p), đang chia nhỏ...`);
         }
         
-        // Auto-split into chunks based on duration - pass ORIGINAL audioBlob (not converted)
-        // Each chunk will be converted to WAV on-demand during extraction
+        // Auto-split into chunks based on duration - pass ORIGINAL audioBlob
+        // transcribeEntireAudioWithGemini will convert entire file to WAV once,
+        // then extract chunks from WAV (no repeated decoding)
         // Wrap progress callback to map 0-100% of auto-split to 15-100% of overall progress
         const wrappedProgress = onProgress 
           ? (subProgress: number, msg?: string) => {
@@ -1020,7 +1021,7 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
         
         const result = await this.transcribeEntireAudioWithGemini(
           apiKey,
-          audioBlob, // Pass ORIGINAL blob - chunks will be converted on-demand
+          audioBlob, // Pass ORIGINAL blob - will be converted to WAV once inside
           modelName,
           wrappedProgress, // Use wrapped progress callback
           maxFileSizeMB,
@@ -1039,8 +1040,8 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
       // ============================================================
       // For short audio (≤ 60 min), convert entire file once
       let processedAudio = audioBlob;
-      const isWavOrMp3 = audioType.includes('wav') || audioType.includes('mpeg') || audioType.includes('mp3');
-      const needsConversion = !isWavOrMp3;
+      const isWav = audioType.includes('wav');
+      const needsConversion = !isWav; // Only skip conversion for WAV files
       
       if (needsConversion) {
         const originalSizeMB = audioBlob.size / (1024 * 1024);
@@ -1069,10 +1070,10 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
         }
       } else {
         const sizeMB = audioBlob.size / (1024 * 1024);
-        console.log(`✅ Bước 2: File đã là ${audioType.includes('wav') ? 'WAV' : 'MP3'} (${sizeMB.toFixed(2)} MB) - không cần convert`);
+        console.log(`✅ Bước 2: File đã là WAV (${sizeMB.toFixed(2)} MB) - bỏ qua conversion`);
         
         if (onProgress) {
-          onProgress(22, `✅ File đã tối ưu: ${sizeMB.toFixed(1)}MB • ${audioType.includes('wav') ? 'WAV' : 'MP3'}`);
+          onProgress(22, `✅ File đã là WAV: ${sizeMB.toFixed(1)}MB`);
         }
       }
       
@@ -1184,7 +1185,7 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON object với summary TRƯỚC
         ? `⚠️ QUAN TRỌNG: ĐÂY LÀ PHẦN ${chunkInfo!.index}/${chunkInfo!.total} CỦA FILE AUDIO LỚN
 
 🎯 CHIẾN LƯỢC CHO CHUNK:
-1️⃣ SUMMARY: Chỉ tóm tắt NGẮN GỌN (50-100 từ) nội dung chính trong phần này
+1️⃣ SUMMARY: Chỉ tóm tắt NGẮN GỌN (100-200 từ) nội dung chính trong phần này
    • Tập trung vào các điểm nổi bật, quyết định, action items
    • Không cần tóm tắt toàn diện (sẽ merge với các phần khác)
    
@@ -1766,7 +1767,7 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
    */
   public static async calculateChunkBoundaries(
     audioBlob: Blob,
-    _maxChunkSizeMB: number = 20,
+    maxChunkSizeMB: number = 20,
     maxDurationMinutes: number = 60
   ): Promise<{ startTimeMs: number; endTimeMs: number }[]> {
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -1782,16 +1783,21 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
           const totalDurationMinutes = totalDurationMs / (60 * 1000);
           const totalSizeMB = audioBlob.size / (1024 * 1024);
 
-          // Calculate number of chunks needed based on DURATION only
-          // (Size is no longer a concern with just-in-time extraction)
-          const numberOfChunks = Math.ceil(totalDurationMinutes / maxDurationMinutes);
+          // Calculate number of chunks needed based on BOTH duration AND size
+          // Take the MORE RESTRICTIVE of the two constraints
+          const chunksNeededByDuration = Math.ceil(totalDurationMinutes / maxDurationMinutes);
+          const chunksNeededBySize = Math.ceil(totalSizeMB / maxChunkSizeMB);
+          const numberOfChunks = Math.max(chunksNeededByDuration, chunksNeededBySize);
+          
           const chunkDurationMs = totalDurationMs / numberOfChunks;
           const chunkDurationMinutes = chunkDurationMs / (60 * 1000);
+          const chunkSizeMB = totalSizeMB / numberOfChunks;
 
           console.log(`📏 Audio info: ${totalSizeMB.toFixed(2)}MB, ${totalDurationMinutes.toFixed(1)} minutes`);
-          console.log(`📊 Duration limit: ${maxDurationMinutes} minutes per chunk`);
-          console.log(`📦 Will split into ${numberOfChunks} chunks based on duration`);
-          console.log(`⏱️ Each chunk: ~${chunkDurationMinutes.toFixed(1)} minutes (~${(totalSizeMB / numberOfChunks).toFixed(2)}MB)`);
+          console.log(`📊 Limits: ${maxDurationMinutes}min OR ${maxChunkSizeMB}MB per chunk`);
+          console.log(`📊 Chunks needed: ${chunksNeededByDuration} (duration) vs ${chunksNeededBySize} (size)`);
+          console.log(`📦 Will split into ${numberOfChunks} chunks (most restrictive)`);
+          console.log(`⏱️ Each chunk: ~${chunkDurationMinutes.toFixed(1)}min, ~${chunkSizeMB.toFixed(2)}MB`);
 
           const boundaries: { startTimeMs: number; endTimeMs: number }[] = [];
 
@@ -1922,17 +1928,142 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
   }
 
   /**
+   * Extract WAV segment using direct binary slicing (FAST, memory-efficient)
+   * Works by slicing the WAV data chunk directly without decoding
+   * 
+   * CRITICAL: This assumes WAV is mono 16kHz 16-bit (our standard format)
+   * If WAV format differs, this may not work correctly
+   */
+  private static async extractWavSegmentDirect(
+    wavBlob: Blob,
+    startTimeMs: number,
+    endTimeMs: number
+  ): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      
+      reader.onload = (e) => {
+        try {
+          const arrayBuffer = e.target?.result as ArrayBuffer;
+          if (!arrayBuffer) {
+            throw new Error('Failed to read WAV blob');
+          }
+          
+          const view = new DataView(arrayBuffer);
+          
+          // Parse WAV header (assuming standard format)
+          // RIFF header: "RIFF" (4) + file size (4) + "WAVE" (4) = 12 bytes
+          // fmt chunk: "fmt " (4) + size (4) + format data = ~24 bytes
+          // data chunk: "data" (4) + size (4) + PCM data
+          
+          // Find data chunk (typically starts at byte 44 for standard WAV)
+          let dataOffset = 44;
+          const dataMarker = view.getUint32(36, false); // Should be "data" = 0x64617461
+          if (dataMarker !== 0x64617461) {
+            // Try to find data chunk
+            for (let i = 12; i < arrayBuffer.byteLength - 8; i++) {
+              if (view.getUint32(i, false) === 0x64617461) {
+                dataOffset = i + 8; // Skip "data" + size
+                break;
+              }
+            }
+          }
+          
+          // Get sample rate and calculate byte rate
+          const sampleRate = view.getUint32(24, true); // Sample rate at byte 24
+          const numChannels = view.getUint16(22, true); // Channels at byte 22
+          const bitsPerSample = view.getUint16(34, true); // Bits per sample at byte 34
+          const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+          
+          console.log(`📊 WAV format: ${sampleRate}Hz, ${numChannels}ch, ${bitsPerSample}-bit`);
+          console.log(`📊 Byte rate: ${byteRate} bytes/sec, data offset: ${dataOffset}`);
+          
+          // Calculate byte positions for segment
+          const startByte = dataOffset + Math.floor((startTimeMs / 1000) * byteRate);
+          const endByte = dataOffset + Math.floor((endTimeMs / 1000) * byteRate);
+          
+          // Ensure byte alignment (samples should be aligned to frame boundary)
+          const frameSize = numChannels * (bitsPerSample / 8);
+          const alignedStartByte = Math.floor((startByte - dataOffset) / frameSize) * frameSize + dataOffset;
+          const alignedEndByte = Math.floor((endByte - dataOffset) / frameSize) * frameSize + dataOffset;
+          
+          console.log(`🔪 Extracting bytes ${alignedStartByte} to ${alignedEndByte}`);
+          
+          // Extract segment data
+          const segmentDataSize = alignedEndByte - alignedStartByte;
+          const segmentData = arrayBuffer.slice(alignedStartByte, alignedEndByte);
+          
+          // Build new WAV header for segment
+          const wavHeader = new ArrayBuffer(44);
+          const headerView = new DataView(wavHeader);
+          
+          // RIFF header
+          headerView.setUint32(0, 0x52494646, false); // "RIFF"
+          headerView.setUint32(4, 36 + segmentDataSize, true); // File size - 8
+          headerView.setUint32(8, 0x57415645, false); // "WAVE"
+          
+          // fmt chunk
+          headerView.setUint32(12, 0x666d7420, false); // "fmt "
+          headerView.setUint32(16, 16, true); // fmt chunk size
+          headerView.setUint16(20, 1, true); // Audio format (1 = PCM)
+          headerView.setUint16(22, numChannels, true); // Channels
+          headerView.setUint32(24, sampleRate, true); // Sample rate
+          headerView.setUint32(28, byteRate, true); // Byte rate
+          headerView.setUint16(32, frameSize, true); // Block align
+          headerView.setUint16(34, bitsPerSample, true); // Bits per sample
+          
+          // data chunk
+          headerView.setUint32(36, 0x64617461, false); // "data"
+          headerView.setUint32(40, segmentDataSize, true); // Data size
+          
+          // Combine header + segment data
+          const segmentBlob = new Blob([wavHeader, segmentData], { type: 'audio/wav' });
+          
+          console.log(`✅ Direct WAV extraction: ${(segmentBlob.size / 1024).toFixed(2)} KB`);
+          resolve(segmentBlob);
+          
+        } catch (error) {
+          console.error('❌ Direct WAV extraction failed:', error);
+          reject(error);
+        }
+      };
+      
+      reader.onerror = () => {
+        reject(new Error('Failed to read WAV blob: ' + (reader.error?.message || 'Unknown error')));
+      };
+      
+      reader.readAsArrayBuffer(wavBlob);
+    });
+  }
+
+  /**
    * Extract a segment from audio blob based on time range
-   * @param audioBlob - Original audio blob
+   * @param audioBlob - Audio blob (should be WAV for best performance)
    * @param startTimeMs - Start time in milliseconds
    * @param endTimeMs - End time in milliseconds
-   * @returns Promise<Blob> - Audio segment blob
+   * @returns Promise<Blob> - Audio segment blob in WAV format
    */
   public static async extractAudioSegment(
     audioBlob: Blob,
     startTimeMs: number,
     endTimeMs: number
   ): Promise<Blob> {
+    // OPTIMIZATION: For WAV files, use direct binary slicing instead of decoding
+    // This is MUCH faster and uses minimal memory compared to AudioContext
+    const isWav = audioBlob.type.includes('wav');
+    
+    if (isWav) {
+      try {
+        console.log(`🚀 Using direct WAV extraction (fast, memory-efficient)`);
+        return await this.extractWavSegmentDirect(audioBlob, startTimeMs, endTimeMs);
+      } catch (error) {
+        console.warn('⚠️ Direct WAV extraction failed, falling back to AudioContext:', error);
+        // Fall through to AudioContext method
+      }
+    }
+    
+    // Fallback: Use AudioContext for non-WAV or if direct extraction fails
+    console.log(`⚠️ Using AudioContext extraction (slow, memory-intensive)`);
     return new Promise((resolve, reject) => {
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       const reader = new FileReader();
@@ -1945,6 +2076,7 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
             throw new Error('Failed to read audio blob: ArrayBuffer is empty');
           }
           
+          console.warn(`⚠️ Decoding ${(arrayBuffer.byteLength / 1024 / 1024).toFixed(1)}MB audio - may be slow...`);
           const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
           // Calculate start and end in samples
@@ -2035,20 +2167,80 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
     const maxSizeMB = maxFileSizeMB;
 
     // ============================================================
-    // BƯỚC 1: TÍNH TOÁN CHUNK BOUNDARIES TỪ FILE GỐC
+    // BƯỚC 1: CHUYỂN ĐỔI TOÀN BỘ SANG WAV (nếu cần) - TRƯỚC KHI CHIA CHUNKS
     // ============================================================
-    // NOTE: audioBlob is the ORIGINAL file (not converted to WAV yet)
-    // We will extract chunks from original file, and each chunk will be converted to WAV on-demand
-    // This saves memory by not storing the entire WAV file (which can be 500MB+)
-    if (onProgress) onProgress(3, '📦 Đang phân tích và tính toán các phần...');
+    // CRITICAL: Must convert ENTIRE file to WAV FIRST, then extract chunks from WAV
+    // Reason: MP3/compressed formats require full decode to access any segment
+    // Converting once is cheaper than decoding N times for N chunks
+    if (onProgress) onProgress(3, '🔍 Đang kiểm tra định dạng audio...');
+    
+    let wavBlob = audioBlob;
+    const audioType = audioBlob.type.toLowerCase();
+    const isWav = audioType.includes('wav');
+    const needsConversion = !isWav;
     
     const audioSizeMB = audioBlob.size / (1024 * 1024);
-    const audioType = audioBlob.type.toLowerCase();
-    console.log(`📦 Analyzing original file for chunking: ${audioSizeMB.toFixed(2)}MB • ${audioType}`);
+    console.log(`📦 Processing file: ${audioSizeMB.toFixed(2)}MB • ${audioType}`);
     
-    // CRITICAL: Calculate boundaries from ORIGINAL file (no conversion yet)
-    const chunkBoundaries = await this.calculateChunkBoundaries(audioBlob, maxSizeMB, maxDurationMinutes);
-    console.log(`✅ Calculated ${chunkBoundaries.length} chunk boundaries from original file`);
+    // CRITICAL WARNING: Very large files may cause browser memory issues
+    // However, with direct WAV slicing, we can handle much larger files
+    if (audioSizeMB > 1000) {
+      console.error(`❌ File cực kỳ lớn: ${audioSizeMB.toFixed(0)}MB - vượt giới hạn!`);
+      throw new Error(
+        `File quá lớn (${audioSizeMB.toFixed(0)}MB) - Vượt giới hạn khả năng xử lý của browser.\n\n` +
+        `✨ Giải pháp:\n` +
+        `1. Nếu file là WAV: Convert sang MP3 format để giảm dung lượng (~70-90% nhỏ hơn)\n` +
+        `2. Chia file thành các file nhỏ hơn (khuyến nghị < 500MB mỗi file)\n` +
+        `3. Sử dụng công cụ bên ngoài để compress audio trước\n\n` +
+        `⚠️ Browser không đủ memory để xử lý file này.`
+      );
+    }
+    
+    if (needsConversion) {
+      const originalSizeMB = audioBlob.size / (1024 * 1024);
+      if (onProgress) {
+        onProgress(5, `🔄 Đang chuyển đổi ${audioType.split('/')[1]?.toUpperCase() || 'audio'} → WAV (16kHz)...`);
+      }
+      
+      console.log(`🔄 Converting entire file to WAV first (required for chunk extraction)`);
+      console.log(`📊 Original: ${originalSizeMB.toFixed(2)}MB ${audioType}`);
+      
+      // Convert with lower sample rate for smaller file size
+      const targetSampleRate = 16000; // Lower sample rate = smaller file
+      wavBlob = await this.convertToWav(audioBlob, targetSampleRate);
+      
+      const wavSizeMB = wavBlob.size / (1024 * 1024);
+      const reduction = ((1 - wavSizeMB / originalSizeMB) * 100).toFixed(1);
+      const reductionType = wavSizeMB < originalSizeMB ? 'giảm' : 'tăng';
+      
+      console.log(`✅ Converted: ${originalSizeMB.toFixed(2)}MB → ${wavSizeMB.toFixed(2)}MB (${reductionType} ${Math.abs(parseFloat(reduction))}%)`);
+      
+      if (onProgress) {
+        onProgress(7, `✅ Đã chuyển đổi: ${wavSizeMB.toFixed(1)}MB (${reductionType} ${Math.abs(parseFloat(reduction))}%)`);
+      }
+    } else {
+      const sizeMB = audioBlob.size / (1024 * 1024);
+      console.log(`✅ File đã là WAV (${sizeMB.toFixed(2)}MB) - không cần convert`);
+      
+      if (onProgress) {
+        onProgress(7, `✅ File đã tối ưu: ${sizeMB.toFixed(1)}MB • WAV`);
+      }
+    }
+
+    // ============================================================
+    // BƯỚC 2: TÍNH TOÁN CHUNK BOUNDARIES TỪ WAV
+    // ============================================================
+    // Calculate boundaries will automatically handle BOTH size and duration constraints
+    // It will choose the MORE RESTRICTIVE limit to ensure all chunks are safe
+    if (onProgress) onProgress(8, '📦 Đang phân tích và tính toán các phần...');
+    
+    const wavSizeMB = wavBlob.size / (1024 * 1024);
+    console.log(`📦 Calculating chunk boundaries from WAV: ${wavSizeMB.toFixed(2)}MB`);
+    console.log(`📊 Constraints: max ${maxSizeMB}MB OR ${maxDurationMinutes}min per chunk`);
+    
+    // CRITICAL: Pass BOTH maxSizeMB and maxDurationMinutes - function will respect BOTH
+    const chunkBoundaries = await this.calculateChunkBoundaries(wavBlob, maxSizeMB, maxDurationMinutes);
+    console.log(`✅ Calculated ${chunkBoundaries.length} chunk boundaries`);
 
     if (onProgress) {
       onProgress(10, `✅ Đã tính toán ${chunkBoundaries.length} phần, bắt đầu xử lý...`);
@@ -2060,18 +2252,17 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
     const truncationWarnings: string[] = [];
     
     // Get total duration once for progress estimation
-    // NOTE: We analyze ORIGINAL file, not converted WAV (to save memory)
-    const totalAudioDurationSec = await this.getAudioDuration(audioBlob);
-    const totalOriginalSizeMB = audioBlob.size / (1024 * 1024);
+    const totalAudioDurationSec = await this.getAudioDuration(wavBlob);
+    const totalWavSizeMB = wavBlob.size / (1024 * 1024);
 
     for (let i = 0; i < chunkBoundaries.length; i++) {
       const boundary = chunkBoundaries[i];
       const chunkProgress = 10 + ((i / chunkBoundaries.length) * 80);
       const chunkDurationMin = Math.ceil((boundary.endTimeMs - boundary.startTimeMs) / 60000);
       
-      // Estimate chunk size based on duration ratio (from original file)
+      // Estimate chunk size based on duration ratio
       const chunkDurationSec = (boundary.endTimeMs - boundary.startTimeMs) / 1000;
-      const estimatedSizeMB = (chunkDurationSec / totalAudioDurationSec) * totalOriginalSizeMB;
+      const estimatedSizeMB = (chunkDurationSec / totalAudioDurationSec) * totalWavSizeMB;
 
       if (onProgress) {
         onProgress(
@@ -2081,12 +2272,12 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
       }
 
       try {
-        // CRITICAL: Extract chunk from ORIGINAL file ON-DEMAND (just-in-time)
-        // extractAudioSegment will automatically convert chunk to WAV
-        // This saves memory by not storing entire WAV file (which can be 500MB+)
-        console.log(`🔪 Extracting chunk ${i + 1}/${chunkBoundaries.length} from original file: ${boundary.startTimeMs}ms-${boundary.endTimeMs}ms`);
-        const chunkBlob = await this.extractAudioSegment(audioBlob, boundary.startTimeMs, boundary.endTimeMs);
-        console.log(`  ✅ Extracted & converted to WAV: ${(chunkBlob.size / 1024).toFixed(2)} KB`);
+        // CRITICAL: Extract chunk from WAV (not original file!)
+        // WAV is uncompressed PCM, so extraction is fast and memory-efficient
+        console.log(`🔪 Extracting chunk ${i + 1}/${chunkBoundaries.length} from WAV: ${boundary.startTimeMs}ms-${boundary.endTimeMs}ms`);
+        const chunkBlob = await this.extractAudioSegment(wavBlob, boundary.startTimeMs, boundary.endTimeMs);
+        const chunkSizeMB = chunkBlob.size / (1024 * 1024);
+        console.log(`  ✅ Extracted WAV chunk: ${chunkSizeMB.toFixed(2)}MB`);
         
         // Transcribe this chunk (skip size check - already validated and split)
         const parsed = await this.transcribeAudioWithGemini(
@@ -2143,15 +2334,22 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
           );
         }
 
-        // Add delay between chunks to respect rate limits (15 req/min)
+        // ⏰ CRITICAL: Add delay between chunks to respect Gemini rate limits
+        // Gemini API limits: 15 requests/minute, 1500 requests/day
+        // Delay prevents 429 errors (quota exceeded)
         if (i < chunkBoundaries.length - 1) {
+          console.log(`⏳ Waiting ${requestDelaySeconds}s before processing next chunk (rate limit protection)...`);
+          
           if (onProgress) {
             onProgress(
               chunkProgress + (80 / chunkBoundaries.length),
-              `⏳ Đợi ${requestDelaySeconds}s trước khi xử lý phần ${i + 2}/${chunkBoundaries.length}...`
+              `⏳ Đợi ${requestDelaySeconds}s (tránh vượt hạn mức API)...`
             );
           }
+          
           await new Promise(resolve => setTimeout(resolve, requestDelaySeconds * 1000));
+          
+          console.log(`✅ Delay completed, processing chunk ${i + 2}/${chunkBoundaries.length}`);
         }
       } catch (error: any) {
         // Handle quota errors
