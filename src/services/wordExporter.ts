@@ -279,21 +279,129 @@ export class WordExporter {
       })
     );
     
-    // Split summary into paragraphs if it contains line breaks
-    const summaryLines = summary.split('\n').filter(line => line.trim());
+    // Split summary into lines
+    const lines = summary.split('\n');
     
-    summaryLines.forEach(line => {
-      paragraphs.push(
-        new Paragraph({
-          children: [
-            new TextRun({ text: line.trim(), size: 24 })
-          ],
-          spacing: { after: 150 },
-          alignment: AlignmentType.JUSTIFIED
-        })
-      );
+    lines.forEach(line => {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) {
+        // Empty line - add spacing
+        paragraphs.push(new Paragraph({ text: '', spacing: { after: 100 } }));
+        return;
+      }
+      
+      // Parse markdown formatting and create paragraph
+      const paragraph = this.parseMarkdownLine(trimmedLine);
+      paragraphs.push(paragraph);
     });
     
     return paragraphs;
+  }
+
+  /**
+   * Parse a line with markdown formatting and convert to Word paragraph
+   * Supports: **bold**, bullet points (*, -, •), numbered lists (1. 2. 3.), headings, nested bullets
+   */
+  private static parseMarkdownLine(line: string): Paragraph {
+    // Detect indentation level (for nested bullets)
+    const indentMatch = line.match(/^(\s+)/);
+    const indentSpaces = indentMatch ? indentMatch[1].length : 0;
+    const level = Math.min(Math.floor(indentSpaces / 2), 4); // Max 4 levels, 2 spaces per level
+    const trimmedLine = line.trim();
+    
+    // Check for bullet point (*, -, •)
+    const bulletMatch = trimmedLine.match(/^[\*\-\•]\s+(.+)$/);
+    if (bulletMatch) {
+      const text = bulletMatch[1];
+      return new Paragraph({
+        children: this.parseMarkdownText(text),
+        bullet: { level: level },
+        spacing: { after: 100 },
+        alignment: AlignmentType.JUSTIFIED
+      });
+    }
+    
+    // Check for numbered list (1. 2. 3.)
+    const numberMatch = trimmedLine.match(/^(\d+)\.\s+(.+)$/);
+    if (numberMatch) {
+      const number = numberMatch[1];
+      const text = numberMatch[2];
+      // Use bullet with number prefix instead of numbering (simpler, no config needed)
+      return new Paragraph({
+        children: [
+          new TextRun({ text: `${number}. `, bold: true, size: 24 }),
+          ...this.parseMarkdownText(text)
+        ],
+        bullet: { level: level },
+        spacing: { after: 100 },
+        alignment: AlignmentType.JUSTIFIED
+      });
+    }
+    
+    // Check for markdown heading (## or ###)
+    const headingMatch = trimmedLine.match(/^#{2,3}\s+(.+)$/);
+    if (headingMatch) {
+      const text = headingMatch[1];
+      return new Paragraph({
+        children: this.parseMarkdownText(text),
+        heading: HeadingLevel.HEADING_3,
+        spacing: { before: 200, after: 150 },
+        alignment: AlignmentType.JUSTIFIED
+      });
+    }
+    
+    // Regular paragraph
+    return new Paragraph({
+      children: this.parseMarkdownText(trimmedLine),
+      spacing: { after: 150 },
+      alignment: AlignmentType.JUSTIFIED
+    });
+  }
+
+  /**
+   * Parse inline markdown formatting (bold, italic) in text
+   * Returns array of TextRun with appropriate formatting
+   */
+  private static parseMarkdownText(text: string): TextRun[] {
+    const runs: TextRun[] = [];
+    
+    // Regex to find **bold** patterns
+    const boldPattern = /\*\*(.+?)\*\*/g;
+    let lastIndex = 0;
+    let match;
+    
+    while ((match = boldPattern.exec(text)) !== null) {
+      // Add text before bold
+      if (match.index > lastIndex) {
+        const beforeText = text.substring(lastIndex, match.index);
+        if (beforeText) {
+          runs.push(new TextRun({ text: beforeText, size: 24 }));
+        }
+      }
+      
+      // Add bold text
+      runs.push(new TextRun({ 
+        text: match[1], 
+        bold: true, 
+        size: 24 
+      }));
+      
+      lastIndex = match.index + match[0].length;
+    }
+    
+    // Add remaining text after last bold
+    if (lastIndex < text.length) {
+      const afterText = text.substring(lastIndex);
+      if (afterText) {
+        runs.push(new TextRun({ text: afterText, size: 24 }));
+      }
+    }
+    
+    // If no bold found, return single run
+    if (runs.length === 0) {
+      runs.push(new TextRun({ text: text, size: 24 }));
+    }
+    
+    return runs;
   }
 }
