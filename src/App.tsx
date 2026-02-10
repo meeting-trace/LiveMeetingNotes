@@ -683,6 +683,38 @@ export const App: React.FC = () => {
     } catch (error: any) {
       // Close progress notification on error
       notification.destroy(notificationKey);
+      
+      // Check if error is RECITATION or SAFETY (content policy violations)
+      const isRecitationError = error.message?.includes('RECITATION_ERROR');
+      const isSafetyError = error.message?.includes('SAFETY_ERROR');
+
+      if (isRecitationError || isSafetyError) {
+        // Show warning modal (yellow) for policy violations
+        modal.warning({
+          title: isRecitationError ? '⚠️ Phát hiện nội dung có bản quyền' : '⚠️ Nội dung bị từ chối',
+          width: 480,
+          content: (
+            <div style={{ marginTop: 16 }}>
+              <div style={{ 
+                padding: '12px 16px',
+                background: '#fffbe6',
+                border: '1px solid #ffe58f',
+                borderRadius: '6px',
+                marginBottom: '12px'
+              }}>
+                <div style={{ color: '#d48806', fontSize: '14px', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+                  {error.message.replace('RECITATION_ERROR:', '').replace('SAFETY_ERROR:', '').trim()}
+                </div>
+              </div>
+            </div>
+          ),
+          okText: 'Đóng'
+        });
+        console.warn('Auto-split policy violation:', error);
+        return;
+      }
+
+      // Show error modal (red) for other errors
       modal.error({
         title: '❌ Lỗi chuyển đổi',
         width: 480,
@@ -839,6 +871,38 @@ export const App: React.FC = () => {
 
         } catch (error: any) {
           hideProcessing();
+          
+          // Check if error is RECITATION or SAFETY (content policy violations)
+          const isRecitationError = error.message?.includes('RECITATION_ERROR');
+          const isSafetyError = error.message?.includes('SAFETY_ERROR');
+
+          if (isRecitationError || isSafetyError) {
+            // Show warning modal (yellow) for policy violations
+            modal.warning({
+              title: isRecitationError ? '⚠️ Phát hiện nội dung có bản quyền' : '⚠️ Nội dung bị từ chối',
+              width: 480,
+              content: (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ 
+                    padding: '12px 16px',
+                    background: '#fffbe6',
+                    border: '1px solid #ffe58f',
+                    borderRadius: '6px',
+                    marginBottom: '12px'
+                  }}>
+                    <div style={{ color: '#d48806', fontSize: '14px', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+                      {error.message.replace('RECITATION_ERROR:', '').replace('SAFETY_ERROR:', '').trim()}
+                    </div>
+                  </div>
+                </div>
+              ),
+              okText: 'Đóng'
+            });
+            console.warn('Manual segment policy violation:', error);
+            return;
+          }
+
+          // Show error message for other errors
           message.error(`Lỗi chuyển đổi: ${error.message}`);
           console.error('Transcription error:', error);
         }
@@ -1319,7 +1383,44 @@ export const App: React.FC = () => {
               return;
             }
             
-            // Show error modal
+            // Check if error is RECITATION or SAFETY (special handling)
+            const isRecitationError = error.message?.includes('RECITATION_ERROR');
+            const isSafetyError = error.message?.includes('SAFETY_ERROR');
+            
+            if (isRecitationError || isSafetyError) {
+              // Show warning modal with special styling for content policy violations
+              modal.warning({
+                title: isRecitationError 
+                  ? '⚠️ Phát hiện nội dung có bản quyền' 
+                  : '⚠️ Vấn đề về an toàn nội dung',
+                width: 600,
+                content: (
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ 
+                      padding: '16px',
+                      background: '#fffbe6',
+                      border: '2px solid #ffe58f',
+                      borderRadius: '8px',
+                      marginBottom: '16px'
+                    }}>
+                      <div style={{ color: '#d48806', fontSize: '14px', lineHeight: '1.8', whiteSpace: 'pre-line' }}>
+                        {error.message.replace('RECITATION_ERROR: ', '').replace('SAFETY_ERROR: ', '')}
+                      </div>
+                    </div>
+                    
+                    <div style={{ fontSize: '13px', color: '#666', lineHeight: '1.6' }}>
+                      <strong>ℹ️ Thông tin:</strong><br />
+                      Đây là cơ chế bảo vệ tự động của Google Gemini API để tuân thủ chính sách nội dung và luật bản quyền.
+                    </div>
+                  </div>
+                ),
+                okText: 'Đã hiểu',
+                okButtonProps: { size: 'large' }
+              });
+              return;
+            }
+            
+            // Show error modal for other errors
             modal.error({
               title: '❌ Lỗi chuyển đổi',
               width: 480,

@@ -2348,6 +2348,45 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
           console.log(`✅ Delay completed, processing chunk ${i + 2}/${chunkBoundaries.length}`);
         }
       } catch (error: any) {
+        // Handle RECITATION errors (copyright violations) - skip chunk and continue
+        if (error.message?.includes('RECITATION_ERROR')) {
+          console.warn(`⚠️ Chunk ${i + 1}/${chunkBoundaries.length} skipped due to copyright detection`);
+          truncationWarnings.push(
+            `Phần ${i + 1}/${chunkBoundaries.length} bị bỏ qua: ` +
+            `Gemini phát hiện nội dung có thể vi phạm bản quyền (nhạc, văn bản được bảo vệ). ` +
+            `Đây là biện pháp tự động của Google để tuân thủ luật bản quyền.`
+          );
+          
+          if (onProgress) {
+            onProgress(
+              chunkProgress + (80 / chunkBoundaries.length),
+              `⚠️ Phần ${i + 1}/${chunkBoundaries.length} bị bỏ qua (vi phạm bản quyền)`
+            );
+          }
+          
+          // Continue with next chunk
+          continue;
+        }
+        
+        // Handle SAFETY errors - skip chunk and continue
+        if (error.message?.includes('SAFETY_ERROR')) {
+          console.warn(`⚠️ Chunk ${i + 1}/${chunkBoundaries.length} skipped due to safety concerns`);
+          truncationWarnings.push(
+            `Phần ${i + 1}/${chunkBoundaries.length} bị bỏ qua: ` +
+            `Gemini từ chối xử lý do lo ngại về an toàn nội dung.`
+          );
+          
+          if (onProgress) {
+            onProgress(
+              chunkProgress + (80 / chunkBoundaries.length),
+              `⚠️ Phần ${i + 1}/${chunkBoundaries.length} bị bỏ qua (lo ngại an toàn)`
+            );
+          }
+          
+          // Continue with next chunk
+          continue;
+        }
+        
         // Handle quota errors
         if (error.message.includes('429') || error.message.includes('quota')) {
           throw new Error(
@@ -2413,14 +2452,31 @@ HÃY TỰ CÂN ĐỐI ĐỘ CHI TIẾT để đảm bảo JSON hoàn chỉnh tro
 
     if (onProgress) onProgress(100, `🎉 Hoàn thành! ${allResults.length} segments`);
     
-    // Build final truncation warning
+    // Build final truncation/warning message
     let finalTruncationWarning: string | undefined = undefined;
-    if (hasTruncation && truncationWarnings.length > 0) {
-      finalTruncationWarning = `⚠️ Một số phần audio bị truncated do MAX_TOKENS:\n${truncationWarnings.join('\n')}\n\nKhuyến nghị: Giảm thời lượng mỗi phần hoặc tăng maxOutputTokens trong cấu hình.`;
-      console.warn(finalTruncationWarning);
+    if (truncationWarnings.length > 0) {
+      // Check if any warnings are about copyright/safety (not just truncation)
+      const hasSkippedChunks = truncationWarnings.some(w => 
+        w.includes('bị bỏ qua') || w.includes('RECITATION') || w.includes('SAFETY')
+      );
+      
+      if (hasSkippedChunks) {
+        finalTruncationWarning = `⚠️ Một số phần audio không thể xử lý:\n\n${truncationWarnings.join('\n\n')}\n\n` +
+          `✅ Kết quả hiện tại chỉ bao gồm các phần được xử lý thành công.`;
+      } else if (hasTruncation) {
+        finalTruncationWarning = `⚠️ Một số phần audio bị truncated do MAX_TOKENS:\n\n${truncationWarnings.join('\n\n')}\n\n` +
+          `💡 Khuyến nghị: Giảm thời lượng mỗi phần hoặc tăng maxOutputTokens trong cấu hình.`;
+      }
+      
+      console.warn('⚠️ Final warnings:', finalTruncationWarning);
     }
     
-    return { results: allResults, summary: combinedSummary, isTruncated: hasTruncation, truncationWarning: finalTruncationWarning };
+    return { 
+      results: allResults, 
+      summary: combinedSummary, 
+      isTruncated: hasTruncation || truncationWarnings.length > 0, // Mark as truncated if ANY warnings
+      truncationWarning: finalTruncationWarning 
+    };
   }
 
   /**
@@ -2601,24 +2657,63 @@ Hãy trả về MỘT đoạn văn xuôi tổng hợp, KHÔNG có tiêu đề, K
         throw new Error('No response from Gemini API');
       }
 
-      // Check for truncation via finishReason
+      // Check finishReason for various response states
       const finishReason = candidates[0].finishReason;
-      const isTruncated = finishReason === 'MAX_TOKENS';
       
-      if (isTruncated) {
-        console.warn('⚠️ Response truncated due to MAX_TOKENS:', finishReason);
+      // Handle different finish reasons
+      if (finishReason === 'RECITATION') {
+        console.warn('⚠️ Gemini refused to transcribe due to potential copyright violation (RECITATION)');
+        throw new Error(
+          'RECITATION_ERROR: Gemini phát hiện nội dung có thể vi phạm bản quyền.\n\n' +
+          '💡 Đây có thể là:\n' +
+          '• Audio chứa nhạc có bản quyền\n' +
+          '• Nội dung được bảo vệ bởi luật bản quyền\n' +
+          '• Đoạn văn bản từ sách/tài liệu có bản quyền\n\n' +
+          '✨ Giải pháp:\n' +
+          '• Thử với đoạn audio khác không có nhạc nền\n' +
+          '• Loại bỏ phần audio có nhạc trước khi transcribe\n' +
+          '• Sử dụng tính năng "Chọn đoạn thủ công" để bỏ qua phần có vấn đề'
+        );
+      }
+      
+      if (finishReason === 'SAFETY') {
+        console.warn('⚠️ Gemini refused to process due to safety concerns');
+        throw new Error(
+          'SAFETY_ERROR: Gemini từ chối xử lý do lo ngại về an toàn nội dung.\n\n' +
+          '💡 Nội dung có thể chứa:\n' +
+          '• Ngôn từ bạo lực, thù địch\n' +
+          '• Nội dung không phù hợp\n' +
+          '• Thông tin nhạy cảm\n\n' +
+          '✨ Giải pháp:\n' +
+          '• Kiểm tra lại nội dung audio\n' +
+          '• Thử với đoạn audio khác'
+        );
+      }
+      
+      if (finishReason === 'MAX_TOKENS') {
+        console.warn('⚠️ Response truncated due to MAX_TOKENS');
+        // Continue processing - we'll handle truncation later
+      }
+      
+      if (finishReason === 'OTHER' || (finishReason && !['STOP', 'MAX_TOKENS'].includes(finishReason))) {
+        console.warn(`⚠️ Gemini stopped with reason: ${finishReason}`);
+        // Continue trying to parse if there's content
       }
 
       const content = candidates[0]?.content;
       if (!content || !content.parts || !Array.isArray(content.parts) || content.parts.length === 0) {
         console.error('❌ No content/parts in first candidate:', candidates[0]);
-        throw new Error('Empty response from Gemini');
+        console.error('   finishReason:', finishReason);
+        throw new Error(`Empty response from Gemini (finishReason: ${finishReason || 'unknown'})`);
       }
 
       const textResponse = content.parts[0].text;
       if (!textResponse) {
-        throw new Error('No text in Gemini response');
+        throw new Error(`No text in Gemini response (finishReason: ${finishReason || 'unknown'})`);
       }
+      
+      // Mark as truncated if MAX_TOKENS
+      const isTruncated = finishReason === 'MAX_TOKENS';
 
       // Debug logging
       console.log('🔍 Raw Gemini response text:', textResponse);
