@@ -942,7 +942,8 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON với summary TRƯỚC, rồi
     summaryPrompt?: string, // OPTIONAL: user-provided prompt text for the summary field
     fileManager?: FileManagerService, // Optional: for saving debug logs to project folder
     chunkInfo?: { index: number; total: number }, // Optional: chunk info for progress tracking (1-indexed)
-    languageCode?: string // Optional: language code from Web Speech API config (e.g., 'vi-VN', 'en-US', 'ja-JP')
+    languageCode?: string, // Optional: language code from Web Speech API config (e.g., 'vi-VN', 'en-US', 'ja-JP')
+    maxDurationMinutes: number = 60 // Maximum audio duration in minutes for auto-split (from config)
   ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
     if (!apiKey || apiKey.trim().length === 0) {
       throw new Error('Gemini API Key is required');
@@ -972,8 +973,8 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON với summary TRƯỚC, rồi
       
       console.log(`📊 Thời lượng: ${durationMinutes} phút (${audioDuration}s)`);
 
-      // ⚠️ Tự động chia nhỏ nếu audio quá dài (>60 phút)
-      if (!skipSizeCheck && durationMinutes > 60) {
+      // ⚠️ Tự động chia nhỏ nếu audio quá dài
+      if (!skipSizeCheck && durationMinutes > maxDurationMinutes) {
         console.warn(`⚠️ Audio quá dài (${durationMinutes} phút > 60 phút)`);
         console.log(`🔄 Tự động chia nhỏ theo thời lượng - file sẽ được convert toàn bộ sang WAV một lần`);
         
@@ -1000,7 +1001,7 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON với summary TRƯỚC, rồi
           wrappedProgress, // Use wrapped progress callback
           maxFileSizeMB,
           5, // requestDelaySeconds
-          60, // maxDurationMinutes
+          maxDurationMinutes, // Pass through from config
           meetingStartTime,
           summaryPrompt,
           fileManager,
@@ -1220,9 +1221,9 @@ ${summaryPrompt || 'Tóm tắt cụ thể các nội dung chính của từng ng
 
 ${isChunk ? 'Giữ summary ở mức ~100-200 từ (đây là chunk, sẽ merge sau).' : 'Giữ summary ở mức ~300-500 từ.'}
 
-PHẦN 2: PHIÊN ÂM CHI TIẾT (SEGMENTS) - ƯU TIÊN CAO NHẤT
+PHẦN 2: PHIÊN ÂM CHI TIẾT (SEGMENTS)
 1.  Nghe toàn bộ file âm thanh.
-2.  Phiên âm CHÍNH XÁC từng câu nói (verbatim), giữ nguyên nội dung gốc.
+2.  ${durationMinutes >= 45? 'Phiên âm CHÍNH XÁC từng câu nói (verbatim), giữ nguyên nội dung gốc.' : 'Tóm tắt các nội dung chính lượt nói của người nói.'}
 3.  Gán nhãn người nói nhất quán (Speaker 1, Speaker 2...). Nhận diện tên nếu họ tự giới thiệu.
 4.  Gắn Timestamp chính xác tại thời điểm BẮT ĐẦU lượt nói:
     📍 FORMAT TIMESTAMP:
@@ -1249,7 +1250,6 @@ PHẦN 2: PHIÊN ÂM CHI TIẾT (SEGMENTS) - ƯU TIÊN CAO NHẤT
 8.  Nếu âm thanh không rõ, đánh dấu "[không rõ]".
 
 ⚠️ NGUYÊN TẮC QUAN TRỌNG:
-   • KHÔNG tóm tắt hoặc rút gọn nội dung segments
    • KHÔNG gộp nhiều lượt nói thành một segment
    • KHÔNG bỏ sót câu nói nào có nội dung
    • Mỗi lượt nói liên tục của một người = 1 segment
@@ -1751,7 +1751,7 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
    */
   public static async calculateChunkBoundaries(
     audioBlob: Blob,
-    maxChunkSizeMB: number = 20,
+    maxChunkSizeMB: number = 150,
     maxDurationMinutes: number = 60
   ): Promise<{ startTimeMs: number; endTimeMs: number }[]> {
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -2284,7 +2284,8 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
           summaryPrompt, // Pass user-provided summary prompt through
           fileManager, // Pass fileManager for debug logs
           { index: i + 1, total: chunkBoundaries.length }, // Pass chunk info for context-aware prompting
-          languageCode // Pass language code through
+          languageCode, // Pass language code through
+          maxDurationMinutes // Pass through for consistency (not used due to skipSizeCheck=true)
         );
         
         // Adjust timestamps for this chunk
@@ -2526,7 +2527,8 @@ YÊU CẦU:
 3. GIỮ LẠI toàn bộ thông tin quan trọng: số liệu, ngày tháng, tên riêng, quyết định, action items
 4. SẮP XẾP theo trình tự thời gian logic (từ đầu đến cuối cuộc họp)
 5. LOẠI BỎ thông tin trùng lặp giữa các đoạn
-6. ĐẢM BẢO văn phong chuyên nghiệp, mạch lạc, dễ hiểu
+6. ĐẢM BẢO văn phong chuyên nghiệp, mạch lạc, dễ hiểu, hãy chỉ cung cấp nội dung kết quả, không có lời dẫn 'Đây là bản tóm tắt...' hay bất kỳ câu xã giao nào.
+7. KHÔNG để dòng trống giữa các gạch đầu dòng hoặc đoạn văn
 
 ✅ FORMAT KHUYẾN KHÍCH:
    • SỬ DỤNG gạch đầu dòng (-, •, *) hoặc danh sách đánh số (1. 2. 3.) để tổ chức nội dung

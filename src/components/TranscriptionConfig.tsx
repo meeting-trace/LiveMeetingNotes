@@ -487,8 +487,8 @@ export const TranscriptionConfig: React.FC<Props> = ({
                   <Form.Item
                     label="Kích thước file tối đa (MB)"
                     name="maxFileSizeMB"
-                    initialValue={20}
-                    extra="Kích thước tối đa của mỗi file gửi lên Gemini API (mặc định: 20MB, Free tier)"
+                    initialValue={150}
+                    extra="Kích thước tối đa của mỗi file gửi lên Gemini API"
                     rules={[{ type: 'number', min: 1, max: 2000, message: 'Vui lòng nhập từ 1-2000 MB' }]}
                   >
                     <InputNumber

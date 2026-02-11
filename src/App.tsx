@@ -814,7 +814,8 @@ export const App: React.FC = () => {
         const hideProcessing = message.loading('🤖 Đang chuyển đổi đoạn audio...', 0);
 
         try {
-          const maxFileSizeMB = config.maxFileSizeMB || 20;
+          const maxFileSizeMB = config.maxFileSizeMB || 150;
+          const maxDurationMinutes = config.maxAudioDurationMinutes || 60;
           const meetingStartTime = getValidMeetingStartTime();
           
           const parsed = await AIRefinementService.transcribeAudioWithGemini(
@@ -828,7 +829,8 @@ export const App: React.FC = () => {
             config.summaryPrompt,
             fileManagerRef.current, // Pass fileManager for debug logs
             undefined, // chunkInfo
-            config.languageCode // Pass language code for output language
+            config.languageCode, // Pass language code for output language
+            maxDurationMinutes
           );
 
           // Adjust timestamps to match original audio
@@ -1051,14 +1053,14 @@ export const App: React.FC = () => {
         modelName = customEvent.detail.modelName;
         const config = speechToTextService.getConfig();
         maxDurationMinutes = config?.maxAudioDurationMinutes || 60;
-        maxFileSizeMB = config?.maxFileSizeMB || 20;
+        maxFileSizeMB = config?.maxFileSizeMB || 150;
       } else {
         // Fallback to getting from settings
         const config = speechToTextService.getConfig();
         apiKey = config?.geminiApiKey;
         modelName = config?.geminiModel;
         maxDurationMinutes = config?.maxAudioDurationMinutes || 60;
-        maxFileSizeMB = config?.maxFileSizeMB || 20;
+        maxFileSizeMB = config?.maxFileSizeMB || 150;
       }
 
       // Check if API key is provided
@@ -1111,8 +1113,8 @@ export const App: React.FC = () => {
         message.warning('Không thể xác định thời lượng audio. Đang thử chuyển đổi...');
       }
 
-      // ⚠️ Kiểm tra và cảnh báo nếu audio > 60 phút
-      const isLongAudio = durationMinutes > 60;
+      // ⚠️ Kiểm tra và cảnh báo nếu audio > maxDurationMinutes phút
+      const isLongAudio = durationMinutes > maxDurationMinutes;
 
       // Show confirmation modal with enhanced UI
       modal.confirm({
@@ -1270,7 +1272,8 @@ export const App: React.FC = () => {
 
             try {
               const config = speechToTextService.getConfig();
-              const maxFileSizeMB = config?.maxFileSizeMB || 20;
+              const maxFileSizeMB = config?.maxFileSizeMB || 150;
+              const maxDurationMinutes = config?.maxAudioDurationMinutes || 60;
               const meetingStartTime = getValidMeetingStartTime();
             
             const parsed = await AIRefinementService.transcribeAudioWithGemini(
@@ -1335,7 +1338,8 @@ export const App: React.FC = () => {
               config?.summaryPrompt,
               fileManagerRef.current, // Pass fileManager for debug logs
               undefined, // chunkInfo
-              config?.languageCode // Pass language code for output language
+              config?.languageCode, // Pass language code for output language
+              maxDurationMinutes
             );
             
             // Close progress notification on success
