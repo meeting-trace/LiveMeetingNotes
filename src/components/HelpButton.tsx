@@ -408,14 +408,14 @@ export const HelpButton: React.FC = () => {
             <br />
 
             Trong trường hợp Anh/Chị thấy LiveMeetingNotes hữu ích, Anh/Chị có thể{" "}
-            <Text strong>tự nguyện</Text> quyên góp cho hoạt động từ thiện thông qua tài khoản của{" "}
+            <Text strong>dành một khoản đóng góp</Text> (tùy tâm) chuyển trực tiếp đến số tài khoản của{" "}
             <Text strong style={{ color: "#16ff48" }}>
-              Mặt trận Tổ quốc Việt Nam
+              Quỹ bảo trợ trẻ em Việt Nam
             </Text>{" "}
             <br />
             Nội dung chuyển khoản:{" "}
             <Text code>
-              LiveMeetingNotes chung tay động viên các hoàn cảnh khó khăn
+              LiveMeetingNotes chung tay cùng trẻ em Việt Nam
             </Text>
             <br />
             <br />
@@ -441,19 +441,11 @@ export const HelpButton: React.FC = () => {
           </Paragraph>
           <List
             size="small"
-            header={<Text strong>Thông tin số tài khoản của Mặt trận Tổ quốc Việt Nam</Text>}
+            header={<Text strong>Thông tin số tài khoản của Quỹ bảo trợ trẻ em Việt Nam</Text>}
             dataSource={[
               <>
-                <Text strong>💸🏦 VietinBank - Quỹ Vì người nghèo Trung ương:</Text> <br />
-                <Text strong></Text> <Text copyable>111135888888</Text>
-              </>,
-              <>
-                <Text strong>💸🏦 Vietcombank - Quỹ Vì người nghèo Trung ương:</Text> <br />
-                <Text strong></Text> <Text copyable>9999999999999</Text>
-              </>,
-              <>
-                <Text strong>💸🏦 BIDV - Quỹ Vì người nghèo Trung ương:</Text> <br />
-                <Text strong></Text> <Text copyable>8631088888</Text>
+                <Text strong>💸🏦 Vietcombank - Quỹ bảo trợ trẻ em Việt Nam:</Text> <br />
+                <Text strong></Text> <Text copyable>0010000000355</Text>
               </>,
               <>
                 <Text type="secondary" italic>
