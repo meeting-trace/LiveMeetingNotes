@@ -1117,9 +1117,10 @@ export const App: React.FC = () => {
       // Show confirmation modal with enhanced UI
       modal.confirm({
         title: (
-          <span style={{ fontSize: '18px', fontWeight: 'bold', color: isLongAudio ? '#ff4d4f' : '#667eea' }}>
-            <span style={{ fontSize: '24px' }}>{isLongAudio ? '🤖' : '🤖'}</span> Chuyển đổi giọng nói với Gemini AI{isLongAudio ? ' - Sẽ tự động chia nhỏ' : ' - Gemini AI có thể đưa ra thông tin không chính xác, HÃY THẬN TRỌNG!!!'}
+          <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#ff4d4f'}}>
+            <span style={{ fontSize: '24px' }}></span>Gemini AI có thể đưa ra thông tin không chính xác, HÃY THẬN TRỌNG!!!
           </span>
+          
         ),
         width: 600,
         icon: null,
@@ -1145,7 +1146,6 @@ export const App: React.FC = () => {
                   • Khoảng {Math.ceil(durationMinutes / 15)}-{Math.ceil(durationMinutes / 10)} phút để xử lý toàn bộ<br />
                   • Có delay 5s giữa các phần (tuân thủ rate limit)<br />
                   • Bạn có thể theo dõi tiến trình trực tiếp<br /><br />
-                  <strong style={{ color: '#52c41a' }}>✅ Ưu điểm:</strong> Kết quả chính xác, đầy đủ, không bị cắt ngang!
                 </div>
               </div>
             )}
@@ -2009,11 +2009,11 @@ export const App: React.FC = () => {
     // Show warning modal with better design
     modal.confirm({
       title: (
-        <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1890ff' }}>
-          🤖 Chuẩn hóa văn bản bằng Gemini AI - Gemini AI có thể đưa ra thông tin không chính xác, HÃY THẬN TRỌNG!!!
+        <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#ff4d4f' }}>
+          🤖 Gemini AI có thể đưa ra thông tin không chính xác, HÃY THẬN TRỌNG!!!
         </div>
       ),
-      icon: <ExclamationCircleOutlined style={{ color: '#1890ff' }} />,
+      icon: <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />,
       width: 680,
       content: (
         <div style={{ fontSize: '14px', lineHeight: '1.8' }}>
@@ -2027,38 +2027,6 @@ export const App: React.FC = () => {
               <li>Thêm dấu câu và viết hoa đúng quy tắc</li>
               <li>Gộp các đoạn liên quan thành câu hoàn chỉnh</li>
             </ul>
-          </div>
-
-          <div style={{ 
-            background: '#f0f5ff',
-            border: '1px solid #adc6ff',
-            borderRadius: '8px',
-            padding: '16px',
-            marginBottom: '16px'
-          }}>
-            <label style={{ 
-              display: 'flex', 
-              alignItems: 'flex-start', 
-              cursor: 'pointer',
-              gap: '8px'
-            }}>
-              <input 
-                type="checkbox" 
-                id="useRawTranscripts"
-                style={{ marginTop: '4px' }}
-              />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 'bold', marginBottom: '4px', color: '#1890ff' }}>
-                  📦 Sử dụng dữ liệu bổ trợ (rawTranscripts.json)
-                </div>
-                <div style={{ fontSize: '13px', color: '#666' }}>
-                  Nếu tick, AI sẽ tham khảo thêm dữ liệu gốc từ Web Speech API. 
-                  <strong> Khuyến nghị: Bỏ tick để tiết kiệm token và xử lý nhanh hơn.</strong>
-                  <br />
-                  <span style={{ color: '#fa8c16' }}>⚠️ Nếu tick sẽ tốn nhiều token hơn (~x2) và có thể vượt quota.</span>
-                </div>
-              </div>
-            </label>
           </div>
 
           <div style={{ 
