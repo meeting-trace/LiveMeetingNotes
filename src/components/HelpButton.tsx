@@ -388,14 +388,82 @@ export const HelpButton: React.FC = () => {
             Xin chào! Mình là <Text strong>NguyenDacHung</Text>, tác giả của ứng dụng này.<br />
             <br />
             <Text>
-              <strong>LiveMeetingNotes</strong> được phát triển nhằm mục đích cung cấp miễn phí một công cụ hỗ trợ ghi chép, lưu trữ và quản lý nội dung cuộc họp một cách chuyên nghiệp, bảo mật và tiện lợi.<br />
-              <br />
-              Ứng dụng này được cung cấp <Text strong>HOÀN TOÀN MIỄN PHÍ, không vì mục đích thương mại</Text>. Trong trường hợp Anh/Chị thấy LiveMeetingNotes hữu ích và mong muốn hỗ trợ tác giả một chút kinh phí (<Text strong></Text>tinh thần tự nguyện<Text strong></Text>) để góp phần duy trì và phát triển sản phẩm, Anh/Chị có thể liên hệ qua Thông tin bên dưới 💸👇 ^.^!. Mọi sự đồng hành của Anh/Chị đều được tác giả trân trọng ghi nhận và xem đây là động lực để phát triển các công cụ mới trong tương lai! <br />
-              <br />XIN LƯU Ý: Việc đóng góp hoàn toàn mang tính chất tự nguyện, không bắt buộc và không ảnh hưởng đến bất kỳ tính năng nào của ứng dụng. Tác giả không yêu cầu hay thu bất kỳ khoản phí sử dụng nào dưới mọi hình thức. Mọi hành vi thu phí bắt buộc hoặc mạo danh LiveMeetingNotes đều không xuất phát từ tác giả. Đề nghị người dùng cẩn trọng để tránh các trường hợp lừa đảo không đáng có.<br />
-              <br />
-              Mọi thắc mắc hoặc cần hỗ trợ, Anh/Chị vui lòng liên hệ qua các kênh sau:
+            <Text strong style={{ fontSize: 16 }}>
+              LiveMeetingNotes
+            </Text>{" "}
+            được phát triển nhằm cung cấp miễn phí một công cụ hỗ trợ ghi chép, lưu trữ và quản lý nội dung cuộc họp một cách{" "}
+            <Text strong>chuyên nghiệp</Text>,{" "}
+            <Text strong>bảo mật</Text> và{" "}
+            <Text strong>tiện lợi</Text>.
+            <br />
+            <br />
+
+            Ứng dụng được cung cấp{" "}
+            <Text strong style={{ color: "#1677ff" }}>
+              HOÀN TOÀN MIỄN PHÍ
+            </Text>{" "}
+            và{" "}
+            <Text strong>không vì mục đích thương mại</Text>.
+            <br />
+            <br />
+
+            Trong trường hợp Anh/Chị thấy LiveMeetingNotes hữu ích, Anh/Chị có thể{" "}
+            <Text strong>tự nguyện</Text> quyên góp cho hoạt động từ thiện thông qua tài khoản của{" "}
+            <Text strong style={{ color: "#16ff48" }}>
+              Mặt trận Tổ quốc Việt Nam
+            </Text>{" "}
+            <br />
+            Nội dung chuyển khoản:{" "}
+            <Text code>
+              LiveMeetingNotes chung tay động viên các hoàn cảnh khó khăn
             </Text>
+            <br />
+            <br />
+
+            <Text strong type="danger">
+              XIN LƯU Ý:
+            </Text>
+            <br />
+            <Text strong>
+              Việc quyên góp hoàn toàn tự nguyện, không bắt buộc và không ảnh hưởng đến bất kỳ tính năng nào của ứng dụng.
+            </Text>
+            <br />
+            Tác giả{" "}
+            <Text strong>không thu bất kỳ khoản phí sử dụng nào</Text> dưới mọi hình thức!
+            <br />
+            Mọi hành vi{" "}
+            <Text strong type="danger">
+              thu phí bắt buộc hoặc mạo danh LiveMeetingNotes
+            </Text>{" "}
+            đều không xuất phát từ tác giả. Đề nghị người dùng cẩn trọng để tránh các trường hợp lừa đảo.
+            <br />
+          </Text>
           </Paragraph>
+          <List
+            size="small"
+            header={<Text strong>Thông tin số tài khoản của Mặt trận Tổ quốc Việt Nam</Text>}
+            dataSource={[
+              <>
+                <Text strong>💸🏦 VietinBank - Quỹ Vì người nghèo Trung ương:</Text> <br />
+                <Text strong></Text> <Text copyable>111135888888</Text>
+              </>,
+              <>
+                <Text strong>💸🏦 Vietcombank - Quỹ Vì người nghèo Trung ương:</Text> <br />
+                <Text strong></Text> <Text copyable>9999999999999</Text>
+              </>,
+              <>
+                <Text strong>💸🏦 BIDV - Quỹ Vì người nghèo Trung ương:</Text> <br />
+                <Text strong></Text> <Text copyable>8631088888</Text>
+              </>,
+              <>
+                <Text type="secondary" italic>
+                  Xin cảm ơn mọi sự ủng hộ! Chúc Anh/Chị sử dụng hiệu quả và lan tỏa giá trị tích cực đến cộng đồng ❤️
+                </Text>
+              </>
+            ]}
+            renderItem={item => <List.Item>{item}</List.Item>}
+          />
+          <Text strong>Mọi thắc mắc hoặc cần hỗ trợ:</Text> vui lòng liên hệ qua các kênh sau
           <List
             size="small"
             header={<Text strong>Thông tin liên hệ</Text>}
@@ -414,15 +482,6 @@ export const HelpButton: React.FC = () => {
               </>,
               <>
                 <Text strong>📬Email:</Text> <a href="mailto:dachungbk@gmail.com">dachungbk@gmail.com</a>
-              </>,
-              <>
-                <Text strong>🧋💸🎁 Ngân hàng BIDV - Nguyen Dac Hung:</Text> <br />
-                <Text strong></Text> <Text copyable>2610308803</Text>
-              </>,
-              <>
-                <Text type="secondary" italic>
-                  Xin cảm ơn mọi sự ủng hộ! Chúc Anh/Chị sử dụng hiệu quả và lan tỏa giá trị tích cực đến cộng đồng ❤️
-                </Text>
               </>
             ]}
             renderItem={item => <List.Item>{item}</List.Item>}
