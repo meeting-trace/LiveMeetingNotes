@@ -148,8 +148,8 @@ export const TranscriptionConfig: React.FC<Props> = ({
         timestampDelay: values.timestampDelay || 8,
         
         // Gemini API Limits
-        maxAudioDurationMinutes: values.maxAudioDurationMinutes || 180,
-        maxFileSizeMB: values.maxFileSizeMB || 300,
+        maxAudioDurationMinutes: values.maxAudioDurationMinutes || 60,
+        maxFileSizeMB: values.maxFileSizeMB || 150,
         requestDelaySeconds: values.requestDelaySeconds || 5,
         summaryPrompt: values.summaryPrompt || 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'
       };
@@ -473,7 +473,10 @@ export const TranscriptionConfig: React.FC<Props> = ({
                     name="maxAudioDurationMinutes"
                     initialValue={60}
                     extra="Thời lượng tối đa của file audio để xử lý (mặc định: 60 phút)"
-                    rules={[{ type: 'number', min: 1, max: 999, message: 'Vui lòng nhập từ 1-999 phút' }]}
+                    rules={[
+                      { required: true, message: 'Vui lòng nhập thời lượng' },
+                      { type: 'number', min: 1, max: 999, message: 'Vui lòng nhập từ 1-999 phút' }
+                    ]}
                   >
                     <InputNumber
                       placeholder="Nhập thời lượng (phút)"
@@ -489,7 +492,10 @@ export const TranscriptionConfig: React.FC<Props> = ({
                     name="maxFileSizeMB"
                     initialValue={150}
                     extra="Kích thước tối đa của mỗi file gửi lên Gemini API"
-                    rules={[{ type: 'number', min: 1, max: 2000, message: 'Vui lòng nhập từ 1-2000 MB' }]}
+                    rules={[
+                      { required: true, message: 'Vui lòng nhập kích thước' },
+                      { type: 'number', min: 1, max: 2000, message: 'Vui lòng nhập từ 1-2000 MB' }
+                    ]}
                   >
                     <InputNumber
                       placeholder="Nhập kích thước (MB)"
@@ -505,7 +511,10 @@ export const TranscriptionConfig: React.FC<Props> = ({
                     name="requestDelaySeconds"
                     initialValue={5}
                     extra="Thời gian chờ giữa 2 lần gửi request để tuân thủ rate limit (mặc định: 5s)"
-                    rules={[{ type: 'number', min: 1, max: 60, message: 'Vui lòng nhập từ 1-60 giây' }]}
+                    rules={[
+                      { required: true, message: 'Vui lòng nhập delay' },
+                      { type: 'number', min: 1, max: 60, message: 'Vui lòng nhập từ 1-60 giây' }
+                    ]}
                   >
                     <InputNumber
                       placeholder="Nhập delay (giây)"

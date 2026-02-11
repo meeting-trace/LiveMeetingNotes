@@ -972,10 +972,11 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON với summary TRƯỚC, rồi
       const durationMinutes = Math.ceil(audioDuration / 60);
       
       console.log(`📊 Thời lượng: ${durationMinutes} phút (${audioDuration}s)`);
+      console.log(`⚙️ Config: maxDurationMinutes=${maxDurationMinutes}, skipSizeCheck=${skipSizeCheck}`);
 
       // ⚠️ Tự động chia nhỏ nếu audio quá dài
       if (!skipSizeCheck && durationMinutes > maxDurationMinutes) {
-        console.warn(`⚠️ Audio quá dài (${durationMinutes} phút > 60 phút)`);
+        console.warn(`⚠️ Audio quá dài (${durationMinutes} phút > ${maxDurationMinutes} phút)`);
         console.log(`🔄 Tự động chia nhỏ theo thời lượng - file sẽ được convert toàn bộ sang WAV một lần`);
         
         if (onProgress) {
@@ -1053,10 +1054,10 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON với summary TRƯỚC, rồi
         }
       }
       
-      if (durationMinutes > 60) {
+      if (durationMinutes > maxDurationMinutes) {
         console.log(`ℹ️ Audio dài (${durationMinutes} phút) nhưng skipSizeCheck=true, tiếp tục xử lý`);
       } else {
-        console.log(`✅ Thời lượng phù hợp (${durationMinutes} phút ≤ 60 phút)`);
+        console.log(`✅ Thời lượng phù hợp (${durationMinutes} phút ≤ ${maxDurationMinutes} phút)`);
       }
       
       if (onProgress) {
