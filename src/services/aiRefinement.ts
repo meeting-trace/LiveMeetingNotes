@@ -32,8 +32,17 @@ export class AIRefinementService {
   };
 
   // Batch processing configuration
-  private static readonly BATCH_SIZE = 30; // Reduced from 50 to 30 segments per batch (~5000 tokens)
-  private static readonly BATCH_DELAY_MS = 6000; // Increased from 5000 to 6000ms (6 seconds) between batches to avoid rate limit
+  private static readonly BATCH_SIZE = 20; // Max segments per batch (controls granularity)
+  private static readonly BATCH_DELAY_MS = 6000; // 6 seconds between batches to respect rate limit
+
+  // Output token budget per API request
+  // Gemini 2.5 thinking models use a large portion of outputTokenLimit for internal reasoning.
+  // Setting maxOutputTokens to the full model limit (65536) causes truncation because
+  // thinking tokens (e.g. ~62000) consume almost all the budget before actual output starts.
+  private static readonly MAX_SAFE_OUTPUT_TOKENS = 8192;       // Hard cap per request for actual JSON output
+  private static readonly THINKING_BUDGET_TOKENS = 1024;       // Limit thinking for structured JSON tasks (Gemini 2.5+)
+  private static readonly EST_OUTPUT_TOKENS_PER_SEGMENT = 150; // Conservative estimate: output tokens per refined segment
+  private static readonly EST_SUMMARY_TOKENS = 700;            // Estimated tokens for meeting summary
 
   /**
    * Estimate token count for transcripts
@@ -412,13 +421,31 @@ export class AIRefinementService {
     const quotaCheck = this.checkQuotaEstimate(transcriptions);
     console.log('📊 Quota Check:', quotaCheck.message);
 
-    // If estimated tokens exceed limit, use batch processing
-    if (quotaCheck.estimatedTokens > this.FREE_TIER_LIMITS.TPD * 0.8) { // 80% threshold
-      console.log('🔄 Using batch processing to avoid quota limits...');
-      return this.refineTranscriptsInBatches(apiKey, transcriptions, rawData, modelName, onProgress, fileManager);
+    // Calculate safe batch size based on output token budget per request.
+    // Each request: thinking (~THINKING_BUDGET_TOKENS) + summary (~EST_SUMMARY_TOKENS) + segments
+    // Remaining tokens for segments = MAX_SAFE_OUTPUT_TOKENS - THINKING_BUDGET_TOKENS - EST_SUMMARY_TOKENS
+    const outputBudgetForSegments = this.MAX_SAFE_OUTPUT_TOKENS - this.THINKING_BUDGET_TOKENS - this.EST_SUMMARY_TOKENS;
+    const safeBatchSize = Math.max(5, Math.min(
+      this.BATCH_SIZE,
+      Math.floor(outputBudgetForSegments / this.EST_OUTPUT_TOKENS_PER_SEGMENT)
+    ));
+    console.log(`📐 Safe batch size: ${safeBatchSize} segments/request (output budget: ${outputBudgetForSegments} tokens)`);
+
+    // Auto-batch when:
+    // 1. Segments exceed the per-request safe limit (prevents output truncation)
+    // 2. Estimated daily tokens exceed 80% of free tier quota
+    const needsBatching = transcriptions.length > safeBatchSize ||
+      quotaCheck.estimatedTokens > this.FREE_TIER_LIMITS.TPD * 0.8;
+
+    if (needsBatching) {
+      const reason = transcriptions.length > safeBatchSize
+        ? `${transcriptions.length} segments > safe limit ${safeBatchSize}/request`
+        : 'daily quota threshold';
+      console.log(`🔄 Using batch processing (${reason})...`);
+      return this.refineTranscriptsInBatches(apiKey, transcriptions, rawData, modelName, onProgress, fileManager, safeBatchSize);
     }
 
-    // Otherwise, process normally
+    // Small enough to process in a single request
     return this.refineWithGemini(apiKey, transcriptions, rawData, modelName, onProgress, fileManager);
   }
 
@@ -431,15 +458,16 @@ export class AIRefinementService {
     rawData: RawTranscriptData[],
     modelName: string,
     onProgress?: (progress: number, message?: string) => void,
-    fileManager?: FileManagerService
+    fileManager?: FileManagerService,
+    batchSize: number = this.BATCH_SIZE // Dynamic batch size passed from refineTranscripts
   ): Promise<{ segments: RefinedSegment[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
-    const batches = this.splitIntoBatches(transcriptions, this.BATCH_SIZE);
+    const batches = this.splitIntoBatches(transcriptions, batchSize);
     const allRefinedSegments: RefinedSegment[] = [];
     const allSummaries: string[] = [];
     let hasTruncation = false;
     const truncationWarnings: string[] = [];
 
-    console.log(`📦 Processing ${transcriptions.length} segments in ${batches.length} batches...`);
+    console.log(`📦 Processing ${transcriptions.length} segments in ${batches.length} batches (${batchSize} segments/batch)...`);
 
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i];
@@ -449,7 +477,7 @@ export class AIRefinementService {
 
       try {
         // Find corresponding raw data for this batch
-        const batchStartIndex = i * this.BATCH_SIZE;
+        const batchStartIndex = i * batchSize;
         const batchRawData = rawData.slice(batchStartIndex, batchStartIndex + batch.length);
 
         // Process this batch
@@ -581,20 +609,46 @@ export class AIRefinementService {
       console.log(`🤖 Using Gemini model: ${modelName}`);
       console.log(`📡 Endpoint: ${endpoint}`);
 
+      // Calculate maxOutputTokens for this specific batch to avoid truncation.
+      // Gemini 2.5 thinking models use a large portion of the token budget for internal reasoning,
+      // so setting maxOutputTokens = full model limit causes the actual JSON output to be truncated.
+      // Strategy: cap at MAX_SAFE_OUTPUT_TOKENS, sized to fit expected segments + summary + thinking.
+      const estBatchOutputTokens =
+        transcriptions.length * this.EST_OUTPUT_TOKENS_PER_SEGMENT + this.EST_SUMMARY_TOKENS;
+      const batchMaxOutputTokens = Math.min(
+        modelInfo.outputTokenLimit,               // Never exceed model's hard cap
+        Math.max(
+          this.MAX_SAFE_OUTPUT_TOKENS,            // Always allow at least the safe minimum
+          estBatchOutputTokens + this.THINKING_BUDGET_TOKENS + 512 // estimated need + headroom
+        )
+      );
+      console.log(`🎯 maxOutputTokens for this batch: ${batchMaxOutputTokens} (estimated need: ${estBatchOutputTokens} + ${this.THINKING_BUDGET_TOKENS} thinking)`);
+
+      // Gemini 2.5+ models support thinkingConfig to limit reasoning token usage.
+      // For structured JSON tasks, deep thinking is not needed — limit it explicitly.
+      const isThinkingModel = modelName.includes('gemini-2.5') || modelName.includes('gemini-2-5');
+
+      // Build generationConfig — only add thinkingConfig for models that support it
+      const generationConfig: Record<string, any> = {
+        temperature: 0.1,
+        topK: 40,
+        topP: 0.95,
+        maxOutputTokens: batchMaxOutputTokens,
+        responseMimeType: 'application/json'
+      };
+      if (isThinkingModel) {
+        generationConfig.thinkingConfig = { thinkingBudget: this.THINKING_BUDGET_TOKENS };
+        console.log(`🧠 thinkingBudget set to ${this.THINKING_BUDGET_TOKENS} tokens (Gemini 2.5 model)`);
+      }
+
       // Call Gemini API
-      const requestBody = {
+      const requestBody: Record<string, any> = {
         contents: [{
           parts: [{
             text: prompt
           }]
         }],
-        generationConfig: {
-          temperature: 0.1, // Lowered from 0.2 for better consistency and rule-following
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: modelInfo.outputTokenLimit, // Dynamic limit based on selected model
-          responseMimeType: 'application/json' // Ensure valid JSON output structure
-        },
+        generationConfig,
         safetySettings: [
           {
             category: "HARM_CATEGORY_HARASSMENT",
@@ -826,11 +880,31 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON với summary TRƯỚC, rồi
           });
 
         console.log('🔧 Attempting to fix JSON...');
+        let parsed = false;
         try {
           refinedData = JSON.parse(fixedText);
+          parsed = true;
           console.log('✅ JSON fixed and parsed successfully');
-        } catch (secondError) {
-          console.error('❌ Still cannot parse after fixes');
+        } catch (_secondError) {
+          console.warn('⚠️ Standard fix failed, trying truncation recovery...');
+        }
+
+        // If standard fixes failed AND response was truncated (MAX_TOKENS),
+        // salvage all complete segments by closing the broken JSON
+        if (!parsed && (finishReason === 'MAX_TOKENS')) {
+          try {
+            refinedData = AIRefinementService.recoverTruncatedJSON(responseText);
+            parsed = !!refinedData;
+            if (parsed) {
+              console.log('✅ Recovered partial data from truncated response');
+            }
+          } catch (_recoverError) {
+            console.error('❌ Truncation recovery also failed');
+          }
+        }
+
+        if (!parsed) {
+          console.error('❌ All JSON repair attempts failed');
           throw parseError; // Throw original error
         }
       }
@@ -892,6 +966,79 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON với summary TRƯỚC, rồi
       console.error('Failed to parse AI response:', error);
       console.log('Raw API response:', JSON.stringify(apiResponse, null, 2));
       throw new Error(`Failed to parse AI response: ${error.message}`);
+    }
+  }
+
+  /**
+   * Recover partial data from a JSON string that was truncated due to MAX_TOKENS.
+   * Strategy:
+   * 1. Extract `summary` via regex (appears before `segments`).
+   * 2. Find all complete segment objects inside the `"segments"` array
+   *    by walking backwards from the end, looking for the last `}` that
+   *    closes a complete object at the segment level.
+   * 3. Close the array + wrapper object and re-parse.
+   */
+  private static recoverTruncatedJSON(text: string): { segments: any[], summary?: string } | null {
+    // --- 1. Extract summary ---
+    let summary: string | undefined;
+    const summaryMatch = text.match(/"summary"\s*:\s*"([\s\S]*?)(?<!\\)"\s*,\s*"segments"/);
+    if (summaryMatch) {
+      try {
+        // Use JSON.parse to unescape the captured summary string
+        summary = JSON.parse(`"${summaryMatch[1]}"`);
+      } catch {
+        summary = summaryMatch[1]; // use raw if unescape fails
+      }
+    }
+
+    // --- 2. Find the start of the segments array ---
+    const segmentsIdx = text.indexOf('"segments"');
+    if (segmentsIdx === -1) return null;
+
+    const arrayStart = text.indexOf('[', segmentsIdx);
+    if (arrayStart === -1) return null;
+
+    // --- 3. Walk backwards from end to find last complete segment object ---
+    // A complete segment ends with `}` at the segment level (depth 1 inside array)
+    // We close the substring at that `}` and try to parse the array
+    const arraySlice = text.substring(arrayStart);
+
+    // Find the last `}` that could close a segment object.
+    // Walk through characters tracking depth; collect positions where depth returns to 1
+    // (i.e., a `}` that closes a top-level object inside the array).
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    const closePositions: number[] = []; // positions of `}` closing depth-1 objects
+
+    for (let i = 0; i < arraySlice.length; i++) {
+      const ch = arraySlice[i];
+      if (escape) { escape = false; continue; }
+      if (ch === '\\' && inString) { escape = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) continue;
+
+      if (ch === '{' || ch === '[') depth++;
+      else if (ch === '}' || ch === ']') {
+        depth--;
+        // A `}` at depth 1 (just exited a top-level object inside the array)
+        if (ch === '}' && depth === 1) closePositions.push(i);
+        if (depth === 0) break; // We've closed the array — stop
+      }
+    }
+
+    if (closePositions.length === 0) return null;
+
+    // Use the last recorded close position to build a valid array string
+    const lastClose = closePositions[closePositions.length - 1];
+    const repairedArray = arraySlice.substring(0, lastClose + 1) + ']';
+
+    try {
+      const segments = JSON.parse(repairedArray);
+      console.log(`🔧 Recovered ${segments.length} complete segments from truncated response`);
+      return { segments, summary };
+    } catch {
+      return null;
     }
   }
 

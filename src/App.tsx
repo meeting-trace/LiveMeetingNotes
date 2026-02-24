@@ -2104,11 +2104,13 @@ export const App: React.FC = () => {
         danger: false,
         type: 'primary'
       },
-      onOk: async () => {
+      onOk: () => {
         // Get checkbox state before modal closes
         const checkboxElement = document.getElementById('useRawTranscripts') as HTMLInputElement;
         const shouldUseRawData = checkboxElement ? checkboxElement.checked : false;
-        await performAIRefinement(shouldUseRawData);
+        // Do NOT await — modal must close immediately so user can interact with UI.
+        // Progress is shown via non-blocking notification at bottom-right.
+        void performAIRefinement(shouldUseRawData);
       }
     });
   };
@@ -2123,170 +2125,96 @@ export const App: React.FC = () => {
       return;
     }
 
-    // Step 1: Check quota status first (real-time check)
+    // Step 1: Check quota status (non-blocking — only block if exceeded)
     const hideCheckingMsg = message.loading('🔍 Đang kiểm tra hạn mức API Key...', 0);
-    
     try {
       const quotaStatus = await AIRefinementService.checkQuotaStatus(apiKeyToUse, selectedModel);
       hideCheckingMsg();
-      
-      // Show quota status in a modal
-      await new Promise<void>((resolve, reject) => {
-        let statusIcon = '✅';
-        let statusColor = '#52c41a';
-        let statusBg = '#f6ffed';
-        let statusBorder = '#b7eb8f';
-        
-        if (quotaStatus.status === 'exceeded') {
-          statusIcon = '🚫';
-          statusColor = '#cf1322';
-          statusBg = '#fff2f0';
-          statusBorder = '#ffccc7';
-        } else if (quotaStatus.status === 'limited') {
-          statusIcon = '⚠️';
-          statusColor = '#fa8c16';
-          statusBg = '#fff7e6';
-          statusBorder = '#ffd591';
-        } else if (quotaStatus.status === 'error') {
-          statusIcon = '⚠️';
-          statusColor = '#faad14';
-          statusBg = '#fffbe6';
-          statusBorder = '#ffe58f';
-        }
-        
-        // Calculate estimated usage
-        const totalChars = transcriptions.reduce((sum, t) => sum + t.text.length, 0);
-        const estimatedTokens = Math.ceil(totalChars / 3) + 1000;
-        const quotaPercent = Math.round((estimatedTokens / 250000) * 100);
-        
-        modal.confirm({
-          title: (
-            <div style={{ fontSize: '18px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span>{statusIcon}</span>
-              Trạng thái Gemini API
-            </div>
-          ),
-          width: 680,
-          content: (
-            <div style={{ fontSize: '14px', lineHeight: '1.8' }}>
-              <div style={{
-                background: statusBg,
-                border: `2px solid ${statusBorder}`,
-                borderRadius: '8px',
-                padding: '16px',
-                marginBottom: '16px'
-              }}>
-                <div style={{ fontWeight: 'bold', color: statusColor, marginBottom: '12px', fontSize: '15px' }}>
-                  {quotaStatus.message}
-                </div>
-                {quotaStatus.recommendations.length > 0 && (
-                  <div>
-                    <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#595959' }}>
-                      💡 Khuyến nghị:
-                    </div>
-                    <ul style={{ paddingLeft: '20px', margin: '0', color: '#595959' }}>
-                      {quotaStatus.recommendations.map((rec, idx) => (
-                        <li key={idx} dangerouslySetInnerHTML={{ __html: rec }} />
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-              
-              {quotaStatus.status === 'available' && (
-                <div style={{
-                  background: '#e6f7ff',
-                  border: '1px solid #91d5ff',
-                  borderRadius: '6px',
-                  padding: '16px'
-                }}>
-                  <div style={{ fontWeight: 'bold', marginBottom: '12px', color: '#1890ff' }}>
-                    📊 Ước tính cho lần xử lý này
-                  </div>
-                  <div style={{ fontSize: '13px', color: '#595959' }}>
-                    • Segments: {transcriptions.length}<br />
-                    • Ước tính: ~{estimatedTokens.toLocaleString()} tokens<br />
-                    • Hạn mức free: 250,000 tokens/ngày<br />
-                    • Sử dụng: ~{quotaPercent}%<br />
-                    {quotaPercent > 80 && (
-                      <span style={{ color: '#fa8c16', fontWeight: 'bold' }}>
-                        <br />⚠️ Gần vượt hạn mức! Hệ thống sẽ tự động chia nhỏ xử lý.
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          ),
-          okText: quotaStatus.status === 'exceeded' ? 'Đã hiểu' : 'Tiếp tục xử lý',
-          cancelText: 'Hủy bỏ',
-          okButtonProps: {
-            danger: quotaStatus.status === 'exceeded',
-            disabled: quotaStatus.status === 'exceeded'
-          },
-          onOk: () => resolve(),
-          onCancel: () => reject(new Error('User cancelled'))
-        });
-      });
-      
-    } catch (error: any) {
-      hideCheckingMsg();
-      if (error.message === 'User cancelled') {
+
+      if (quotaStatus.status === 'exceeded') {
+        // Quota exceeded — notify and abort (non-blocking message, no modal)
+        message.error({ content: `🚫 ${quotaStatus.message}`, duration: 8 });
         return;
       }
+
+      if (quotaStatus.status === 'limited') {
+        // Quota limited — warn but continue
+        message.warning({
+          content: `⚠️ ${quotaStatus.message}. Hệ thống sẽ tự động chia nhỏ để tối ưu quota.`,
+          duration: 6
+        });
+      }
+    } catch (error: any) {
+      hideCheckingMsg();
       // Continue even if quota check fails
-      message.warning('Không thể kiểm tra quota, sẽ tiếp tục xử lý...');
+      message.warning({ content: 'Không thể kiểm tra quota, sẽ tiếp tục xử lý...', duration: 3 });
     }
 
-    try {
-      // Show progress dialog
-      const progressDiv = document.createElement('div');
-      progressDiv.id = 'ai-refine-progress';
-      progressDiv.style.cssText = `
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: white;
-        padding: 24px;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        z-index: 10000;
-        min-width: 350px;
-        text-align: center;
-      `;
-      progressDiv.innerHTML = `
-        <div style="font-size: 18px; font-weight: bold; margin-bottom: 12px;">🤖 AI đang chuẩn hóa văn bản...</div>
-        <div id="ai-progress-text" style="font-size: 14px; color: #666;">Đang xử lý...</div>
-        <div style="width: 100%; height: 8px; background: #f0f0f0; border-radius: 4px; margin-top: 12px; overflow: hidden;">
-          <div id="ai-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); transition: width 0.3s;"></div>
-        </div>
-      `;
-      document.body.appendChild(progressDiv);
+    // Step 2: Show progress as non-blocking notification at bottom-right (same as speech-to-text)
+    let currentProgress = 0;
+    let currentMessage = '🚀 Đang bắt đầu...';
+    const notificationKey = `ai-refine-${Date.now()}`;
 
-      const updateProgress = (progress: number) => {
-        const progressBar = document.getElementById('ai-progress-bar');
-        const progressText = document.getElementById('ai-progress-text');
-        if (progressBar) progressBar.style.width = `${progress}%`;
-        if (progressText) {
-          if (progress < 10) {
-            progressText.textContent = 'Đang chuẩn bị dữ liệu...';
-          } else if (progress < 30) {
-            progressText.textContent = 'Đang chia batches để tối ưu quota...';
-          } else if (progress < 90) {
-            const currentBatch = Math.floor((progress / 100) * Math.ceil(transcriptions.length / 50));
-            const totalBatches = Math.ceil(transcriptions.length / 50);
-            if (totalBatches > 1) {
-              progressText.textContent = `Đang xử lý batch ${currentBatch}/${totalBatches}... (${Math.floor(progress)}%)`;
-            } else {
-              progressText.textContent = `Đang gửi đến AI... ${Math.floor(progress)}%`;
-            }
-          } else {
-            progressText.textContent = 'Hoàn thành!';
-          }
+    const updateProgressNotification = () => {
+      notification.open({
+        key: notificationKey,
+        message: (
+          <span style={{ fontSize: '16px', fontWeight: 'bold', color: '#667eea' }}>
+            <span style={{ fontSize: '20px' }}>🤖</span> AI chuẩn hóa văn bản
+          </span>
+        ),
+        description: (
+          <div style={{ width: 320 }}>
+            <div style={{
+              padding: '12px',
+              background: 'linear-gradient(135deg, #667eea22 0%, #764ba222 100%)',
+              borderRadius: '6px',
+              marginBottom: '12px'
+            }}>
+              <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: 'bold', color: '#e6e2e2' }}>
+                {currentMessage}
+              </div>
+              <Progress
+                percent={currentProgress}
+                status={currentProgress === 100 ? 'success' : 'active'}
+                strokeColor={{ '0%': '#667eea', '100%': '#764ba2' }}
+                size="small"
+              />
+            </div>
+            <div style={{ fontSize: '12px', color: '#666', lineHeight: '1.5' }}>
+              💡 Đang xử lý từng batch với delay để tuân thủ rate limit
+            </div>
+          </div>
+        ),
+        placement: 'bottomRight',
+        duration: 0,
+        style: { width: 400 }
+      });
+    };
+
+    const updateProgress = (progress: number) => {
+      currentProgress = Math.floor(progress);
+      if (progress < 10) {
+        currentMessage = '⏳ Đang chuẩn bị dữ liệu...';
+      } else if (progress < 30) {
+        currentMessage = '📦 Đang chia batches để tối ưu quota...';
+      } else if (progress < 90) {
+        const totalBatches = Math.ceil(transcriptions.length / 50);
+        const currentBatch = Math.max(1, Math.floor((progress / 100) * totalBatches));
+        if (totalBatches > 1) {
+          currentMessage = `🔄 Đang xử lý batch ${currentBatch}/${totalBatches}... (${Math.floor(progress)}%)`;
+        } else {
+          currentMessage = `📡 Đang gửi đến AI... ${Math.floor(progress)}%`;
         }
-      };
+      } else {
+        currentMessage = '✅ Hoàn thành!';
+      }
+      updateProgressNotification();
+    };
 
+    updateProgressNotification();
+
+    try {
       // Prepare raw data for supplementary reference
       let rawData: RawTranscriptData[] = [];
       if (useRawData && rawTranscripts && rawTranscripts.length > 0) {
@@ -2318,23 +2246,23 @@ export const App: React.FC = () => {
 
       // Update transcriptions
       setTranscriptions(refinedResults);
-      
+
       // Update summary if generated
       if (refinedResult.summary) {
         setGeminiSummary(refinedResult.summary);
         console.log('📝 Summary updated from AI refinement');
       }
-      
+
       setHasUnsavedChanges(true);
 
-      // Remove progress dialog
-      progressDiv.remove();
+      // Close progress notification
+      notification.destroy(notificationKey);
 
-      const summaryMsg = refinedResult.summary 
+      const summaryMsg = refinedResult.summary
         ? ` và tóm tắt nội dung!`
         : `!`;
       message.success(`✅ Đã chuẩn hóa thành công ${refinedResults.length} đoạn văn bản${summaryMsg}`);
-      
+
       // Show truncation warning if detected
       if (refinedResult.isTruncated && refinedResult.truncationWarning) {
         modal.warning({
@@ -2363,8 +2291,7 @@ export const App: React.FC = () => {
       }
 
     } catch (error: any) {
-      const progressDiv = document.getElementById('ai-refine-progress');
-      if (progressDiv) progressDiv.remove();
+      notification.destroy(notificationKey);
 
       console.error('AI Refinement Error:', error);
       
