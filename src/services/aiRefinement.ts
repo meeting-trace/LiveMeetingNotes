@@ -360,15 +360,24 @@ export class AIRefinementService {
     }
   }
 
+  // Cache modelInfo per (apiKey+model) to avoid repeated HTTP calls on every batch
+  private static readonly _modelInfoCache = new Map<string, { outputTokenLimit: number; inputTokenLimit: number; displayName: string }>();
+
   /**
-   * Get specific model information including outputTokenLimit
-   * Falls back to 8192 if model not found or error occurs
+   * Get specific model information including outputTokenLimit.
+   * Result is cached in memory so subsequent calls within the same session
+   * do not make additional HTTP requests (important for batch processing).
    */
   public static async getModelInfo(apiKey: string, modelName: string): Promise<{
     outputTokenLimit: number;
     inputTokenLimit: number;
     displayName: string;
   }> {
+    const cacheKey = `${apiKey.slice(-8)}:${modelName}`;
+    if (this._modelInfoCache.has(cacheKey)) {
+      console.log(`📊 Model info for ${modelName}: (from cache)`);
+      return this._modelInfoCache.get(cacheKey)!;
+    }
     try {
       const response = await this.listGeminiModels(apiKey);
       const model = response.models?.find((m: any) => m.name === modelName);
@@ -380,18 +389,22 @@ export class AIRefinementService {
           displayName: model.displayName
         });
         
-        return {
+        const info = {
           outputTokenLimit: model.outputTokenLimit || 8192,
           inputTokenLimit: model.inputTokenLimit || 1000000,
           displayName: model.displayName || modelName
         };
+        this._modelInfoCache.set(cacheKey, info);
+        return info;
       } else {
         console.warn(`⚠️ Model ${modelName} not found, using default outputTokenLimit: 8192`);
-        return {
+        const fallback = {
           outputTokenLimit: 8192,
           inputTokenLimit: 1000000,
           displayName: modelName
         };
+        this._modelInfoCache.set(cacheKey, fallback);
+        return fallback;
       }
     } catch (error: any) {
       console.error('Error getting model info:', error);
@@ -416,7 +429,7 @@ export class AIRefinementService {
     modelName: string, // REQUIRED: specific Gemini model (e.g., "models/gemini-2.5-flash")
     onProgress?: (progress: number, message?: string) => void,
     fileManager?: FileManagerService // Optional: for saving debug logs to project folder
-  ): Promise<{ segments: RefinedSegment[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
+  ): Promise<{ segments: RefinedSegment[], summary?: string, isTruncated?: boolean, truncationWarning?: string, isPartial?: boolean, partialWarning?: string }> {
     // Check quota estimate first
     const quotaCheck = this.checkQuotaEstimate(transcriptions);
     console.log('📊 Quota Check:', quotaCheck.message);
@@ -460,74 +473,121 @@ export class AIRefinementService {
     onProgress?: (progress: number, message?: string) => void,
     fileManager?: FileManagerService,
     batchSize: number = this.BATCH_SIZE // Dynamic batch size passed from refineTranscripts
-  ): Promise<{ segments: RefinedSegment[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
+  ): Promise<{ segments: RefinedSegment[], summary?: string, isTruncated?: boolean, truncationWarning?: string, isPartial?: boolean, partialWarning?: string }> {
     const batches = this.splitIntoBatches(transcriptions, batchSize);
     const allRefinedSegments: RefinedSegment[] = [];
     const allSummaries: string[] = [];
     let hasTruncation = false;
     const truncationWarnings: string[] = [];
+    const MAX_RPM_RETRIES = 3; // Max retries per batch when hitting RPM limit
 
     console.log(`📦 Processing ${transcriptions.length} segments in ${batches.length} batches (${batchSize} segments/batch)...`);
 
-    for (let i = 0; i < batches.length; i++) {
+    let i = 0;
+    while (i < batches.length) {
       const batch = batches[i];
       const batchProgress = (i / batches.length) * 100;
+      let rpmRetryCount = 0;
 
       console.log(`🔄 Processing batch ${i + 1}/${batches.length} (${batch.length} segments)...`);
 
-      try {
-        // Find corresponding raw data for this batch
-        const batchStartIndex = i * batchSize;
-        const batchRawData = rawData.slice(batchStartIndex, batchStartIndex + batch.length);
+      let batchSucceeded = false;
+      while (!batchSucceeded) {
+        try {
+          // Find corresponding raw data for this batch
+          const batchStartIndex = i * batchSize;
+          const batchRawData = rawData.slice(batchStartIndex, batchStartIndex + batch.length);
 
-        // Process this batch
-        const batchResult = await this.refineWithGemini(
-          apiKey,
-          batch,
-          batchRawData,
-          modelName,
-          (subProgress) => {
-            if (onProgress) {
-              const totalProgress = batchProgress + (subProgress / batches.length);
-              onProgress(Math.min(totalProgress, 99));
-            }
-          },
-          fileManager
-        );
-
-        allRefinedSegments.push(...batchResult.segments);
-        if (batchResult.summary) {
-          allSummaries.push(batchResult.summary);
-        }
-        
-        // Track truncation
-        if (batchResult.isTruncated) {
-          hasTruncation = true;
-          if (batchResult.truncationWarning) {
-            truncationWarnings.push(`Batch ${i + 1}/${batches.length}: ${batchResult.truncationWarning}`);
-          }
-        }
-
-        // Add delay between batches to avoid rate limiting (except for last batch)
-        if (i < batches.length - 1) {
-          console.log(`⏳ Waiting ${this.BATCH_DELAY_MS / 1000} seconds before next batch to avoid rate limit...`);
-          await new Promise(resolve => setTimeout(resolve, this.BATCH_DELAY_MS));
-        }
-      } catch (error: any) {
-        // If quota exceeded, throw error with helpful message
-        if (error.message.includes('429') || error.message.includes('quota')) {
-          throw new Error(
-            `Vượt hạn mức API tại batch ${i + 1}/${batches.length}.\n\n` +
-            `✅ Đã xử lý: ${allRefinedSegments.length}/${transcriptions.length} segments\n\n` +
-            `Nguyên nhân: ${error.message}\n\n` +
-            `💡 Giải pháp:\n` +
-            `• Đợi 24 giờ để quota reset (hạn mức: 250,000 tokens/ngày)\n` +
-            `• Hoặc nâng cấp lên Gemini API trả phí tại console.cloud.google.com`
+          // Process this batch
+          const batchResult = await this.refineWithGemini(
+            apiKey,
+            batch,
+            batchRawData,
+            modelName,
+            (subProgress) => {
+              if (onProgress) {
+                const totalProgress = batchProgress + (subProgress / batches.length);
+                onProgress(Math.min(totalProgress, 99));
+              }
+            },
+            fileManager
           );
+
+          allRefinedSegments.push(...batchResult.segments);
+          if (batchResult.summary) {
+            allSummaries.push(batchResult.summary);
+          }
+
+          // Track truncation
+          if (batchResult.isTruncated) {
+            hasTruncation = true;
+            if (batchResult.truncationWarning) {
+              truncationWarnings.push(`Batch ${i + 1}/${batches.length}: ${batchResult.truncationWarning}`);
+            }
+          }
+
+          batchSucceeded = true;
+
+          // Add delay between batches to avoid rate limiting (except for last batch)
+          if (i < batches.length - 1) {
+            console.log(`⏳ Waiting ${this.BATCH_DELAY_MS / 1000}s before next batch...`);
+            await new Promise(resolve => setTimeout(resolve, this.BATCH_DELAY_MS));
+          }
+
+        } catch (error: any) {
+          // ── RPM rate limit: auto-retry after the wait time Gemini specifies ──
+          if (error.message.startsWith('RPM_RATE_LIMIT:')) {
+            rpmRetryCount++;
+            if (rpmRetryCount > MAX_RPM_RETRIES) {
+              throw new Error(
+                `⏱️ Vượt giới hạn requests/phút quá nhiều lần tại batch ${i + 1}/${batches.length}.\n` +
+                `✅ Đã xử lý: ${allRefinedSegments.length}/${transcriptions.length} segments.\n` +
+                `💡 Thử lại lần sau hoặc nâng cấp API trả phí.`
+              );
+            }
+            const retrySeconds = parseInt(error.message.split(':')[1], 10) || 60;
+            const waitMs = (retrySeconds + 5) * 1000; // +5s buffer
+            console.warn(`⏱️ RPM limit hit (retry ${rpmRetryCount}/${MAX_RPM_RETRIES}). Waiting ${retrySeconds + 5}s then retrying batch ${i + 1}...`);
+            if (onProgress) {
+              onProgress(
+                batchProgress,
+                `⏱️ Rate limit — chờ ${retrySeconds + 5}s rồi thử lại batch ${i + 1}/${batches.length}...`
+              );
+            }
+            await new Promise(resolve => setTimeout(resolve, waitMs));
+            continue; // retry same batch
+          }
+
+          // ── Daily quota exhausted: return partial results instead of throwing ──
+          // This preserves all segments already refined so they are saved to the UI.
+          if (error.message.includes('quota') || error.message.includes('🚫')) {
+            console.warn(`🚫 Daily quota hit at batch ${i + 1}. Returning ${allRefinedSegments.length} partial segments.`);
+            if (onProgress) onProgress(100);
+            const partialSummary = allSummaries.length > 0 ? allSummaries.join('\n\n---\n\n') : undefined;
+            const partialWarning =
+              `🚫 Hết hạn mức token/ngày tại batch ${i + 1}/${batches.length}.\n\n` +
+              `✅ Đã chuẩn hóa được: ${allRefinedSegments.length}/${transcriptions.length} segments.\n` +
+              `⏳ Còn lại: ${transcriptions.length - allRefinedSegments.length} segments chưa xử lý.\n\n` +
+              `💡 Giải pháp:\n` +
+              `• Đợi 24 giờ để quota reset rồi chạy lại (hệ thống sẽ chuẩn hóa phần còn lại)\n` +
+              `• Hoặc nâng cấp Gemini API trả phí tại console.cloud.google.com`;
+            return {
+              segments: allRefinedSegments,
+              summary: partialSummary,
+              isTruncated: hasTruncation,
+              truncationWarning: truncationWarnings.length > 0 ? truncationWarnings.join('\n') : undefined,
+              isPartial: true,
+              partialWarning
+            };
+          }
+
+          // ── Other errors: propagate immediately ──
+          throw error;
         }
-        throw error;
-      }
-    }
+      } // end inner while (retry loop)
+
+      i++;
+    } // end outer while (batch loop)
 
     if (onProgress) onProgress(100);
     console.log(`✅ Batch processing complete: ${allRefinedSegments.length} segments refined`);
@@ -557,7 +617,7 @@ export class AIRefinementService {
     modelName: string, // REQUIRED: specific model like "models/gemini-2.5-flash"
     onProgress?: (progress: number, message?: string) => void,
     fileManager?: FileManagerService
-  ): Promise<{ segments: RefinedSegment[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
+  ): Promise<{ segments: RefinedSegment[], summary?: string, isTruncated?: boolean, truncationWarning?: string, isPartial?: boolean, partialWarning?: string }> {
     if (!apiKey || apiKey.trim().length === 0) {
       throw new Error('API Key is required for AI refinement');
     }
@@ -706,14 +766,8 @@ export class AIRefinementService {
               `Chi tiết: ${errorMsg}`
             );
           } else {
-            // Rate limit (RPM)
-            throw new Error(
-              `⏱️ Vượt giới hạn requests/phút\n\n` +
-              `📊 Hạn mức: 15 requests/phút (free tier)\n` +
-              `⏰ Thử lại sau: ${retrySeconds}s\n\n` +
-              `💡 Giải pháp: Đợi ${Math.ceil(retrySeconds / 60)} phút rồi thử lại\n\n` +
-              `Chi tiết: ${errorMsg}`
-            );
+            // Rate limit (RPM) — throw special marker so batch loop can auto-retry
+            throw new Error(`RPM_RATE_LIMIT:${retrySeconds}`);
           }
         }
         

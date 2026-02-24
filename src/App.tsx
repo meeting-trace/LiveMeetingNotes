@@ -2258,10 +2258,47 @@ export const App: React.FC = () => {
       // Close progress notification
       notification.destroy(notificationKey);
 
-      const summaryMsg = refinedResult.summary
-        ? ` và tóm tắt nội dung!`
-        : `!`;
-      message.success(`✅ Đã chuẩn hóa thành công ${refinedResults.length} đoạn văn bản${summaryMsg}`);
+      // ── Partial result: daily quota hit mid-way ──
+      if (refinedResult.isPartial && refinedResult.partialWarning) {
+        // Still saved everything refined so far — notify user clearly
+        message.warning({
+          content: `⚠️ Đã lưu ${refinedResults.length} segments đã chuẩn hóa. Xem chi tiết bên dưới.`,
+          duration: 6
+        });
+        modal.warning({
+          title: '⚠️ Hết hạn mức API — Đã lưu kết quả một phần',
+          width: 620,
+          content: (
+            <div style={{ fontSize: '14px', lineHeight: '1.8' }}>
+              <div style={{
+                padding: '16px',
+                background: '#fffbe6',
+                border: '1px solid #ffe58f',
+                borderRadius: '8px',
+                marginBottom: '16px',
+                whiteSpace: 'pre-line',
+                color: '#614700'
+              }}>
+                {refinedResult.partialWarning}
+              </div>
+              <div style={{
+                padding: '12px 16px',
+                background: '#f6ffed',
+                border: '1px solid #b7eb8f',
+                borderRadius: '6px',
+                color: '#135200'
+              }}>
+                <strong>✅ Đã lưu tự động:</strong> {refinedResults.length} segments đã được chuẩn hóa và cập nhật vào danh sách.
+                Phần còn lại giữ nguyên văn bản gốc.
+              </div>
+            </div>
+          ),
+          okText: 'Đã hiểu'
+        });
+      } else {
+        const summaryMsg = refinedResult.summary ? ` và tóm tắt nội dung!` : `!`;
+        message.success(`✅ Đã chuẩn hóa thành công ${refinedResults.length} đoạn văn bản${summaryMsg}`);
+      }
 
       // Show truncation warning if detected
       if (refinedResult.isTruncated && refinedResult.truncationWarning) {
@@ -2308,7 +2345,8 @@ export const App: React.FC = () => {
                 border: '1px solid #ffccc7',
                 borderRadius: '8px',
                 marginBottom: '16px',
-                whiteSpace: 'pre-wrap'
+                whiteSpace: 'pre-wrap',
+                color: '#5c0011'
               }}>
                 {error.message}
               </div>
@@ -2322,7 +2360,7 @@ export const App: React.FC = () => {
                 <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#0050b3' }}>
                   📌 Thông tin hạn mức Gemini Free Tier:
                 </div>
-                <ul style={{ margin: 0, paddingLeft: '20px', color: '#666' }}>
+                <ul style={{ margin: 0, paddingLeft: '20px', color: '#003a8c' }}>
                   <li>15 requests/phút</li>
                   <li>1,500 requests/ngày</li>
                   <li><strong>250,000 tokens/ngày</strong> ← Giới hạn chính</li>
