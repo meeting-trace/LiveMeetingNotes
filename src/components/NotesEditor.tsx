@@ -834,12 +834,12 @@ export const NotesEditor: React.FC<Props> = ({
                     size="small"
                     style={{
                       fontFamily: 'monospace',
-                      fontSize: '12px',
+                      fontSize: '13px',
                       padding: '2px 4px',
                       width: '144px',
                       backgroundColor: '#ffffff',
-                      color: '#4f46e5',
-                      border: '1px solid #4f46e5'
+                      color: '#5046e4',
+                      border: '1px solid #5046e4'
                     }}
                   />
                 ) : (
@@ -874,7 +874,7 @@ export const NotesEditor: React.FC<Props> = ({
                   autoSize={{ minRows: 1, maxRows: 10 }}
                   style={{
                     fontFamily: 'monospace',
-                    fontSize: '12px',
+                    fontSize: '13px',
                     padding: '8px',
                     width: '100%',
                     backgroundColor: 'transparent',
