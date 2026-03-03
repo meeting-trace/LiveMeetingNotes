@@ -189,11 +189,20 @@ export class FileManagerService {
             rawTranscriptsData = JSON.parse(text);
           }
           
-          // Load audio file (.webm, .wav, .mp4, .ogg - support multiple formats)
-          // Load audio file (.webm, .wav, .mp4, .ogg - support multiple formats)
-          if (name.endsWith('.webm') || name.endsWith('.mp3')  || name.endsWith('.wav') || name.endsWith('.mp4') || name.endsWith('.ogg')) {
-            audioBlob = file;
-            // console.log('Loaded audio file:', name, 'size:', audioBlob.size);
+          // Load audio file - support popular formats: webm, mp3, wav, mp4, ogg, m4a, mp4a, aac, flac
+          const audioExtensions = ['.webm', '.mp3', '.wav', '.mp4', '.ogg', '.m4a', '.mp4a', '.aac', '.flac'];
+          if (audioExtensions.some(ext => name.toLowerCase().endsWith(ext))) {
+            const ext = name.split('.').pop()?.toLowerCase() || '';
+            // .m4a / .mp4a / .aac: browsers may not auto-detect MIME type → assign explicitly
+            const needsMimeOverride = ['m4a', 'mp4a', 'aac'].includes(ext) &&
+              (!file.type || file.type === 'application/octet-stream');
+            if (needsMimeOverride) {
+              const mimeType = ext === 'aac' ? 'audio/aac' : 'audio/mp4';
+              audioBlob = new Blob([await file.arrayBuffer()], { type: mimeType });
+            } else {
+              audioBlob = file;
+            }
+            // console.log('Loaded audio file:', name, 'size:', audioBlob.size, 'type:', audioBlob.type);
           }
         }
       }
