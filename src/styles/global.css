@@ -118,6 +118,9 @@ body {
 .notes-editor-container:hover,
 .audio-player:hover { box-shadow:var(--shadow-md); }
 
+/* recording controls — accent border */
+.recording-controls { border-color: var(--primary) !important; }
+
 /* ===== METADATA PANEL ===== */
 .metadata-panel .ant-collapse-header {
   color:var(--text-base) !important; font-weight:600; font-size:15px;
