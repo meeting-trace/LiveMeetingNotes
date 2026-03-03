@@ -545,7 +545,7 @@ export const NotesEditor: React.FC<Props> = ({
     // Shift+Enter: Allow natural newline in speaker textarea (default behavior)
 
     // ArrowRight: Move to text column if cursor at end
-    if (e.key === 'Arrow Right' && cursorPos === speakerText.length) {
+    if (e.key === 'ArrowRight' && cursorPos === speakerText.length) {
       e.preventDefault();
       const textAreaRef = textRefs.current.get(index);
       const textArea = textAreaRef?.resizableTextArea?.textArea;
