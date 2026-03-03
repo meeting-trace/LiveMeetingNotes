@@ -853,11 +853,10 @@ export const NotesEditor: React.FC<Props> = ({
                   width: '120px',
                   backgroundColor: isSelected ? 'rgba(79, 70, 229, 0.12)' : '#f0f4fa',
                   borderRight: '1px solid #d1dae8',
-                  padding: '4px',
+                  padding: '0',
                   flexShrink: 0,
                   display: 'flex',
                   alignItems: 'flex-start',
-                  paddingTop: '8px'
                 }}
               >
                 <TextArea
@@ -876,7 +875,7 @@ export const NotesEditor: React.FC<Props> = ({
                   style={{
                     fontFamily: 'monospace',
                     fontSize: '12px',
-                    padding: '2px 6px',
+                    padding: '8px',
                     width: '100%',
                     backgroundColor: 'transparent',
                     color: '#0891b2',
@@ -908,7 +907,7 @@ export const NotesEditor: React.FC<Props> = ({
                   const target = e.target as HTMLTextAreaElement;
                   handleLineChange(index, target.value);
                 }}
-                placeholder={index === 0 ? "Nhập ghi chú ..." : ""}
+                placeholder="Nhập ghi chú ..."
                 autoSize={{ minRows: 1, maxRows: 10 }}
                 style={{
                   flex: 1,
