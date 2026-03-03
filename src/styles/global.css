@@ -433,8 +433,8 @@ body {
 .blink-btn { animation:blink-glow 1.2s ease-in-out infinite; }
 
 @keyframes blink-glow {
-  0%,100%{ box-shadow:0 0 6px  rgba(80,70,228,.50); }
-  50%    { box-shadow:0 0 20px rgba(220,38,38,.55);  }
+  0%,100% { outline:2px solid rgba(241, 8, 222, 0.55); outline-offset:1px; }
+  50%     { outline:3px solid rgba(7, 212, 76, 0.65); outline-offset:2px; }
 }
 
 /* ===== TOOLTIP ===== */

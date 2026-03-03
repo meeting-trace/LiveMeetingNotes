@@ -52,7 +52,7 @@ export const TranscriptionConfig: React.FC<Props> = ({
         segmentTimeout: 2000,
         segmentMaxLength: 150,
         timestampDelay: 8,
-        maxAudioDurationMinutes: 60,
+        maxAudioDurationMinutes: 30,
         maxFileSizeMB: 20,
         requestDelaySeconds: 5,
         summaryPrompt: 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'
@@ -148,7 +148,7 @@ export const TranscriptionConfig: React.FC<Props> = ({
         timestampDelay: values.timestampDelay || 8,
         
         // Gemini API Limits
-        maxAudioDurationMinutes: values.maxAudioDurationMinutes || 60,
+        maxAudioDurationMinutes: values.maxAudioDurationMinutes || 30,
         maxFileSizeMB: values.maxFileSizeMB || 150,
         requestDelaySeconds: values.requestDelaySeconds || 5,
         summaryPrompt: values.summaryPrompt || 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'
@@ -470,8 +470,8 @@ export const TranscriptionConfig: React.FC<Props> = ({
                   <Form.Item
                     label="Thời lượng audio tối đa (phút)"
                     name="maxAudioDurationMinutes"
-                    initialValue={60}
-                    extra="Thời lượng tối đa của file audio để xử lý (mặc định: 60 phút)"
+                    initialValue={30}
+                    extra="Thời lượng tối đa của file audio để xử lý (mặc định: 30 phút)"
                     rules={[
                       { required: true, message: 'Vui lòng nhập thời lượng' },
                       { type: 'number', min: 1, max: 999, message: 'Vui lòng nhập từ 1-999 phút' }

@@ -283,7 +283,7 @@ export const App: React.FC = () => {
 
     // Get max duration from config
     const config = speechToTextService.getConfig();
-    const maxDurationMinutes = config?.maxAudioDurationMinutes || 60;
+    const maxDurationMinutes = config?.maxAudioDurationMinutes || 30;
 
     // Show options modal: Auto-split vs Manual selection
     const optionsModal = modal.confirm({
@@ -517,7 +517,7 @@ export const App: React.FC = () => {
     // Get config values with defaults
     const maxFileSizeMB = config.maxFileSizeMB || 20;
     const requestDelaySeconds = config.requestDelaySeconds || 5;
-    const maxDurationMinutes = config.maxAudioDurationMinutes || 60;
+    const maxDurationMinutes = config.maxAudioDurationMinutes || 30;
 
     // ⚠️ Kiểm tra thời lượng và cảnh báo nếu quá dài
     const audioDurationMs = audioPlayerRef.current?.getDuration() || 0;
@@ -816,7 +816,7 @@ export const App: React.FC = () => {
 
         try {
           const maxFileSizeMB = config.maxFileSizeMB || 150;
-          const maxDurationMinutes = config.maxAudioDurationMinutes || 60;
+          const maxDurationMinutes = config.maxAudioDurationMinutes || 30;
           const meetingStartTime = getValidMeetingStartTime();
           
           const parsed = await AIRefinementService.transcribeAudioWithGemini(
@@ -1053,14 +1053,14 @@ export const App: React.FC = () => {
         apiKey = customEvent.detail.apiKey;
         modelName = customEvent.detail.modelName;
         const config = speechToTextService.getConfig();
-        maxDurationMinutes = config?.maxAudioDurationMinutes || 60;
+        maxDurationMinutes = config?.maxAudioDurationMinutes || 30;
         maxFileSizeMB = config?.maxFileSizeMB || 150;
       } else {
         // Fallback to getting from settings
         const config = speechToTextService.getConfig();
         apiKey = config?.geminiApiKey;
         modelName = config?.geminiModel;
-        maxDurationMinutes = config?.maxAudioDurationMinutes || 60;
+        maxDurationMinutes = config?.maxAudioDurationMinutes || 30;
         maxFileSizeMB = config?.maxFileSizeMB || 150;
       }
 
@@ -1274,7 +1274,7 @@ export const App: React.FC = () => {
             try {
               const config = speechToTextService.getConfig();
               const maxFileSizeMB = config?.maxFileSizeMB || 150;
-              const maxDurationMinutes = config?.maxAudioDurationMinutes || 60;
+              const maxDurationMinutes = config?.maxAudioDurationMinutes || 30;
               const meetingStartTime = getValidMeetingStartTime();
             
             const parsed = await AIRefinementService.transcribeAudioWithGemini(
@@ -2236,8 +2236,8 @@ export const App: React.FC = () => {
         transcriptions, // Primary data
         rawData, // Supplementary data
         selectedModel, // Pass required model name
-        updateProgress,
-        fileManagerRef.current // Pass fileManager for debug logs
+        updateProgress
+        // fileManagerRef.current // Pass fileManager for debug logs
       );
 
       // Convert to TranscriptionResult format

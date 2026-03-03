@@ -94,7 +94,7 @@ export interface SpeechToTextConfig {
   timestampDelay?: number; // Timestamp delay offset in seconds for manual note-taking (0-60, default: 8)
   
   // Gemini API Limits Configuration
-  maxAudioDurationMinutes?: number; // Maximum audio duration in minutes (default: 60)
+  maxAudioDurationMinutes?: number; // Maximum audio duration in minutes (default: 30)
   maxFileSizeMB?: number; // Maximum file size in MB (default: 20)
   requestDelaySeconds?: number; // Delay between API requests in seconds (default: 5)
   summaryPrompt?: string; // Custom prompt for Gemini summary generation

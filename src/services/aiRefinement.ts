@@ -62,82 +62,82 @@ export class AIRefinementService {
    * Only saves prompt text and response, excludes large binary data (audio base64)
    * Saves to project folder's debug-logs/ directory when folder is selected
    */
-  private static async saveGeminiDebugLog(
-    requestBody: any,
-    responseData: any,
-    metadata: { type: 'text' | 'audio'; timestamp: string; error?: string },
-    fileManager?: FileManagerService
-  ): Promise<void> {
-    try {
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = `gemini-debug-${metadata.type}-${timestamp}.json`;
+  // private static async saveGeminiDebugLog(
+  //   requestBody: any,
+  //   responseData: any,
+  //   metadata: { type: 'text' | 'audio'; timestamp: string; error?: string },
+  //   fileManager?: FileManagerService
+  // ): Promise<void> {
+  //   try {
+  //     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  //     const filename = `gemini-debug-${metadata.type}-${timestamp}.json`;
       
-      // Extract only prompt text from request (exclude base64 audio data)
-      let requestSummary: any = null;
+  //     // Extract only prompt text from request (exclude base64 audio data)
+  //     let requestSummary: any = null;
       
-      if (requestBody) {
-        requestSummary = {
-          generationConfig: requestBody.generationConfig,
-          safetySettings: requestBody.safetySettings
-        };
+  //     if (requestBody) {
+  //       requestSummary = {
+  //         generationConfig: requestBody.generationConfig,
+  //         safetySettings: requestBody.safetySettings
+  //       };
 
-        // Extract prompt text based on request type
-        if (requestBody.contents && Array.isArray(requestBody.contents)) {
-          requestSummary.contents = requestBody.contents.map((content: any) => {
-            if (content.parts && Array.isArray(content.parts)) {
-              return {
-                parts: content.parts.map((part: any) => {
-                  // Keep text prompts, exclude base64 audio data
-                  if (part.text) {
-                    return { text: part.text };
-                  } else if (part.inline_data) {
-                    // Replace large base64 data with summary info
-                    return {
-                      inline_data: {
-                        mime_type: part.inline_data.mime_type,
-                        data: `[EXCLUDED: ${part.inline_data.mime_type} data, size: ${part.inline_data.data?.length || 0} chars]`
-                      }
-                    };
-                  }
-                  return part;
-                })
-              };
-            }
-            return content;
-          });
-        }
-      }
+  //       // Extract prompt text based on request type
+  //       if (requestBody.contents && Array.isArray(requestBody.contents)) {
+  //         requestSummary.contents = requestBody.contents.map((content: any) => {
+  //           if (content.parts && Array.isArray(content.parts)) {
+  //             return {
+  //               parts: content.parts.map((part: any) => {
+  //                 // Keep text prompts, exclude base64 audio data
+  //                 if (part.text) {
+  //                   return { text: part.text };
+  //                 } else if (part.inline_data) {
+  //                   // Replace large base64 data with summary info
+  //                   return {
+  //                     inline_data: {
+  //                       mime_type: part.inline_data.mime_type,
+  //                       data: `[EXCLUDED: ${part.inline_data.mime_type} data, size: ${part.inline_data.data?.length || 0} chars]`
+  //                     }
+  //                   };
+  //                 }
+  //                 return part;
+  //               })
+  //             };
+  //           }
+  //           return content;
+  //         });
+  //       }
+  //     }
       
-      const debugData = {
-        metadata: {
-          ...metadata,
-          savedAt: new Date().toISOString(),
-          note: 'Audio base64 data excluded to reduce file size'
-        },
-        request: requestSummary,
-        response: responseData
-      };
+  //     const debugData = {
+  //       metadata: {
+  //         ...metadata,
+  //         savedAt: new Date().toISOString(),
+  //         note: 'Audio base64 data excluded to reduce file size'
+  //       },
+  //       request: requestSummary,
+  //       response: responseData
+  //     };
 
-      // Save to project folder's debug-logs/ if fileManager has folder selected
-      if (fileManager) {
-        try {
-          await fileManager.saveMetadataFile(debugData, filename, 'debug-logs', true);
-          console.log(`📁 Gemini debug log saved to project: debug-logs/${filename}`);
-        } catch (error: any) {
-          // If no folder selected, log info (don't save)
-          if (error.message === 'No folder selected') {
-            console.log(`ℹ️ Debug log not saved (no project folder selected): ${filename}`);
-          } else {
-            console.error('Failed to save debug log to project folder:', error);
-          }
-        }
-      } else {
-        console.log(`ℹ️ Debug log not saved (fileManager not available): ${filename}`);
-      }
-    } catch (error) {
-      console.error('Failed to prepare debug log:', error);
-    }
-  }
+  //     // Save to project folder's debug-logs/ if fileManager has folder selected
+  //     if (fileManager) {
+  //       try {
+  //         await fileManager.saveMetadataFile(debugData, filename, 'debug-logs', true);
+  //         console.log(`📁 Gemini debug log saved to project: debug-logs/${filename}`);
+  //       } catch (error: any) {
+  //         // If no folder selected, log info (don't save)
+  //         if (error.message === 'No folder selected') {
+  //           console.log(`ℹ️ Debug log not saved (no project folder selected): ${filename}`);
+  //         } else {
+  //           console.error('Failed to save debug log to project folder:', error);
+  //         }
+  //       }
+  //     } else {
+  //       console.log(`ℹ️ Debug log not saved (fileManager not available): ${filename}`);
+  //     }
+  //   } catch (error) {
+  //     console.error('Failed to prepare debug log:', error);
+  //   }
+  // }
 
   /**
    * Check if processing would exceed quota
@@ -428,7 +428,7 @@ export class AIRefinementService {
     rawData: RawTranscriptData[], // Optional: supplementary raw data
     modelName: string, // REQUIRED: specific Gemini model (e.g., "models/gemini-2.5-flash")
     onProgress?: (progress: number, message?: string) => void,
-    fileManager?: FileManagerService // Optional: for saving debug logs to project folder
+    // fileManager?: FileManagerService // Optional: for saving debug logs to project folder
   ): Promise<{ segments: RefinedSegment[], summary?: string, isTruncated?: boolean, truncationWarning?: string, isPartial?: boolean, partialWarning?: string }> {
     // Check quota estimate first
     const quotaCheck = this.checkQuotaEstimate(transcriptions);
@@ -455,11 +455,11 @@ export class AIRefinementService {
         ? `${transcriptions.length} segments > safe limit ${safeBatchSize}/request`
         : 'daily quota threshold';
       console.log(`🔄 Using batch processing (${reason})...`);
-      return this.refineTranscriptsInBatches(apiKey, transcriptions, rawData, modelName, onProgress, fileManager, safeBatchSize);
+      return this.refineTranscriptsInBatches(apiKey, transcriptions, rawData, modelName, onProgress, safeBatchSize);
     }
 
     // Small enough to process in a single request
-    return this.refineWithGemini(apiKey, transcriptions, rawData, modelName, onProgress, fileManager);
+    return this.refineWithGemini(apiKey, transcriptions, rawData, modelName, onProgress);
   }
 
   /**
@@ -471,7 +471,7 @@ export class AIRefinementService {
     rawData: RawTranscriptData[],
     modelName: string,
     onProgress?: (progress: number, message?: string) => void,
-    fileManager?: FileManagerService,
+    // fileManager?: FileManagerService,
     batchSize: number = this.BATCH_SIZE // Dynamic batch size passed from refineTranscripts
   ): Promise<{ segments: RefinedSegment[], summary?: string, isTruncated?: boolean, truncationWarning?: string, isPartial?: boolean, partialWarning?: string }> {
     const batches = this.splitIntoBatches(transcriptions, batchSize);
@@ -510,7 +510,7 @@ export class AIRefinementService {
                 onProgress(Math.min(totalProgress, 99));
               }
             },
-            fileManager
+            // fileManager
           );
 
           allRefinedSegments.push(...batchResult.segments);
@@ -616,7 +616,7 @@ export class AIRefinementService {
     rawData: RawTranscriptData[], // Supplementary data
     modelName: string, // REQUIRED: specific model like "models/gemini-2.5-flash"
     onProgress?: (progress: number, message?: string) => void,
-    fileManager?: FileManagerService
+    // fileManager?: FileManagerService
   ): Promise<{ segments: RefinedSegment[], summary?: string, isTruncated?: boolean, truncationWarning?: string, isPartial?: boolean, partialWarning?: string }> {
     if (!apiKey || apiKey.trim().length === 0) {
       throw new Error('API Key is required for AI refinement');
@@ -801,11 +801,11 @@ export class AIRefinementService {
       if (onProgress) onProgress(90);
 
       // 💾 Save debug log with request and response
-      await this.saveGeminiDebugLog(requestBody, result, {
-        type: 'text',
-        timestamp: new Date().toISOString(),
-        error: result.error ? result.error.message : undefined
-      }, fileManager);
+      // await this.saveGeminiDebugLog(requestBody, result, {
+      //   type: 'text',
+      //   timestamp: new Date().toISOString(),
+      //   error: result.error ? result.error.message : undefined
+      // }, fileManager);
 
       // Parse AI response (now returns { segments, summary, isTruncated, truncationWarning })
       const parsed = this.parseAIResponse(result);
@@ -1566,11 +1566,11 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
       }
 
       // 💾 Save debug log with request and response
-      await this.saveGeminiDebugLog(requestBody, data, {
-        type: 'audio',
-        timestamp: new Date().toISOString(),
-        error: data.error ? data.error.message : undefined
-      }, fileManager);
+      // await this.saveGeminiDebugLog(requestBody, data, {
+      //   type: 'audio',
+      //   timestamp: new Date().toISOString(),
+      //   error: data.error ? data.error.message : undefined
+      // }, fileManager);
 
       // Parse response (now returns { results, summary, isTruncated, truncationWarning })
       const parsed = this.parseGeminiAudioTranscription(data, meetingStartTime);
@@ -1598,15 +1598,15 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
       console.error('❌ Gemini audio transcription error:', error);
       
       // Save error log
-      try {
-        await this.saveGeminiDebugLog(requestBody, null, {
-          type: 'audio',
-          timestamp: new Date().toISOString(),
-          error: error.message
-        }, fileManager);
-      } catch (logError) {
-        console.error('Failed to save error log:', logError);
-      }
+      // try {
+      //   await this.saveGeminiDebugLog(requestBody, null, {
+      //     type: 'audio',
+      //     timestamp: new Date().toISOString(),
+      //     error: error.message
+      //   }, fileManager);
+      // } catch (logError) {
+      //   console.error('Failed to save error log:', logError);
+      // }
       
       // Don't nest "Failed to transcribe audio" messages
       if (error.message?.startsWith('Failed to transcribe audio:')) {
@@ -2621,7 +2621,7 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
           modelName,
           allSummaries,
           summaryPrompt,
-          fileManager,
+          // fileManager,
           languageCode
         );
         
@@ -2684,7 +2684,7 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
     modelName: string,
     summaries: string[],
     userPrompt?: string,
-    fileManager?: FileManagerService,
+    // fileManager?: FileManagerService,
     languageCode?: string
   ): Promise<string> {
     if (summaries.length === 0) {
@@ -2789,11 +2789,11 @@ Hãy trả về MỘT bài tóm tắt tổng hợp có cấu trúc rõ ràng, d�
       const data = await response.json();
 
       // Save debug log
-      await this.saveGeminiDebugLog(requestBody, data, {
-        type: 'text',
-        timestamp: new Date().toISOString(),
-        error: data.error ? data.error.message : undefined
-      }, fileManager);
+      // await this.saveGeminiDebugLog(requestBody, data, {
+      //   type: 'text',
+      //   timestamp: new Date().toISOString(),
+      //   error: data.error ? data.error.message : undefined
+      // }, fileManager);
 
       // Extract merged summary from response
       const candidates = data?.candidates;
