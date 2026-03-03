@@ -1517,7 +1517,7 @@ export const RecordingControls: React.FC<Props> = ({
             }>
               <Space>
                 {/* <SoundOutlined style={{ fontSize: '18px', color: autoTranscribe ? '#16a34a' : '#9ca3af' }} /> */}
-                <span style={{ fontSize: '14px' }}>Auto 🎤 → 🔠:</span>
+                <span style={{ fontSize: '14px' }}>Live Transcribe 🎤 → 🔠:</span>
                 <Switch
                   checked={autoTranscribe}
                   onChange={(checked) => {
