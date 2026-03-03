@@ -2503,6 +2503,7 @@ export const App: React.FC = () => {
         onAudioStreamChange={setAudioStream}
         onAudioSourceChange={setAudioSourceType}
         onTranscribingChange={setIsTranscribingActive}
+        onTranscriptionConfigChange={setTranscriptionConfig}
       />
       
       {/* Live Waveform - Show when recording */}

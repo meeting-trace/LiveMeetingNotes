@@ -75,7 +75,7 @@ export const HelpButton: React.FC = () => {
               <Text strong>1. Live transcription (khi đang ghi âm):</Text>
               <List size="small">
                 <List.Item>• Sử dụng Web Speech API (miễn phí, không cần API key, độ trễ thấp)</List.Item>
-                <List.Item>• Click <Tag color="orange" icon={<span>⚙️</span>}>Cấu hình Speech-to-Text</Tag> → chọn ngôn ngữ</List.Item>
+                <List.Item>• Click <Tag color="orange" icon={<span>⚙️</span>}>Cấu hình</Tag> → chọn ngôn ngữ</List.Item>
                 <List.Item>• Bật <Tag color="cyan">Tự động chuyển giọng nói thành văn bản</Tag> → tự động khi ghi âm</List.Item>
                 <List.Item>• Kết quả hiển thị real-time với confidence và timestamp</List.Item>
                 <List.Item>• Lưu tự động cả kết quả chính thức và raw data</List.Item>

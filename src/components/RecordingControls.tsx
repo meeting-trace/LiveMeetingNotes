@@ -73,6 +73,7 @@ interface Props {
   onAudioStreamChange?: (stream: MediaStream | null) => void; // Callback for audio stream changes
   onAudioSourceChange?: (source: AudioSourceType) => void; // Callback for audio source changes
   onTranscribingChange?: (isTranscribing: boolean) => void; // Callback when transcription starts/stops
+  onTranscriptionConfigChange?: (config: SpeechToTextConfig) => void; // Callback when config is changed internally (e.g. language)
 }
 
 export const RecordingControls: React.FC<Props> = ({
@@ -100,7 +101,8 @@ export const RecordingControls: React.FC<Props> = ({
   onFileManagerReady,
   onAudioStreamChange,
   onAudioSourceChange,
-  onTranscribingChange
+  onTranscribingChange,
+  onTranscriptionConfigChange
 }) => {
   const { message } = App.useApp();
   const [duration, setDuration] = useState<number>(0);
@@ -375,6 +377,9 @@ export const RecordingControls: React.FC<Props> = ({
       
       // Save to localStorage
       SpeechToTextService.saveConfig(updatedConfig);
+      
+      // Notify parent so App.tsx state stays in sync with localStorage
+      onTranscriptionConfigChange?.(updatedConfig);
       
       // Re-initialize service with new config
       speechToTextService.initialize(updatedConfig);
