@@ -95,7 +95,7 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
       }
 
       // Clear canvas
-      canvasContext.fillStyle = 'rgb(15, 23, 42)';
+      canvasContext.fillStyle = 'rgb(255, 255, 255)';
       canvasContext.fillRect(0, 0, canvas.width, canvas.height);
 
       // Calculate visible range based on zoom and scroll
@@ -110,7 +110,7 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
       }
 
       // Draw waveform bars
-      canvasContext.fillStyle = '#6366f1';
+      canvasContext.fillStyle = '#e71212';
       const barWidth = (canvas.width / visibleWidth) * zoom;
       
       for (let i = startIndex; i < endIndex; i++) {
@@ -123,7 +123,7 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
       }
 
       // Draw center line
-      canvasContext.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+      canvasContext.strokeStyle = 'rgba(0, 0, 0, 0.1)';
       canvasContext.lineWidth = 1;
       canvasContext.beginPath();
       canvasContext.moveTo(0, canvas.height / 2);
@@ -135,7 +135,7 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
       const markerInterval = secondsVisible > 120 ? 60 : secondsVisible > 60 ? 30 : 10; // seconds
       const totalSeconds = totalDataPoints / pixelsPerSecond;
       
-      canvasContext.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      canvasContext.fillStyle = '#000000a9';
       canvasContext.font = '10px monospace';
       
       for (let sec = 0; sec <= totalSeconds; sec += markerInterval) {
@@ -145,7 +145,7 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
           canvasContext.fillText(formatTime(sec), x + 2, 12);
           
           // Draw marker line
-          canvasContext.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+          canvasContext.strokeStyle = 'rgba(0, 0, 0, 0.12)';
           canvasContext.beginPath();
           canvasContext.moveTo(x, 0);
           canvasContext.lineTo(x, canvas.height);
@@ -210,9 +210,9 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
       width: '100%', 
       marginTop: '12px',
       padding: '14px 16px',
-      backgroundColor: '#1e293b',
+      backgroundColor: '#ffffff',
       borderRadius: '10px',
-      border: '1px solid #334155'
+      border: '1px solid #e5e7eb'
     }}>
       <div style={{ 
         display: 'flex',
@@ -226,7 +226,7 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
           gap: '12px'
         }}>
           <div style={{ 
-            color: '#e2e8f0', 
+            color: '#020b20', 
             fontSize: '13px',
             fontWeight: 600 
           }}>
@@ -234,7 +234,7 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
           </div>
           {/* Performance info */}
           <div style={{ 
-            color: '#94a3b8', 
+            color: '#6b7280', 
             fontSize: '11px'
           }}>
             {waveformDataRef.current.length.toLocaleString()} samples
@@ -245,14 +245,14 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
         {/* Zoom controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <ZoomOutOutlined 
-            style={{ color: '#94a3b8', cursor: 'pointer' }}
+            style={{ color: '#6b7280', cursor: 'pointer' }}
             onClick={() => setZoom(Math.max(0.5, zoom - 0.5))}
           />
-          <span style={{ color: '#94a3b8', fontSize: '12px', minWidth: '60px', textAlign: 'center' }}>
+          <span style={{ color: '#6b7280', fontSize: '12px', minWidth: '60px', textAlign: 'center' }}>
             {zoom === 1 ? '10 min' : zoom === 0.5 ? '20 min' : `${(10 / zoom).toFixed(0)} min`}
           </span>
           <ZoomInOutlined 
-            style={{ color: '#94a3b8', cursor: 'pointer' }}
+            style={{ color: '#6b7280', cursor: 'pointer' }}
             onClick={() => setZoom(Math.min(5, zoom + 0.5))}
           />
         </div>
@@ -264,7 +264,7 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
           position: 'relative',
           width: '100%',
           height: '80px',
-          backgroundColor: '#0f172a',
+          backgroundColor: '#ffffff',
           borderRadius: '4px',
           overflow: 'hidden',
           cursor: 'ns-resize' // Indicate zoom capability
@@ -291,7 +291,7 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
             onChange={setScrollPosition}
             tooltip={{ formatter: null }}
             trackStyle={{ backgroundColor: '#6366f1' }}
-            railStyle={{ backgroundColor: '#334155' }}
+            railStyle={{ backgroundColor: '#ebe5e8' }}
           />
         </div>
       )}

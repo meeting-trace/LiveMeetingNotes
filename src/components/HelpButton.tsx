@@ -409,7 +409,7 @@ export const HelpButton: React.FC = () => {
 
             Trong trường hợp Anh/Chị thấy LiveMeetingNotes hữu ích, Anh/Chị có thể{" "}
             <Text strong>dành một khoản đóng góp</Text> (tùy tâm) chuyển trực tiếp đến số tài khoản của{" "}
-            <Text strong style={{ color: "#16ff48" }}>
+            <Text strong style={{ color: "#780cb6" }}>
               Quỹ bảo trợ trẻ em Việt Nam
             </Text>{" "}
             <br />

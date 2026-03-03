@@ -23,6 +23,7 @@ export const App: React.FC = () => {
   const { modal, notification } = AntdApp.useApp();
   const [folderPath, setFolderPath] = useState<string>('');
   const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribingActive, setIsTranscribingActive] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const fileManagerRef = useRef<FileManagerService | undefined>(undefined); // Shared fileManager instance
   const [meetingInfo, setMeetingInfo] = useState<MeetingInfo>({
@@ -2501,6 +2502,7 @@ export const App: React.FC = () => {
         onFileManagerReady={(fm) => { fileManagerRef.current = fm; }}
         onAudioStreamChange={setAudioStream}
         onAudioSourceChange={setAudioSourceType}
+        onTranscribingChange={setIsTranscribingActive}
       />
       
       {/* Live Waveform - Show when recording */}
@@ -2520,7 +2522,7 @@ export const App: React.FC = () => {
       {(transcriptions.length > 0 || (isOnline && transcriptionConfig)) && (
         <TranscriptionPanel
           transcriptions={transcriptions}
-          isTranscribing={isRecording}
+          isTranscribing={isTranscribingActive}
           isOnline={isOnline}
           onSeekAudio={handleSeekToAudio}
           onEditTranscription={handleEditTranscription}

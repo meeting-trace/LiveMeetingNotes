@@ -7,7 +7,7 @@ import {
   SaveOutlined,
   FolderAddOutlined,
   SettingOutlined,
-  SoundOutlined,
+  // SoundOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   GlobalOutlined,
@@ -72,6 +72,7 @@ interface Props {
   onFileManagerReady?: (fileManager: FileManagerService) => void; // Pass fileManager instance to parent
   onAudioStreamChange?: (stream: MediaStream | null) => void; // Callback for audio stream changes
   onAudioSourceChange?: (source: AudioSourceType) => void; // Callback for audio source changes
+  onTranscribingChange?: (isTranscribing: boolean) => void; // Callback when transcription starts/stops
 }
 
 export const RecordingControls: React.FC<Props> = ({
@@ -98,7 +99,8 @@ export const RecordingControls: React.FC<Props> = ({
   geminiSummary,
   onFileManagerReady,
   onAudioStreamChange,
-  onAudioSourceChange
+  onAudioSourceChange,
+  onTranscribingChange
 }) => {
   const { message } = App.useApp();
   const [duration, setDuration] = useState<number>(0);
@@ -181,6 +183,7 @@ export const RecordingControls: React.FC<Props> = ({
         // console.warn('⚠️ Web Speech API chỉ nghe microphone, không nghe system audio. Bỏ qua transcription.');
         // Always stop transcription if it's running to prevent microphone permission request
         speechToTextService.stopTranscription();
+        onTranscribingChange?.(false);
         return;
       }
 
@@ -188,6 +191,7 @@ export const RecordingControls: React.FC<Props> = ({
         try {
           // Use the shared audio stream from recorder
           await speechToTextService.startTranscription(audioStream, onNewTranscription);
+          onTranscribingChange?.(true);
           
           // Show appropriate message based on actual audio source
           if (actualSourceType === 'both' as AudioSourceType) {
@@ -196,6 +200,7 @@ export const RecordingControls: React.FC<Props> = ({
             message.success('🎤 Bắt đầu chuyển đổi giọng nói sang văn bản');
           }
         } catch (error: any) {
+          onTranscribingChange?.(false);
           console.error('Failed to start transcription:', error);
           // Don't show error message if we already warned user about no mic
           if (audioSource !== 'both' || actualSourceType !== 'system') {
@@ -205,6 +210,7 @@ export const RecordingControls: React.FC<Props> = ({
       } else if (!isRecording || !autoTranscribe || isPaused) {
         // Stop transcription (but don't stop the stream - recorder owns it)
         speechToTextService.stopTranscription();
+        onTranscribingChange?.(false);
       }
     };
 
@@ -1364,7 +1370,7 @@ export const RecordingControls: React.FC<Props> = ({
               icon={<SaveOutlined />}
               onClick={handleSaveChanges}
               size="large"
-              style={{ backgroundColor: '#52c41a', color: 'white', borderColor: '#52c41a' }}
+              className="btn-success"
             >
               Lưu thay đổi
             </Button>
@@ -1439,7 +1445,7 @@ export const RecordingControls: React.FC<Props> = ({
               
               {audioBlob !== null && !isProcessing && (
                 <span style={{ fontSize: '13px', color: '#999', fontStyle: 'italic' }}>
-                  💡 Tải lại trang web này để bắt đầu Dự án mới (nếu cần)
+                  💡 Tải lại trang web này để bắt đầu Dự án mới
                 </span>
               )}
             </>
@@ -1450,7 +1456,7 @@ export const RecordingControls: React.FC<Props> = ({
                 icon={<PlayCircleOutlined />}
                 onClick={handleResumeRecording}
                 size="large"
-                style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}
+                className="btn-success"
               >
                 Tiếp tục
               </Button>
@@ -1484,10 +1490,10 @@ export const RecordingControls: React.FC<Props> = ({
                 Dừng
               </Button>
             </>
+          )} 
+          {isRecording && (
+             <span className="duration-display">⏱ {formatDuration(duration)}</span>
           )}
-
-          <span className="duration-display">⏱ {formatDuration(duration)}</span>
-          
           {isRecording && !isPaused && (
             <span className="recording-indicator">
               🔴 Đang ghi âm {recorder.getAudioSourceType() === 'microphone' as AudioSourceType ? 'từ Mic' : recorder.getAudioSourceType() === 'system' as AudioSourceType ? 'từ Nguồn khác' : 'từ Mic và Nguồn khác'} ...
@@ -1510,7 +1516,7 @@ export const RecordingControls: React.FC<Props> = ({
                   : 'Chỉ khả dụng khi đang ghi âm'
             }>
               <Space>
-                <SoundOutlined style={{ fontSize: '18px', color: autoTranscribe ? '#52c41a' : '#999' }} />
+                {/* <SoundOutlined style={{ fontSize: '18px', color: autoTranscribe ? '#16a34a' : '#9ca3af' }} /> */}
                 <span style={{ fontSize: '14px' }}>Auto 🎤 → 🔠:</span>
                 <Switch
                   checked={autoTranscribe}

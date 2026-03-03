@@ -7,14 +7,14 @@
   /* Page backgrounds */
   --bg-page:        #f7f7f8;
   --bg-card:        #ffffff;
-  --bg-input:       #f9fafb;
+  --bg-input:       #f9fafb00;
   --bg-subtle:      #f3f4f6;
   --bg-hover:       #f0f1f5;
 
   /* Text */
   --text-base:        #111827;
-  --text-muted:       #6b7280;
-  --text-placeholder: #9ca3af;
+  --text-muted:       #565c69;
+  --text-placeholder: #9ca3af79;
 
   /* Border */
   --border:       #e5e7eb;
@@ -213,6 +213,15 @@ body {
   box-shadow:0 4px 10px rgba(220,38,38,.40) !important; transform:translateY(-1px) !important;
 }
 
+.ant-btn.btn-success {
+  background:#16a34a !important; border-color:#16a34a !important; color:#fff !important;
+  box-shadow:0 1px 3px rgba(22,163,74,.30) !important;
+}
+.ant-btn.btn-success:hover:not(:disabled) {
+  background:#15803d !important; border-color:#15803d !important;
+  box-shadow:0 4px 10px rgba(22,163,74,.35) !important; transform:translateY(-1px) !important;
+}
+
 /* Collapse */
 .ant-collapse { background:transparent !important; border:none !important; }
 .ant-collapse>.ant-collapse-item { border-color:var(--border) !important; }
@@ -271,9 +280,9 @@ body {
 .duration-display {
   display:inline-flex; align-items:center;
   font-family:'SF Mono','Fira Code','Courier New',monospace;
-  font-size:22px; font-weight:700; color:var(--primary);
-  padding:8px 18px; background:var(--primary-soft);
-  border-radius:var(--radius-md); border:1px solid rgba(80,70,228,.18); letter-spacing:1px;
+  font-size:20px; font-weight:600; color:var(--primary);
+  padding:4px 14px; background:var(--primary-soft);
+  border-radius:var(--radius-md); border:1px solid rgba(41, 30, 201, 0.18); letter-spacing:0px;
 }
 
 .folder-info {
@@ -426,6 +435,30 @@ body {
 @keyframes blink-glow {
   0%,100%{ box-shadow:0 0 6px  rgba(80,70,228,.50); }
   50%    { box-shadow:0 0 20px rgba(220,38,38,.55);  }
+}
+
+/* ===== TOOLTIP ===== */
+.ant-tooltip .ant-tooltip-inner {
+  background-color: #1e293b !important;
+  color: #f1f5f9 !important;
+  border-radius: var(--radius-sm) !important;
+  font-size: 13px !important;
+  padding: 6px 10px !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,.18) !important;
+}
+.ant-tooltip .ant-tooltip-arrow::before {
+  background: #1e293b !important;
+}
+
+/* ===== SWITCH ===== */
+.ant-switch {
+  background-color: #d1dbd3 !important;
+}
+.ant-switch.ant-switch-checked {
+  background-color: var(--primary) !important;
+}
+.ant-switch.ant-switch-checked:hover:not(.ant-switch-disabled) {
+  background-color: var(--primary-hover) !important;
 }
 
 /* ===== RESPONSIVE ===== */

@@ -297,7 +297,7 @@ const TranscriptionItemComponent: React.FC<Props> = ({
           </div>
 
           {/* Draft indicator - only for interim results */}
-          {!item.isFinal && (
+          {/* {!item.isFinal && (
             <div
               style={{
                 marginTop: '8px',
@@ -308,7 +308,7 @@ const TranscriptionItemComponent: React.FC<Props> = ({
             >
               ⏳ Đang nhận dạng (chỉ hỗ trợ âm thanh từ Microphone)...
             </div>
-          )}
+          )} */}
         </>
       )}
     </div>
