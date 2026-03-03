@@ -74,10 +74,10 @@ const TranscriptionItemComponent: React.FC<Props> = ({
   return (
     <div
       style={{
-        padding: '12px',
-        backgroundColor: item.isFinal ? (item.isManuallyEdited ? '#fff7e6' : '#f6ffed') : '#e6f7ff',
-        border: `1px solid ${item.isFinal ? (item.isManuallyEdited ? '#ffa940' : '#b7eb8f') : '#91d5ff'}`,
-        borderRadius: '8px',
+        padding: '12px 14px',
+        backgroundColor: item.isFinal ? (item.isManuallyEdited ? '#fffbeb' : '#ecfdf5') : '#f0f9ff',
+        border: `1px solid ${item.isFinal ? (item.isManuallyEdited ? '#fcd34d' : '#6ee7b7') : '#7dd3fc'}`,
+        borderRadius: '10px',
         position: 'relative',
         cursor: item.isFinal ? 'pointer' : 'default'
       }}
@@ -92,7 +92,7 @@ const TranscriptionItemComponent: React.FC<Props> = ({
           justifyContent: 'space-between',
           marginBottom: '8px',
           fontSize: '12px',
-          color: '#666'
+          color: '#9ca3af'
         }}
       >
         <Space size="small">

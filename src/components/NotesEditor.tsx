@@ -83,7 +83,8 @@ export const NotesEditor: React.FC<Props> = ({
   initialSpeakers,
   timestampDelay = 8 // Default 8 seconds
 }) => {
-  const [showTimestamps, setShowTimestamps] = useState(true);
+  // const [showTimestamps, setShowTimestamps] = useState(true);
+  const [showTimestamps] = useState(true);
   const [editingDatetimeIndex, setEditingDatetimeIndex] = useState<number | null>(null);
   const [editingDatetimeValue, setEditingDatetimeValue] = useState<string>('');
   
@@ -764,22 +765,22 @@ export const NotesEditor: React.FC<Props> = ({
               : '💡 Nhấp chuột phải vào sóng âm để chèn ghi chú • Enter/Shift+Enter để ngắt dòng trong văn bản'
             }
           </span>
-          <button
+          {/* <button
             className="toggle-timestamps-btn"
             onClick={() => setShowTimestamps(!showTimestamps)}
             title={showTimestamps ? (isLiveMode ? 'Ẩn ngày giờ' : 'Ẩn mốc thời gian') : (isLiveMode ? 'Hiện ngày giờ' : 'Hiện mốc thời gian')}
           >
             {showTimestamps ? (isLiveMode ? '👁️ Ẩn ngày giờ' : '👁️ Ẩn mốc thời gian') : (isLiveMode ? '👁️‍🗨️ Hiện ngày giờ' : '👁️‍🗨️ Hiện mốc thời gian')}
-          </button>
+          </button> */}
         </div>
       </div>
       
       <div 
         ref={containerRef}
         style={{ 
-          border: '1px solid #434343',
-          borderRadius: '6px',
-          backgroundColor: '#1e1e1e',
+          border: '1px solid #d1dae8',
+          borderRadius: '8px',
+          backgroundColor: '#f0f4fa',
           maxHeight: '500px',
           overflowY: 'auto'
         }}
@@ -794,9 +795,9 @@ export const NotesEditor: React.FC<Props> = ({
               onMouseEnter={() => handleLineMouseEnter(index)}
               style={{
                 display: 'flex',
-                borderBottom: index < lines.length - 1 ? '1px solid #2d2d2d' : 'none',
-                backgroundColor: isSelected ? 'rgba(24, 144, 255, 0.15)' : 'transparent',
-                outline: isSelected ? '2px solid rgba(24, 144, 255, 0.5)' : 'none',
+                borderBottom: index < lines.length - 1 ? '1px solid #e8eef8' : 'none',
+                backgroundColor: isSelected ? 'rgba(79, 70, 229, 0.08)' : 'transparent',
+                outline: isSelected ? '2px solid rgba(79, 70, 229, 0.40)' : 'none',
                 outlineOffset: '-2px',
                 userSelect: 'none'
               }}
@@ -807,12 +808,12 @@ export const NotesEditor: React.FC<Props> = ({
                 onDoubleClick={(e) => timeMs !== undefined && handleDatetimeDoubleClick(e, index)}
                 style={{
                   width: isLiveMode ? '160px' : '90px',
-                  backgroundColor: isSelected ? 'rgba(37, 37, 38, 0.8)' : '#252526',
-                  borderRight: '1px solid #434343',
+                  backgroundColor: isSelected ? 'rgba(79, 70, 229, 0.12)' : '#f0f4fa',
+                  borderRight: '1px solid #d1dae8',
                   padding: '8px',
                   fontFamily: 'monospace',
                   fontSize: '12px',
-                  color: timeMs !== undefined ? '#1890ff' : 'transparent',
+                  color: timeMs !== undefined ? '#4f46e5' : 'transparent',
                   textAlign: 'right',
                   cursor: timeMs !== undefined ? 'pointer' : 'default',
                   userSelect: editingDatetimeIndex === index ? 'text' : 'none',
@@ -836,9 +837,9 @@ export const NotesEditor: React.FC<Props> = ({
                       fontSize: '12px',
                       padding: '2px 4px',
                       width: '144px',
-                      backgroundColor: '#1e1e1e',
-                      color: '#1890ff',
-                      border: '1px solid #1890ff'
+                      backgroundColor: '#ffffff',
+                      color: '#4f46e5',
+                      border: '1px solid #4f46e5'
                     }}
                   />
                 ) : (
@@ -850,8 +851,8 @@ export const NotesEditor: React.FC<Props> = ({
               <div
                 style={{
                   width: '120px',
-                  backgroundColor: isSelected ? 'rgba(37, 37, 38, 0.8)' : '#2d2d30',
-                  borderRight: '1px solid #434343',
+                  backgroundColor: isSelected ? 'rgba(79, 70, 229, 0.12)' : '#f0f4fa',
+                  borderRight: '1px solid #d1dae8',
                   padding: '4px',
                   flexShrink: 0,
                   display: 'flex',
@@ -877,10 +878,8 @@ export const NotesEditor: React.FC<Props> = ({
                     fontSize: '12px',
                     padding: '2px 6px',
                     width: '100%',
-                    backgroundColor: '#1e1e1e',
-                    color: '#4ec9b0',
-                    border: '1px solid #3e3e42',
-                    borderRadius: '3px',
+                    backgroundColor: 'transparent',
+                    color: '#0891b2',
                     resize: 'none'
                   }}
                 />
@@ -916,10 +915,10 @@ export const NotesEditor: React.FC<Props> = ({
                   fontFamily: 'monospace',
                   fontSize: '14px',
                   lineHeight: '1.6',
-                  border: 'none',
-                  backgroundColor: isSelected ? 'rgba(0, 0, 0, 0.7)' : '#1e1e1e',
+                  backgroundColor: 'transparent',
                   resize: 'none',
-                  padding: '8px'
+                  padding: '8px',
+                  color: '#1e293b'
                 }}
               />
             </div>

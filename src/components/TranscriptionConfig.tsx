@@ -235,10 +235,10 @@ export const TranscriptionConfig: React.FC<Props> = ({
           ]}
           extra={
             <Space direction="vertical" size="small" style={{ marginTop: 8 }}>
-              <div style={{ fontSize: '12px', color: '#667eea' }}>
+              <div style={{ fontSize: '12px', color: '#4f46e5' }}>
                 🤖 <strong>Cho tính năng *Chuẩn hóa bằng AI* và *Chuyển đổi giọng nói bằng Gemini AI*:</strong>
               </div>
-              <div style={{ fontSize: '12px', color: '#52c41a', fontWeight: 'bold' }}>
+              <div style={{ fontSize: '12px', color: '#10b981', fontWeight: 'bold' }}>
                 ✨ MIỄN PHÍ: Lấy tại{' '}
                 <a
                   href="https://aistudio.google.com/app/apikey"
@@ -248,15 +248,15 @@ export const TranscriptionConfig: React.FC<Props> = ({
                   Google AI Studio
                 </a>
               </div>
-              <div style={{ fontSize: '12px', color: '#888' }}>
-                💡 Nhập API Key → Hệ thống tự động tải danh sách models
+              <div style={{ fontSize: '12px', color: '#475569' }}>
               </div>
               <div style={{ 
                 fontSize: '11px', 
-                color: '#fa8c16',
-                background: '#fff7e6',
-                padding: '8px',
-                borderRadius: '4px',
+                color: '#d97706',
+                background: '#fffbeb',
+                border: '1px solid #fcd34d',
+                padding: '8px 10px',
+                borderRadius: '6px',
                 marginTop: '4px'
               }}>
                 ⚠️ <strong>Hạn mức miễn phí:</strong> 250,000 tokens/ngày • 15 requests/phút<br />
@@ -280,8 +280,7 @@ export const TranscriptionConfig: React.FC<Props> = ({
             rules={[{ required: true, message: 'Vui lòng chọn model' }]}
             extra={
               <Space size="small" style={{ marginTop: 8 }}>
-                <div style={{ fontSize: '12px', color: '#888' }}>
-                  🤖 Model AI để chuẩn hóa văn bản
+                <div style={{ fontSize: '12px', color: '#475569' }}>
                 </div>
                 <Button
                   size="small"
@@ -321,7 +320,7 @@ export const TranscriptionConfig: React.FC<Props> = ({
                     {model.description && (
                       <div style={{ 
                         fontSize: '11px', 
-                        color: '#666', 
+                        color: '#475569', 
                         lineHeight: '1.4',
                         whiteSpace: 'normal',
                         wordBreak: 'break-word'
@@ -329,7 +328,7 @@ export const TranscriptionConfig: React.FC<Props> = ({
                         {model.description}
                       </div>
                     )}
-                    <div style={{ fontSize: '10px', color: '#1890ff', marginTop: '2px' }}>
+                    <div style={{ fontSize: '10px', color: '#4f46e5', marginTop: '2px' }}>
                       📥 Input: {model.inputTokenLimit.toLocaleString()} | 📤 Output: {model.outputTokenLimit.toLocaleString()} tokens
                     </div>
                   </div>
@@ -459,12 +458,12 @@ export const TranscriptionConfig: React.FC<Props> = ({
                 </Form.Item>
                 <div style={{ 
                   marginTop: 24, 
-                  padding: 16, 
-                  background: 'linear-gradient(135deg, #667eea11 0%, #764ba211 100%)',
-                  border: '2px solid #667eea',
-                  borderRadius: 8 
+                  padding: '14px 16px', 
+                  background: '#eeecfd',
+                  border: '1px solid rgba(80,70,228,.22)',
+                  borderRadius: 10
                 }}>
-                  <div style={{ marginBottom: 12, fontWeight: 'bold', color: '#667eea', fontSize: '14px' }}>
+                  <div style={{ marginBottom: 12, fontWeight: 600, color: '#5046e4', fontSize: '14px' }}>
                     🎯 Giới hạn Gemini API
                   </div>
 
@@ -541,10 +540,11 @@ export const TranscriptionConfig: React.FC<Props> = ({
 
                   <div style={{ 
                     fontSize: '11px', 
-                    color: '#fa8c16',
-                    background: '#fff7e6',
-                    padding: '8px',
-                    borderRadius: '4px',
+                    color: '#d97706',
+                    background: '#fffbeb',
+                    border: '1px solid #fcd34d',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
                     marginTop: '8px'
                   }}>
                     ⚠️ <strong>Lưu ý:</strong> Giới hạn này áp dụng cho tính năng "Chuyển đổi giọng nói bằng Gemini AI"<br />
@@ -560,19 +560,19 @@ export const TranscriptionConfig: React.FC<Props> = ({
           style={{
             marginTop: 24,
             padding: 16,
-            backgroundColor: '#19041b',
-            borderLeft: '4px solid #1890ff',
-            borderRadius: 4
+            backgroundColor: '#eef2ff',
+            borderLeft: '4px solid #4f46e5',
+            borderRadius: 8
           }}
         >
           <div style={{ marginBottom: 16 }}>
-            <strong style={{ color: '#52c41a' }}>🆓 Web Speech API (Miễn phí - Mặc định)</strong>
-            <ul style={{ marginBottom: 0, paddingLeft: 20, fontSize: '13px' }}>
+            <strong style={{ color: '#4f46e5' }}>🆓 Web Speech API (Miễn phí - Mặc định)</strong>
+            <ul style={{ marginBottom: 0, paddingLeft: 20, fontSize: '13px', color: '#1e293b' }}>
               <li>Không cần API Key</li>
               <li>Chạy trên trình duyệt Chrome/Edge</li>
               <li>Miễn phí 100%</li>
               <li><strong>Luôn được dùng</strong> cho ghi âm trực tiếp (live transcription)</li>
-              <li><strong style={{ color: '#ff4d4f' }}>Không</strong> hỗ trợ nhận diện người nói</li>
+              <li><strong style={{ color: '#ef4444' }}>Không</strong> hỗ trợ nhận diện người nói</li>
             </ul>
           </div>
         </div>
@@ -581,18 +581,18 @@ export const TranscriptionConfig: React.FC<Props> = ({
         <div
           style={{
             marginTop: 24,
-            padding: 12,
-            backgroundColor: '#f6ffed',
-            border: '1px solid #b7eb8f',
-            borderRadius: 4,
+            padding: '14px 16px',
+            backgroundColor: '#ecfdf5',
+            border: '1px solid #6ee7b7',
+            borderRadius: 10,
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center'
           }}
         >
           <div>
-            <strong style={{ color: '#52c41a', fontSize: '14px' }}>🔄 Tự động cập nhật</strong>
-            <div style={{ fontSize: '12px', color: '#666', marginTop: 2 }}>
+            <strong style={{ color: '#10b981', fontSize: '14px' }}>🔄 Tự động cập nhật</strong>
+            <div style={{ fontSize: '12px', color: '#475569', marginTop: 2 }}>
               Kiểm tra khi mở ứng dụng
             </div>
           </div>

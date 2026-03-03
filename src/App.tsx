@@ -2159,29 +2159,30 @@ export const App: React.FC = () => {
       notification.open({
         key: notificationKey,
         message: (
-          <span style={{ fontSize: '16px', fontWeight: 'bold', color: '#667eea' }}>
+          <span style={{ fontSize: '16px', fontWeight: 'bold', color: '#5046e4' }}>
             <span style={{ fontSize: '20px' }}>🤖</span> AI chuẩn hóa văn bản
           </span>
         ),
         description: (
           <div style={{ width: 320 }}>
             <div style={{
-              padding: '12px',
-              background: 'linear-gradient(135deg, #667eea22 0%, #764ba222 100%)',
-              borderRadius: '6px',
-              marginBottom: '12px'
+              padding: '12px 14px',
+              background: '#eeecfd',
+              border: '1px solid rgba(80,70,228,.20)',
+              borderRadius: '8px',
+              marginBottom: '10px'
             }}>
-              <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: 'bold', color: '#e6e2e2' }}>
+              <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: 600, color: '#111827' }}>
                 {currentMessage}
               </div>
               <Progress
                 percent={currentProgress}
                 status={currentProgress === 100 ? 'success' : 'active'}
-                strokeColor={{ '0%': '#667eea', '100%': '#764ba2' }}
+                strokeColor={{ '0%': '#5046e4', '100%': '#7c3aed' }}
                 size="small"
               />
             </div>
-            <div style={{ fontSize: '12px', color: '#666', lineHeight: '1.5' }}>
+            <div style={{ fontSize: '12px', color: '#6b7280', lineHeight: '1.5' }}>
               💡 Đang xử lý từng batch với delay để tuân thủ rate limit
             </div>
           </div>
