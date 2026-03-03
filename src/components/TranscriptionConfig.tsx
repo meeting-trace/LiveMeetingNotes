@@ -408,7 +408,7 @@ export const TranscriptionConfig: React.FC<Props> = ({
             label: '⚙️ Cài đặt nâng cao',
             children: (
               <>
-                <Form.Item
+                {/* <Form.Item
                   label="Số phiên bản nhận diện"
                   name="maxAlternatives"
                   initialValue={1}
@@ -421,9 +421,9 @@ export const TranscriptionConfig: React.FC<Props> = ({
                     <Select.Option value={4}>4</Select.Option>
                     <Select.Option value={5}>5</Select.Option>
                   </Select>
-                </Form.Item>
+                </Form.Item> */}
 
-                <Form.Item
+                {/* <Form.Item
                   label="Thời gian chờ kết thúc đoạn (ms)"
                   name="segmentTimeout"
                   initialValue={2000}
@@ -438,7 +438,7 @@ export const TranscriptionConfig: React.FC<Props> = ({
                     <Select.Option value={4000}>4.0s</Select.Option>
                     <Select.Option value={5000}>5.0s (chậm, câu rất dài)</Select.Option>
                   </Select>
-                </Form.Item>
+                </Form.Item> */}
 
                 <Form.Item
                   label="Độ trễ timestamp khi gõ notes (giây)"
