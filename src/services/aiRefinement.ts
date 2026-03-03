@@ -1456,6 +1456,10 @@ PHẦN 2: PHIÊN ÂM CHI TIẾT (SEGMENTS)
    • KHÔNG bỏ sót câu nói nào có nội dung
    • Mỗi lượt nói liên tục của một người = 1 segment
    • GIỮ LẠI: Số liệu, ngày tháng, deadline, tên riêng, quyết định, action items
+   • CHỈ phiên âm những gì BẠN NGHE THẤY trong file audio đính kèm
+   • NGHIÊM CẤM bịa đặt, suy diễn, hoặc thêm bất kỳ nội dung nào không có trong audio
+   • NGHIÊM CẤM sử dụng dữ liệu huấn luyện để tạo ra nội dung giống cuộc họp
+   • Nếu chỉ nghe được một phần → chỉ phiên âm phần đó, không bổ sung thêm
 
 ⚠️ QUY TẮC AN TOÀN:
 Nếu gần hết token budget → ĐÓNG JSON hợp lệ ngay. Summary đã xuất trước nên an toàn.
