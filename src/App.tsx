@@ -66,6 +66,15 @@ export const App: React.FC = () => {
   >(new Map());
   const [savedTranscriptionsSnapshot, setSavedTranscriptionsSnapshot] =
     useState<TranscriptionResult[]>([]);
+  const [savedMeetingInfoSnapshot, setSavedMeetingInfoSnapshot] =
+    useState<MeetingInfo>({
+      title: "",
+      date: new Date().toISOString().split("T")[0],
+      time: new Date().toTimeString().slice(0, 5),
+      location: "",
+      host: "",
+      attendees: "",
+    });
   const [isLiveMode, setIsLiveMode] = useState(true); // true = live recording, false = loaded project
   const [showBackupDialog, setShowBackupDialog] = useState(false);
   const [backupAge, setBackupAge] = useState<number | null>(null);
@@ -1995,10 +2004,14 @@ export const App: React.FC = () => {
       isSaved &&
       !transcriptionsAreEqual(savedTranscriptionsSnapshot, transcriptions);
 
+    // Check if meeting info has been modified
+    const meetingInfoModified =
+      isSaved && !meetingInfosAreEqual(savedMeetingInfoSnapshot, meetingInfo);
+
     // Có dữ liệu chưa lưu nếu:
     // 1. Đang recording
-    // 2. Có audio/notes/speakers/transcriptions nhưng chưa save lần đầu
-    // 3. Đã save nhưng notes, speakers hoặc transcriptions bị sửa đổi
+    // 2. Có audio/notes/speakers/transcriptions hoặc meetingInfo đã điền nhưng chưa save lần đầu
+    // 3. Đã save nhưng notes, speakers, transcriptions hoặc meetingInfo bị sửa đổi
     const notesModified = isSaved && savedNotesSnapshot !== notes;
     const hasData =
       isRecording ||
@@ -2006,15 +2019,21 @@ export const App: React.FC = () => {
         (audioBlob !== null ||
           notes.trim().length > 0 ||
           speakersMap.size > 0 ||
-          transcriptions.length > 0)) ||
+          transcriptions.length > 0 ||
+          meetingInfo.title.trim().length > 0 ||
+          meetingInfo.location.trim().length > 0 ||
+          meetingInfo.host.trim().length > 0 ||
+          meetingInfo.attendees.trim().length > 0)) ||
       notesModified ||
       speakersModified ||
-      transcriptionsModified;
+      transcriptionsModified ||
+      meetingInfoModified;
 
     console.log("🔍 hasUnsavedChanges check:", {
       isSaved,
       speakersModified,
       notesModified,
+      meetingInfoModified,
       notesLength: notes.length,
       speakersMapSize: speakersMap.size,
       savedSpeakersSnapshotSize: savedSpeakersSnapshot.size,
@@ -2028,10 +2047,12 @@ export const App: React.FC = () => {
     notes,
     speakersMap,
     transcriptions,
+    meetingInfo,
     isSaved,
     savedNotesSnapshot,
     savedSpeakersSnapshot,
     savedTranscriptionsSnapshot,
+    savedMeetingInfoSnapshot,
   ]);
 
   // Helper function to compare two Maps
@@ -2044,6 +2065,18 @@ export const App: React.FC = () => {
       if (map2.get(key) !== value) return false;
     }
     return true;
+  }
+
+  // Helper function to compare two MeetingInfo objects
+  function meetingInfosAreEqual(a: MeetingInfo, b: MeetingInfo): boolean {
+    return (
+      a.title === b.title &&
+      a.date === b.date &&
+      a.time === b.time &&
+      a.location === b.location &&
+      a.host === b.host &&
+      a.attendees === b.attendees
+    );
   }
 
   // Helper function to compare two transcription arrays
@@ -2170,6 +2203,7 @@ export const App: React.FC = () => {
     setSavedNotesSnapshot(notes); // Save snapshot to detect future changes
     setSavedSpeakersSnapshot(new Map(speakersMap)); // Save speakers snapshot
     setSavedTranscriptionsSnapshot([...transcriptions]); // Save transcriptions snapshot
+    setSavedMeetingInfoSnapshot({ ...meetingInfo }); // Save meetingInfo snapshot
     // Clear auto-backup after successful save
     clearBackup();
   };
@@ -2229,6 +2263,14 @@ export const App: React.FC = () => {
       setSavedTranscriptionsSnapshot(
         backup.transcriptions ? [...backup.transcriptions] : [],
       );
+      setSavedMeetingInfoSnapshot({
+        title: backup.meetingInfo.projectName,
+        date: backup.meetingInfo.date || new Date().toISOString().split("T")[0],
+        time: backup.meetingInfo.time || new Date().toTimeString().slice(0, 5),
+        location: backup.meetingInfo.location,
+        host: backup.meetingInfo.host || "",
+        attendees: backup.meetingInfo.participants,
+      });
 
       setShowBackupDialog(false);
       // Switch to playback mode (not live recording) after restoring
@@ -2303,6 +2345,7 @@ export const App: React.FC = () => {
     setSavedTranscriptionsSnapshot(
       loadedData.transcriptions ? [...loadedData.transcriptions] : [],
     ); // Save transcriptions snapshot
+    setSavedMeetingInfoSnapshot({ ...loadedData.meetingInfo }); // Save meetingInfo snapshot
     setIsLiveMode(false); // Switch to timestamp mode when loading project
   };
 
