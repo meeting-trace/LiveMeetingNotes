@@ -11,6 +11,7 @@ export class AudioRecorderService {
   private isPausedState: boolean = false; // Track pause state for UI
   private audioSourceType: AudioSourceType = 'microphone' as AudioSourceType; // Default to microphone
   private onStreamEndedCallback: (() => void) | null = null; // Callback when stream ends
+  private lastBackupChunkIndex: number = 0; // Tracks which chunks have already been saved for crash-backup
 
   /**
    * Start recording with specified audio source
@@ -276,6 +277,7 @@ export class AudioRecorderService {
         this.audioChunks = [];
         this.currentChunkSize = 0;
         this.isPausedState = false; // Reset pause state
+        this.lastBackupChunkIndex = 0; // Reset delta pointer
         
         resolve(blob);
       };
@@ -290,6 +292,20 @@ export class AudioRecorderService {
     // Return total elapsed time (including pauses)
     // This matches the actual audio file duration which includes silence during pauses
     return Date.now() - this.startTime;
+  }
+
+  /**
+   * Return only the audio chunks recorded since the last call to this method
+   * (delta / incremental approach). Does NOT copy the full accumulated buffer,
+   * so cost is O(newChunks) not O(totalRecordingSize) – safe for long sessions.
+   * Returns null when recording hasn't started yet or no new data is available.
+   */
+  getDeltaChunks(): { chunks: Blob[]; mimeType: string } | null {
+    if (!this.mediaRecorder || this.audioChunks.length === 0) return null;
+    const newChunks = this.audioChunks.slice(this.lastBackupChunkIndex);
+    if (newChunks.length === 0) return null;
+    this.lastBackupChunkIndex = this.audioChunks.length;
+    return { chunks: newChunks, mimeType: this.mediaRecorder.mimeType || 'audio/webm' };
   }
 
   isRecording(): boolean {

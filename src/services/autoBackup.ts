@@ -3,8 +3,9 @@
 
 const STORAGE_KEY = 'meetingNote_autoBackup';
 const DB_NAME = 'MeetingNoteDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;          // v2: added audioChunks store for delta backup
 const AUDIO_STORE = 'audioBlobs';
+const CHUNKS_STORE = 'audioChunks'; // Stores individual Blob chunks with auto-increment key
 
 interface BackupData {
   timestamp: number;
@@ -12,6 +13,9 @@ interface BackupData {
     projectName: string;
     location: string;
     participants: string;
+    date?: string;
+    time?: string;
+    host?: string;
   };
   notes: string;
   timestampMap: [number, number][]; // Array of [position, datetime] for serialization
@@ -37,6 +41,10 @@ const openDB = (): Promise<IDBDatabase> => {
       if (!db.objectStoreNames.contains(AUDIO_STORE)) {
         db.createObjectStore(AUDIO_STORE);
       }
+      // v2: chunk store for delta (incremental) audio backup during recording
+      if (!db.objectStoreNames.contains(CHUNKS_STORE)) {
+        db.createObjectStore(CHUNKS_STORE, { autoIncrement: true });
+      }
     };
   });
 };
@@ -54,15 +62,33 @@ const saveAudioBlob = async (blob: Blob): Promise<void> => {
   });
 };
 
-// Load audio blob from IndexedDB
+// Load audio blob from IndexedDB.
+// Prefers reconstructing from delta chunks (crash-during-recording case);
+// falls back to the monolithic 'currentRecording' key (stop-then-crash case).
 const loadAudioBlob = async (): Promise<Blob | null> => {
   try {
     const db = await openDB();
+    // Try delta chunks first
+    const { chunks, mimeType } = await new Promise<{ chunks: Blob[]; mimeType: string }>(
+      (resolve, reject) => {
+        const tx = db.transaction([AUDIO_STORE, CHUNKS_STORE], 'readonly');
+        const results: { chunks: Blob[]; mimeType: string } = { chunks: [], mimeType: 'audio/webm' };
+        const mimeReq = tx.objectStore(AUDIO_STORE).get('mimeType');
+        mimeReq.onsuccess = () => { if (mimeReq.result) results.mimeType = mimeReq.result as string; };
+        const chunksReq = tx.objectStore(CHUNKS_STORE).getAll();
+        chunksReq.onsuccess = () => { results.chunks = (chunksReq.result as Blob[]) || []; };
+        tx.oncomplete = () => resolve(results);
+        tx.onerror = () => reject(tx.error);
+      }
+    );
+    if (chunks.length > 0) {
+      return new Blob(chunks, { type: mimeType });
+    }
+    // Fall back to monolithic blob (written by saveAudioBlob)
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([AUDIO_STORE], 'readonly');
       const store = transaction.objectStore(AUDIO_STORE);
       const request = store.get('currentRecording');
-      
       request.onsuccess = () => resolve(request.result || null);
       request.onerror = () => reject(request.error);
     });
@@ -72,26 +98,54 @@ const loadAudioBlob = async (): Promise<Blob | null> => {
   }
 };
 
-// Delete audio blob from IndexedDB
+// Delete audio blob and all accumulated chunks from IndexedDB
 const deleteAudioBlob = async (): Promise<void> => {
   try {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([AUDIO_STORE], 'readwrite');
-      const store = transaction.objectStore(AUDIO_STORE);
-      const request = store.delete('currentRecording');
-      
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([AUDIO_STORE, CHUNKS_STORE], 'readwrite');
+      tx.objectStore(AUDIO_STORE).delete('currentRecording');
+      tx.objectStore(AUDIO_STORE).delete('mimeType');
+      tx.objectStore(CHUNKS_STORE).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
     });
   } catch (error) {
     console.error('Failed to delete audio blob:', error);
   }
 };
 
+// Append new delta chunks to IndexedDB (O(newChunks) cost, not O(totalSize)).
+// Also persists mimeType and flags hasAudioBlob=true in localStorage.
+export const appendAudioChunks = async (chunks: Blob[], mimeType: string): Promise<void> => {
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([AUDIO_STORE, CHUNKS_STORE], 'readwrite');
+      // Store mimeType once (overwrites same value each time, cheap)
+      tx.objectStore(AUDIO_STORE).put(mimeType, 'mimeType');
+      const chunkStore = tx.objectStore(CHUNKS_STORE);
+      chunks.forEach(chunk => chunkStore.add(chunk));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    // Flip hasAudioBlob flag in localStorage metadata
+    const data = localStorage.getItem(STORAGE_KEY);
+    if (data) {
+      const backupData = JSON.parse(data) as BackupData;
+      if (!backupData.hasAudioBlob) {
+        backupData.hasAudioBlob = true;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(backupData));
+      }
+    }
+  } catch (error) {
+    console.error('Failed to append audio chunks:', error);
+  }
+};
+
 // Save backup to localStorage and IndexedDB
 export const saveBackup = async (
-  meetingInfo: { projectName: string; location: string; participants: string },
+  meetingInfo: { projectName: string; location: string; participants: string; date?: string; time?: string; host?: string },
   notes: string,
   timestampMap: Map<number, number>,
   recordingStartTime: number,
@@ -106,6 +160,19 @@ export const saveBackup = async (
     // Convert Map to array for JSON serialization
     const timestampArray = Array.from(timestampMap.entries());
     const speakersArray = speakersMap ? Array.from(speakersMap.entries()) : undefined;
+
+    // If audioBlob is null (e.g. mid-recording autosave), preserve hasAudioBlob=true
+    // if an intermediate blob was already saved to IndexedDB by the recording interval.
+    let hasAudioBlob = audioBlob !== null;
+    if (!hasAudioBlob) {
+      try {
+        const existingData = localStorage.getItem(STORAGE_KEY);
+        if (existingData) {
+          const existing = JSON.parse(existingData) as BackupData;
+          if (existing.hasAudioBlob) hasAudioBlob = true;
+        }
+      } catch { /* ignore parse errors */ }
+    }
     
     const backupData: BackupData = {
       timestamp: Date.now(),
@@ -114,7 +181,7 @@ export const saveBackup = async (
       timestampMap: timestampArray,
       speakersMap: speakersArray,
       recordingStartTime,
-      hasAudioBlob: audioBlob !== null,
+      hasAudioBlob,
       isSaved,
       transcriptions,
       rawTranscripts,
@@ -137,7 +204,7 @@ export const saveBackup = async (
 
 // Load backup from localStorage and IndexedDB
 export const loadBackup = async (): Promise<{
-  meetingInfo: { projectName: string; location: string; participants: string };
+  meetingInfo: { projectName: string; location: string; participants: string; date?: string; time?: string; host?: string };
   notes: string;
   timestampMap: Map<number, number>;
   speakersMap: Map<number, string>;

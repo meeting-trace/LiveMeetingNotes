@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Button, Space, Switch, Tooltip, App, Select, Modal } from "antd";
 import {
   FolderOpenOutlined,
@@ -24,6 +24,7 @@ import {
   speechToTextService,
   SpeechToTextService,
 } from "../services/speechToText";
+import { appendAudioChunks } from "../services/autoBackup";
 import type { RawTranscriptData } from "../services/aiRefinement";
 import type {
   MeetingInfo,
@@ -136,6 +137,10 @@ export const RecordingControls: React.FC<Props> = ({
   const [audioSource, setAudioSource] = useState<AudioSourceType>(
     "microphone" as AudioSourceType,
   ); // Audio source selector
+  // Ref for periodic intermediate-audio autosave during active recording
+  const intermediateAudioSaveRef = useRef<ReturnType<
+    typeof setInterval
+  > | null>(null);
 
   // Notify parent when audioStream changes
   useEffect(() => {
@@ -157,6 +162,15 @@ export const RecordingControls: React.FC<Props> = ({
       setSelectedLanguage(transcriptionConfig.languageCode);
     }
   }, [transcriptionConfig]);
+
+  // Cleanup: clear intermediate audio save interval on unmount
+  useEffect(() => {
+    return () => {
+      if (intermediateAudioSaveRef.current) {
+        clearInterval(intermediateAudioSaveRef.current);
+      }
+    };
+  }, []);
 
   // Setup callback for when user stops screen sharing
   useEffect(() => {
@@ -326,6 +340,16 @@ export const RecordingControls: React.FC<Props> = ({
       onRecordingChange(true);
       setDuration(0);
       setIsPaused(false);
+
+      // Periodically persist only NEW (delta) audio chunks to IndexedDB.
+      // Cost per interval ≈ 30 s × 16 KB/s = ~480 KB regardless of total duration,
+      // so this is safe even for multi-hour recordings.
+      intermediateAudioSaveRef.current = setInterval(async () => {
+        const delta = recorder.getDeltaChunks();
+        if (delta && delta.chunks.length > 0) {
+          await appendAudioChunks(delta.chunks, delta.mimeType);
+        }
+      }, 30_000); // every 30 seconds
 
       // Check if we actually got the expected audio sources
       const actualSourceType = recorder.getAudioSourceType();
@@ -540,6 +564,11 @@ export const RecordingControls: React.FC<Props> = ({
   };
 
   const handleStopRecording = async () => {
+    // Stop periodic intermediate-audio autosave
+    if (intermediateAudioSaveRef.current) {
+      clearInterval(intermediateAudioSaveRef.current);
+      intermediateAudioSaveRef.current = null;
+    }
     try {
       setIsProcessing(true);
       const audioBlob = await recorder.stopRecording();
@@ -567,6 +596,10 @@ export const RecordingControls: React.FC<Props> = ({
       // No need to merge segments anymore - recording is continuous with silence during pauses
       const finalAudioBlob = audioBlob;
       const finalDuration = recordingDuration;
+
+      // Set audio blob immediately so autosave backup captures it even if
+      // folder selection is cancelled or save fails later (Bug fix)
+      onAudioBlobChange(finalAudioBlob);
 
       // Process save recording (save files, metadata, transcription, Word doc)
       await processSaveRecording(
@@ -797,11 +830,8 @@ export const RecordingControls: React.FC<Props> = ({
       setLastRecordingDuration(finalDuration);
     }
 
-    // Set audio for playback BEFORE calling onSaveComplete
-    // to avoid triggering hasUnsavedChanges after save
-    onAudioBlobChange(finalAudioBlob);
-
-    // Call onSaveComplete LAST to properly reset hasUnsavedChanges flag
+    // audioBlob already set in handleStopRecording (before processSaveRecording was called)
+    // Call onSaveComplete to reset hasUnsavedChanges and clear auto-backup after successful save
     onSaveComplete();
   };
 
