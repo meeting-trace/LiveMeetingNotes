@@ -97,7 +97,7 @@ body {
 .status-indicator .ant-btn { height:30px; }
 .status-indicator .ant-btn:hover { transform:translateY(-1px); box-shadow:0 2px 8px rgba(0,0,0,.25); }
 
-.unsaved-indicator { color:#fde68a; font-weight:600; animation:pulse-opacity 2s ease-in-out infinite; }
+.unsaved-indicator { color:#dbb002; font-weight:600; animation:pulse-opacity 2s ease-in-out infinite; }
 
 @keyframes pulse-opacity { 0%,100%{opacity:1;} 50%{opacity:.55;} }
 
