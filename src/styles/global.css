@@ -458,10 +458,10 @@ body {
   background-color: #d1dbd3 !important;
 }
 .ant-switch.ant-switch-checked {
-  background-color: var(--primary) !important;
+  background-color: #16A34A  !important;
 }
 .ant-switch.ant-switch-checked:hover:not(.ant-switch-disabled) {
-  background-color: var(--primary-hover) !important;
+  background-color: #16a34abb  !important;
 }
 
 /* ===== RESPONSIVE ===== */

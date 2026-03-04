@@ -1758,7 +1758,7 @@ export const RecordingControls: React.FC<Props> = ({
                     ? "Bật/tắt chuyển đổi giọng nói sang văn bản tự động"
                     : isPaused
                       ? "Thay đổi sẽ có hiệu lực khi tiếp tục ghi âm"
-                      : "Chỉ khả dụng khi đang ghi âm"
+                      : "Dùng cho chức năng chuyển đổi giọng nói sang văn bản trực tuyến"
                 }
               >
                 <Space>

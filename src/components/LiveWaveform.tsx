@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
-import { Slider } from 'antd';
-import { ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons';
-import type { AudioSourceType } from '../types/types';
+import { useEffect, useRef, useState } from "react";
+import { Slider } from "antd";
+import { ZoomInOutlined, ZoomOutOutlined } from "@ant-design/icons";
+import type { AudioSourceType } from "../types/types";
 
 interface Props {
   audioStream: MediaStream | null;
@@ -9,7 +9,11 @@ interface Props {
   audioSourceType?: AudioSourceType;
 }
 
-export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioSourceType = 'microphone' }) => {
+export const LiveWaveform: React.FC<Props> = ({
+  audioStream,
+  isRecording,
+  audioSourceType = "microphone",
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -31,18 +35,20 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
     }
 
     const canvas = canvasRef.current;
-    const canvasContext = canvas.getContext('2d');
+    const canvasContext = canvas.getContext("2d");
     if (!canvasContext) return;
 
     // Create audio context and analyser
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const audioContext = new (
+      window.AudioContext || (window as any).webkitAudioContext
+    )();
     const analyser = audioContext.createAnalyser();
     const source = audioContext.createMediaStreamSource(audioStream);
-    
+
     source.connect(analyser);
     analyser.fftSize = 2048;
     analyser.smoothingTimeConstant = 0.8;
-    
+
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
 
@@ -58,9 +64,9 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
 
     // Pre-calculate amplification factor based on audio source (avoid recalculating every frame)
     let amplificationFactor = 5; // Default for 'both'
-    if (audioSourceType === 'system') {
+    if (audioSourceType === "system") {
       amplificationFactor = 10; // 10x for system audio (louder visualization)
-    } else if (audioSourceType === 'microphone') {
+    } else if (audioSourceType === "microphone") {
       amplificationFactor = 3; // 3x for microphone (smaller visualization)
     }
 
@@ -86,7 +92,7 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
         sum += Math.abs(normalized);
       }
       const avgAmplitude = sum / bufferLength;
-      
+
       waveformDataRef.current.push(avgAmplitude * amplificationFactor);
 
       // Limit history to maxWidth (prevents memory leak for long recordings)
@@ -95,13 +101,15 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
       }
 
       // Clear canvas
-      canvasContext.fillStyle = 'rgb(255, 255, 255)';
+      canvasContext.fillStyle = "rgb(255, 255, 255)";
       canvasContext.fillRect(0, 0, canvas.width, canvas.height);
 
       // Calculate visible range based on zoom and scroll
       const visibleWidth = canvas.width / zoom;
       const totalDataPoints = waveformDataRef.current.length;
-      const startIndex = Math.floor((totalDataPoints - visibleWidth) * scrollPosition);
+      const startIndex = Math.floor(
+        (totalDataPoints - visibleWidth) * scrollPosition,
+      );
       const endIndex = Math.min(startIndex + visibleWidth, totalDataPoints);
 
       // Auto-scroll to end if at the end
@@ -110,20 +118,20 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
       }
 
       // Draw waveform bars
-      canvasContext.fillStyle = '#e71212';
+      canvasContext.fillStyle = "#e71212";
       const barWidth = (canvas.width / visibleWidth) * zoom;
-      
+
       for (let i = startIndex; i < endIndex; i++) {
         const amplitude = waveformDataRef.current[i];
         const barHeight = amplitude * canvas.height * 0.9; // Use 90% of canvas height
         const x = ((i - startIndex) / visibleWidth) * canvas.width;
         const y = (canvas.height - barHeight) / 2;
-        
+
         canvasContext.fillRect(x, y, Math.max(barWidth, 1), barHeight);
       }
 
       // Draw center line
-      canvasContext.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+      canvasContext.strokeStyle = "rgba(0, 0, 0, 0.1)";
       canvasContext.lineWidth = 1;
       canvasContext.beginPath();
       canvasContext.moveTo(0, canvas.height / 2);
@@ -132,20 +140,21 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
 
       // Draw time markers
       const secondsVisible = visibleWidth / pixelsPerSecond;
-      const markerInterval = secondsVisible > 120 ? 60 : secondsVisible > 60 ? 30 : 10; // seconds
+      const markerInterval =
+        secondsVisible > 120 ? 60 : secondsVisible > 60 ? 30 : 10; // seconds
       const totalSeconds = totalDataPoints / pixelsPerSecond;
-      
-      canvasContext.fillStyle = '#000000a9';
-      canvasContext.font = '10px monospace';
-      
+
+      canvasContext.fillStyle = "black";
+      canvasContext.font = "10px monospace";
+
       for (let sec = 0; sec <= totalSeconds; sec += markerInterval) {
         const dataIndex = sec * pixelsPerSecond;
         if (dataIndex >= startIndex && dataIndex <= endIndex) {
           const x = ((dataIndex - startIndex) / visibleWidth) * canvas.width;
           canvasContext.fillText(formatTime(sec), x + 2, 12);
-          
+
           // Draw marker line
-          canvasContext.strokeStyle = 'rgba(0, 0, 0, 0.12)';
+          canvasContext.strokeStyle = "rgba(0, 0, 0, 0.12)";
           canvasContext.beginPath();
           canvasContext.moveTo(x, 0);
           canvasContext.lineTo(x, canvas.height);
@@ -178,7 +187,7 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
   // Use native event listener to prevent page scroll
@@ -190,14 +199,14 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
       e.preventDefault();
       e.stopPropagation();
       const delta = e.deltaY > 0 ? -0.2 : 0.2; // Scroll down = zoom out, scroll up = zoom in
-      setZoom(prev => Math.max(0.5, Math.min(5, prev + delta)));
+      setZoom((prev) => Math.max(0.5, Math.min(5, prev + delta)));
     };
 
     // Add event listener with passive: false to allow preventDefault
-    container.addEventListener('wheel', handleWheel, { passive: false });
+    container.addEventListener("wheel", handleWheel, { passive: false });
 
     return () => {
-      container.removeEventListener('wheel', handleWheel);
+      container.removeEventListener("wheel", handleWheel);
     };
   }, [isRecording]);
 
@@ -206,83 +215,104 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
   }
 
   return (
-    <div style={{ 
-      width: '100%', 
-      marginTop: '12px',
-      padding: '14px 16px',
-      backgroundColor: '#ffffff',
-      borderRadius: '10px',
-      border: '1px solid #e5e7eb'
-    }}>
-      <div style={{ 
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '8px'
-      }}>
-        <div style={{ 
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px'
-        }}>
-          <div style={{ 
-            color: '#020b20', 
-            fontSize: '13px',
-            fontWeight: 600 
-          }}>
+    <div
+      style={{
+        width: "100%",
+        marginTop: "12px",
+        padding: "14px 16px",
+        backgroundColor: "#ffffff",
+        borderRadius: "10px",
+        border: "1px solid #e5e7eb",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "8px",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+          }}
+        >
+          <div
+            style={{
+              color: "#020b20",
+              fontSize: "13px",
+              fontWeight: 600,
+            }}
+          >
             🎙️ Live Waveform
           </div>
           {/* Performance info */}
-          <div style={{ 
-            color: '#6b7280', 
-            fontSize: '11px'
-          }}>
+          <div
+            style={{
+              color: "#6b7280",
+              fontSize: "11px",
+            }}
+          >
             {waveformDataRef.current.length.toLocaleString()} samples
-            {waveformDataRef.current.length >= MAX_SAMPLES && ' (max)'}
+            {waveformDataRef.current.length >= MAX_SAMPLES && " (max)"}
           </div>
         </div>
-        
+
         {/* Zoom controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <ZoomOutOutlined 
-            style={{ color: '#6b7280', cursor: 'pointer' }}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <ZoomOutOutlined
+            style={{ color: "#6b7280", cursor: "pointer" }}
             onClick={() => setZoom(Math.max(0.5, zoom - 0.5))}
           />
-          <span style={{ color: '#6b7280', fontSize: '12px', minWidth: '60px', textAlign: 'center' }}>
-            {zoom === 1 ? '10 min' : zoom === 0.5 ? '20 min' : `${(10 / zoom).toFixed(0)} min`}
+          <span
+            style={{
+              color: "#6b7280",
+              fontSize: "12px",
+              minWidth: "60px",
+              textAlign: "center",
+            }}
+          >
+            {zoom === 1
+              ? "10 min"
+              : zoom === 0.5
+                ? "20 min"
+                : `${(10 / zoom).toFixed(0)} min`}
           </span>
-          <ZoomInOutlined 
-            style={{ color: '#6b7280', cursor: 'pointer' }}
+          <ZoomInOutlined
+            style={{ color: "#6b7280", cursor: "pointer" }}
             onClick={() => setZoom(Math.min(5, zoom + 0.5))}
           />
         </div>
       </div>
 
-      <div 
+      <div
         ref={containerRef}
-        style={{ 
-          position: 'relative',
-          width: '100%',
-          height: '80px',
-          backgroundColor: '#ffffff',
-          borderRadius: '4px',
-          overflow: 'hidden',
-          cursor: 'ns-resize' // Indicate zoom capability
+        style={{
+          position: "relative",
+          width: "100%",
+          height: "80px",
+          backgroundColor: "#ffffff",
+          borderRadius: "4px",
+          overflow: "hidden",
+          cursor: "ns-resize", // Indicate zoom capability
         }}
       >
         <canvas
           ref={canvasRef}
           style={{
-            width: '100%',
-            height: '100%',
-            display: 'block'
+            width: "100%",
+            height: "100%",
+            display: "block",
           }}
         />
       </div>
 
       {/* Scroll slider */}
       {waveformDataRef.current.length > 0 && (
-        <div style={{ marginTop: '8px' }}>
+        <div style={{ marginTop: "8px" }}>
           <Slider
             min={0}
             max={1}
@@ -290,8 +320,8 @@ export const LiveWaveform: React.FC<Props> = ({ audioStream, isRecording, audioS
             value={scrollPosition}
             onChange={setScrollPosition}
             tooltip={{ formatter: null }}
-            trackStyle={{ backgroundColor: '#6366f1' }}
-            railStyle={{ backgroundColor: '#ebe5e8' }}
+            trackStyle={{ backgroundColor: "#6366f1" }}
+            railStyle={{ backgroundColor: "#ebe5e8" }}
           />
         </div>
       )}
