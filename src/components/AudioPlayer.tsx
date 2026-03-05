@@ -5,7 +5,7 @@ import {
   useImperativeHandle,
   forwardRef,
 } from "react";
-import { Button, Space, Slider, Select } from "antd";
+import { Button, Space, Slider, Select, Spin } from "antd";
 import {
   PlayCircleOutlined,
   PauseCircleOutlined,
@@ -14,6 +14,7 @@ import {
   SoundOutlined,
   ZoomInOutlined,
   ZoomOutOutlined,
+  LoadingOutlined,
 } from "@ant-design/icons";
 import WaveSurfer from "wavesurfer.js";
 
@@ -45,6 +46,11 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
     const [playbackRate, setPlaybackRate] = useState(1.0);
     const [volume, setVolume] = useState(100);
     const [zoom, setZoom] = useState(50);
+    const [isLoadingWaveform, setIsLoadingWaveform] = useState(false);
+    const [loadingProgress, setLoadingProgress] = useState(0);
+    const [loadingPhase, setLoadingPhase] = useState<"reading" | "decoding">(
+      "reading",
+    );
 
     // Expose seekTo method to parent
     useImperativeHandle(ref, () => ({
@@ -109,11 +115,28 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
           hideScrollbar: false,
         });
 
+        // Show loading indicator before starting to load
+        setIsLoadingWaveform(true);
+        setLoadingProgress(0);
+        setLoadingPhase("reading");
+
         // Load audio with error handling - use loadBlob to avoid fetch() issues with File objects
         wavesurfer.loadBlob(audioBlob);
 
         // Event listeners
+        wavesurfer.on("loading", (percent: number) => {
+          const pct = Math.round(percent);
+          setLoadingProgress(pct);
+          if (pct >= 100) {
+            setLoadingPhase("decoding");
+          } else {
+            setLoadingPhase("reading");
+          }
+        });
+
         wavesurfer.on("ready", () => {
+          setIsLoadingWaveform(false);
+          setLoadingProgress(100);
           setDuration(wavesurfer.getDuration());
           console.log(
             "✅ WaveSurfer ready, duration:",
@@ -124,6 +147,7 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
 
         // Add error handler
         wavesurfer.on("error", (error) => {
+          setIsLoadingWaveform(false);
           console.error("❌ WaveSurfer error:", error);
           setDuration(0);
           const msg = (error as any)?.message || String(error);
@@ -384,6 +408,7 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
 
         // Cleanup function
         return () => {
+          setIsLoadingWaveform(false);
           try {
             waveformContainer.removeEventListener("wheel", handleWheel);
             waveformContainer.removeEventListener(
@@ -559,8 +584,73 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
     return (
       <div className="audio-player">
         {/* Waveform Container */}
-        <div className="waveform-container">
-          <div ref={waveformRef} className="waveform" />
+        <div className="waveform-container" style={{ position: "relative" }}>
+          <div
+            ref={waveformRef}
+            className="waveform"
+            style={{
+              opacity: isLoadingWaveform ? 0.25 : 1,
+              transition: "opacity 0.3s ease",
+            }}
+          />
+          {isLoadingWaveform && (
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                background: "rgba(0, 0, 0, 0.55)",
+                borderRadius: 4,
+                zIndex: 10,
+              }}
+            >
+              <Spin
+                indicator={
+                  <LoadingOutlined
+                    style={{ fontSize: 28, color: "#4a9eff" }}
+                    spin
+                  />
+                }
+              />
+              <div style={{ color: "#e0e0e0", fontSize: 13, fontWeight: 500 }}>
+                {loadingPhase === "reading"
+                  ? loadingProgress > 0
+                    ? `Đang xử lý file âm thanh ... ${loadingProgress}%`
+                    : "Đang xử lý file âm thanh ..."
+                  : "Đang giải mã waveform..."}
+              </div>
+              {loadingPhase === "reading" &&
+                loadingProgress > 0 &&
+                loadingProgress < 100 && (
+                  <div
+                    style={{
+                      width: "55%",
+                      height: 4,
+                      background: "#333",
+                      borderRadius: 2,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: "100%",
+                        width: `${loadingProgress}%`,
+                        background: "#4a9eff",
+                        borderRadius: 2,
+                        transition: "width 0.2s ease",
+                      }}
+                    />
+                  </div>
+                )}
+            </div>
+          )}
         </div>
 
         <div className="player-controls">
@@ -570,6 +660,7 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
               onClick={handleSkipBackward}
               size="large"
               title="Skip backward 10 seconds"
+              disabled={isLoadingWaveform}
             >
               -10s
             </Button>
@@ -580,6 +671,7 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
                 icon={<PlayCircleOutlined />}
                 onClick={handlePlay}
                 size="large"
+                disabled={isLoadingWaveform}
               >
                 Play
               </Button>
@@ -589,6 +681,7 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
                 icon={<PauseCircleOutlined />}
                 onClick={handlePause}
                 size="large"
+                disabled={isLoadingWaveform}
               >
                 Pause
               </Button>
@@ -599,6 +692,7 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
               onClick={handleSkipForward}
               size="large"
               title="Skip forward 10 seconds"
+              disabled={isLoadingWaveform}
             >
               +10s
             </Button>
