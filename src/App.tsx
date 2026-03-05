@@ -81,6 +81,12 @@ export const App: React.FC = () => {
   const [backupAge, setBackupAge] = useState<number | null>(null);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const audioPlayerRef = useRef<AudioPlayerRef>(null);
+  const onWaveformReadyRef = useRef<(() => void) | null>(null);
+  const onWaveformErrorRef = useRef<((error: string) => void) | null>(null);
+  // Safety timeout: clears the waveform-wait callbacks if WaveSurfer never fires ready/error
+  const waveformWaitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   // Speech-to-Text states
   const [showTranscriptionConfig, setShowTranscriptionConfig] = useState(false);
@@ -2401,23 +2407,133 @@ export const App: React.FC = () => {
       if (backup.audioBlob) {
         setIsLiveMode(false);
       }
-      notification.open({
-        key: "restore-progress",
-        message: "✅ Khôi phục hoàn tất",
-        description: (
-          <div>
-            <div style={{ marginBottom: 6, color: "#595959", fontSize: 13 }}>
-              {backup.audioBlob
-                ? "Đã khôi phục ghi chú và file ghi âm."
-                : "Đã khôi phục ghi chú (không có audio)."}
+
+      if (backup.audioBlob) {
+        // Wait for WaveSurfer to finish decoding before showing success.
+        // Use closable:true so the user can dismiss if decode is extremely slow.
+        notification.open({
+          key: "restore-progress",
+          message: "🔄 Đang vẽ dạng sóng...",
+          description: (
+            <div>
+              <div style={{ marginBottom: 6, color: "#595959", fontSize: 13 }}>
+                Đang vẽ dạng sóng... (có thể mất vài phút với file lớn)
+              </div>
+              <Progress percent={95} size="small" status="active" />
             </div>
-            <Progress percent={100} size="small" status="success" />
-          </div>
-        ),
-        placement: "bottomRight",
-        duration: 3,
-        closable: true,
-      });
+          ),
+          placement: "bottomRight",
+          duration: 0,
+          closable: true, // User can dismiss if decode takes too long
+        });
+
+        // Clear any previous pending callbacks + safety timeout
+        if (waveformWaitTimeoutRef.current) {
+          clearTimeout(waveformWaitTimeoutRef.current);
+        }
+
+        const clearWaveformRefs = () => {
+          onWaveformReadyRef.current = null;
+          onWaveformErrorRef.current = null;
+          if (waveformWaitTimeoutRef.current) {
+            clearTimeout(waveformWaitTimeoutRef.current);
+            waveformWaitTimeoutRef.current = null;
+          }
+        };
+
+        onWaveformReadyRef.current = () => {
+          clearWaveformRefs();
+          notification.open({
+            key: "restore-progress",
+            message: "✅ Khôi phục hoàn tất",
+            description: (
+              <div>
+                <div
+                  style={{ marginBottom: 6, color: "#595959", fontSize: 13 }}
+                >
+                  Đã khôi phục ghi chú và file ghi âm.
+                </div>
+                <Progress percent={100} size="small" status="success" />
+              </div>
+            ),
+            placement: "bottomRight",
+            duration: 3,
+            closable: true,
+          });
+        };
+        onWaveformErrorRef.current = (errMsg: string) => {
+          clearWaveformRefs();
+          notification.open({
+            key: "restore-progress",
+            message: "⚠️ Khôi phục hoàn tất (không có waveform)",
+            description: (
+              <div>
+                <div
+                  style={{ marginBottom: 6, color: "#faad14", fontSize: 13 }}
+                >
+                  {errMsg}
+                </div>
+                <Progress percent={100} size="small" status="exception" />
+              </div>
+            ),
+            placement: "bottomRight",
+            duration: 6,
+            closable: true,
+          });
+        };
+
+        // Safety net: if WaveSurfer neither fires 'ready' nor 'error' within 10 minutes,
+        // silently clear the refs so stale callbacks don't fire later.
+        waveformWaitTimeoutRef.current = setTimeout(
+          () => {
+            if (onWaveformReadyRef.current || onWaveformErrorRef.current) {
+              clearWaveformRefs();
+              // Update notification to let user know waveform timed out
+              notification.open({
+                key: "restore-progress",
+                message: "⚠️ Khôi phục hoàn tất (waveform timeout)",
+                description: (
+                  <div>
+                    <div
+                      style={{
+                        marginBottom: 6,
+                        color: "#faad14",
+                        fontSize: 13,
+                      }}
+                    >
+                      Ghi chú đã được khôi phục. Waveform mất quá nhiều thời
+                      gian để tải.
+                    </div>
+                    <Progress percent={100} size="small" status="exception" />
+                  </div>
+                ),
+                placement: "bottomRight",
+                duration: 6,
+                closable: true,
+              });
+            }
+          },
+          10 * 60 * 1000,
+        ); // 10 minutes
+      } else {
+        // No audio — show success immediately
+        notification.open({
+          key: "restore-progress",
+          message: "✅ Khôi phục hoàn tất",
+          description: (
+            <div>
+              <div style={{ marginBottom: 6, color: "#595959", fontSize: 13 }}>
+                Đã khôi phục ghi chú (không có audio).
+              </div>
+              <Progress percent={100} size="small" status="success" />
+            </div>
+          ),
+          placement: "bottomRight",
+          duration: 3,
+          closable: true,
+        });
+      }
+
       console.log("✅ Backup restored successfully:", {
         speakersMapSize: backup.speakersMap.size,
         transcriptionsRestored: backup.transcriptions?.length || 0,
@@ -3465,6 +3581,8 @@ export const App: React.FC = () => {
           ref={audioPlayerRef}
           audioBlob={audioBlob}
           transcriptionConfig={transcriptionConfig}
+          onWaveformReady={() => onWaveformReadyRef.current?.()}
+          onWaveformError={(err) => onWaveformErrorRef.current?.(err)}
         />
 
         {/* Transcription Configuration Modal */}
