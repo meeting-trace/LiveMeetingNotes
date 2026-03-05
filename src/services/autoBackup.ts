@@ -232,6 +232,7 @@ export const getBackupAudioInfo = async (): Promise<{
   chunkCount: number;
   estimatedDurationMin: number; // each chunk ≈ 5 s (MediaRecorder timeslice)
   hasMonolithicBlob: boolean;
+  mimeType: string; // stored mime type — used for save-picker suggested extension
 }> => {
   try {
     const db = await openDB();
@@ -239,19 +240,23 @@ export const getBackupAudioInfo = async (): Promise<{
       const tx = db.transaction([AUDIO_STORE, CHUNKS_STORE], 'readonly');
       let count = 0;
       let hasMonolithic = false;
+      let mime = 'audio/webm';
       const countReq = tx.objectStore(CHUNKS_STORE).count();
       countReq.onsuccess = () => { count = countReq.result; };
       const keyReq = tx.objectStore(AUDIO_STORE).getKey('currentRecording');
       keyReq.onsuccess = () => { hasMonolithic = keyReq.result !== undefined; };
+      const mimeReq = tx.objectStore(AUDIO_STORE).get('mimeType');
+      mimeReq.onsuccess = () => { if (mimeReq.result) mime = mimeReq.result as string; };
       tx.oncomplete = () => resolve({
         chunkCount: count,
         estimatedDurationMin: Math.round((count * 5) / 60), // 5 s per chunk
         hasMonolithicBlob: hasMonolithic,
+        mimeType: mime,
       });
       tx.onerror = () => reject(tx.error);
     });
   } catch {
-    return { chunkCount: 0, estimatedDurationMin: 0, hasMonolithicBlob: false };
+    return { chunkCount: 0, estimatedDurationMin: 0, hasMonolithicBlob: false, mimeType: 'audio/webm' };
   }
 };
 

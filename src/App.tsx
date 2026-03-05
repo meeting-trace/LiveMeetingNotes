@@ -2215,13 +2215,10 @@ export const App: React.FC = () => {
     clearBackup();
   };
 
-  const handleRestoreBackup = async (
-    skipAudio = false,
-    sizeCheckBypassed = false,
-  ) => {
+  const handleRestoreBackup = async () => {
     const NOTIF_KEY = "restore-progress";
 
-    // Helper: update the bottom-right progress notification
+    // Helper: update bottom-right progress notification
     const showProgress = (percent: number, step: string) => {
       notification.open({
         key: NOTIF_KEY,
@@ -2244,35 +2241,96 @@ export const App: React.FC = () => {
       });
     };
 
-    // Close the backup dialog immediately so it doesn't overlap any warning modal
+    // Close backup dialog immediately
     setShowBackupDialog(false);
 
-    // ── If audio exists and not yet decided to skip, check size first
-    if (!skipAudio && !sizeCheckBypassed) {
-      const audioInfo = await getBackupAudioInfo();
-      // Warn when estimated duration > 45 min:
-      // WaveSurfer will need ~450 MB RAM to decode the waveform
-      const WARN_DURATION_MIN = 45;
-      if (
-        (audioInfo.chunkCount > 0 || audioInfo.hasMonolithicBlob) &&
-        audioInfo.estimatedDurationMin > WARN_DURATION_MIN
-      ) {
-        // Use modal.info with custom footer buttons so closing by X/ESC
-        // does NOT accidentally trigger a partial restore (onCancel side-effect)
+    // ── Step 1: Read audio metadata from localStorage (no IndexedDB read needed) ──
+    const audioInfo = await getBackupAudioInfo();
+    const hasAudio = audioInfo.chunkCount > 0 || audioInfo.hasMonolithicBlob;
+
+    // ── Step 2: ONE decision modal — shown only when audio exists ─────────────
+    // User chooses: cancel / notes-only / full restore (with save location).
+    // Save location is collected HERE via showSaveFilePicker, before any loading,
+    // so we can write the file immediately after chunks are assembled.
+    type Decision =
+      | { action: "cancel" }
+      | { action: "notesOnly" }
+      | { action: "full"; handle: any | null }; // handle = FileSystemFileHandle | null
+
+    let decision: Decision = { action: "full", handle: null };
+
+    if (hasAudio) {
+      const durationMin = audioInfo.estimatedDurationMin;
+      const ramMB = Math.round(durationMin * 11); // ~11 MB RAM per minute after decode
+      const isLarge = durationMin > 45;
+
+      // Derive file extension from known mime type — used in save-picker suggestedName
+      const knownMime = audioInfo.mimeType || "audio/webm";
+      const knownExt = knownMime.includes("mp4")
+        ? "mp4"
+        : knownMime.includes("ogg")
+          ? "ogg"
+          : knownMime.includes("wav")
+            ? "wav"
+            : "webm";
+
+      decision = await new Promise<Decision>((resolve) => {
         const modalRef = modal.info({
-          title: "⚠️ File ghi âm lớn — nguy cơ thiếu RAM",
+          title: "🔄 Chọn cách khôi phục dữ liệu",
+          width: 500,
+          // Prevent X / ESC from closing the modal without picking an action.
+          // All code paths in the custom footer call resolve(), so the awaited
+          // Promise always settles — no risk of hanging forever.
+          closable: false,
+          maskClosable: false,
           content: (
-            <div>
-              <p>
-                File ghi âm ước tính{" "}
-                <strong>~{audioInfo.estimatedDurationMin} phút</strong>. Khi tải
-                toàn bộ, WaveSurfer cần giải mã âm thanh và có thể dùng{" "}
-                <strong>
-                  ~{Math.round(audioInfo.estimatedDurationMin * 11)} MB RAM
-                </strong>
-                , dễ gây treo tab trên các máy ít bộ nhớ.
-              </p>
-              <p style={{ marginTop: 8 }}>Bạn muốn khôi phục thế nào?</p>
+            <div style={{ marginTop: 8 }}>
+              {/* Info row */}
+              <div
+                style={{
+                  padding: "10px 14px",
+                  background: "#f5f5f5",
+                  borderRadius: 6,
+                  fontSize: 13,
+                  marginBottom: 12,
+                  lineHeight: 1.7,
+                }}
+              >
+                📁 File ghi âm ước tính: <strong>~{durationMin} phút</strong>
+                <br />
+                🖥️ RAM cần để vẽ waveform: <strong>~{ramMB} MB</strong>
+              </div>
+
+              {/* RAM warning — only for large files */}
+              {isLarge && (
+                <div
+                  style={{
+                    padding: "10px 14px",
+                    background: "#fff2e8",
+                    border: "1px solid #ffbb96",
+                    borderRadius: 6,
+                    fontSize: 13,
+                    marginBottom: 12,
+                    lineHeight: 1.7,
+                  }}
+                >
+                  ⚠️ File lớn — có thể gây{" "}
+                  <strong style={{ color: "#cf1322" }}>thiếu RAM</strong> khi
+                  tải lên waveform.
+                  <br />
+                  Khi chọn <strong>Khôi phục toàn bộ</strong>, bạn sẽ được chọn
+                  vị trí lưu file trước khi render — dữ liệu an toàn dù có lỗi.
+                </div>
+              )}
+
+              {!isLarge && (
+                <div
+                  style={{ fontSize: 13, color: "#595959", lineHeight: 1.7 }}
+                >
+                  Khi chọn <strong>Khôi phục toàn bộ</strong>, bạn sẽ được chọn
+                  vị trí lưu file ghi âm trước khi tải lên giao diện.
+                </div>
+              )}
             </div>
           ),
           footer: (
@@ -2284,6 +2342,7 @@ export const App: React.FC = () => {
                 marginTop: 16,
               }}
             >
+              {/* ❌ Cancel — re-show backup dialog */}
               <button
                 style={{
                   padding: "6px 14px",
@@ -2293,11 +2352,13 @@ export const App: React.FC = () => {
                 }}
                 onClick={() => {
                   modalRef.destroy();
-                  setShowBackupDialog(true); // re-show so user can choose to discard instead
+                  resolve({ action: "cancel" });
                 }}
               >
                 ❌ Hủy
               </button>
+
+              {/* 📝 Notes only */}
               <button
                 style={{
                   padding: "6px 14px",
@@ -2307,11 +2368,13 @@ export const App: React.FC = () => {
                 }}
                 onClick={() => {
                   modalRef.destroy();
-                  handleRestoreBackup(true, true); // skip audio, bypass size check
+                  resolve({ action: "notesOnly" });
                 }}
               >
                 📝 Chỉ ghi chú
               </button>
+
+              {/* 🎵 Full restore — open save picker first */}
               <button
                 style={{
                   padding: "6px 14px",
@@ -2320,210 +2383,258 @@ export const App: React.FC = () => {
                   border: "none",
                   cursor: "pointer",
                   borderRadius: 4,
+                  fontWeight: 600,
                 }}
-                onClick={() => {
+                onClick={async () => {
                   modalRef.destroy();
-                  handleRestoreBackup(false, true); // full restore, bypass size check
+                  // Open file-save picker so user chooses save location up-front.
+                  // On browsers without File System Access API, fall back to <a download>.
+                  if ("showSaveFilePicker" in window) {
+                    try {
+                      const handle = await (window as any).showSaveFilePicker({
+                        suggestedName: `ghi-am_backup.${knownExt}`,
+                        types: [
+                          {
+                            description: "File ghi âm",
+                            accept: {
+                              "audio/webm": [".webm"],
+                              "audio/mp4": [".mp4"],
+                              "audio/ogg": [".ogg"],
+                              "audio/wav": [".wav"],
+                            },
+                          },
+                        ],
+                      });
+                      resolve({ action: "full", handle });
+                    } catch (e: any) {
+                      // AbortError = user closed picker without selecting → proceed without save
+                      // Any other error → same fallback
+                      resolve({ action: "full", handle: null });
+                    }
+                  } else {
+                    // Firefox / Safari: no FSAPI — will trigger <a download> after load
+                    resolve({ action: "full", handle: null });
+                  }
                 }}
               >
-                🎵 Khôi phục đầy đủ
+                🎵 Khôi phục toàn bộ
               </button>
             </div>
           ),
         });
-        return; // wait for user choice
+      });
+
+      if (decision.action === "cancel") {
+        setShowBackupDialog(true);
+        return;
       }
     }
 
+    const skipAudio = decision.action === "notesOnly";
+    // fileHandle is only set when action==='full' AND user picked a location
+    const fileHandle =
+      decision.action === "full" ? (decision as any).handle : null;
+    // If no FSAPI handle available, we'll trigger <a download> as fallback
+    const useFallbackDownload =
+      decision.action === "full" &&
+      fileHandle === null &&
+      !("showSaveFilePicker" in window);
+
+    // ── Step 3: Load from localStorage + IndexedDB with progress ─────────────
     showProgress(0, "Đang bắt đầu khôi phục...");
     const backup = await loadBackup({
       skipAudio,
       onProgress: (pct, step) => showProgress(pct, step),
     });
-    if (backup) {
-      console.log("🔍 Backup data structure:", {
-        hasAudioBlob: !!backup.audioBlob,
-        audioBlobSize: backup.audioBlob?.size || 0,
-        transcriptionsCount: backup.transcriptions?.length || 0,
-        rawTranscriptsCount: backup.rawTranscripts?.length || 0,
-        hasSummary: !!backup.geminiSummary,
-        summaryLength: backup.geminiSummary?.length || 0,
-      });
 
-      setMeetingInfo({
-        title: backup.meetingInfo.projectName,
-        date: backup.meetingInfo.date || new Date().toISOString().split("T")[0],
-        time: backup.meetingInfo.time || new Date().toTimeString().slice(0, 5),
-        location: backup.meetingInfo.location,
-        host: backup.meetingInfo.host || "",
-        attendees: backup.meetingInfo.participants,
-      });
-      setNotes(backup.notes);
-      setTimestampMap(backup.timestampMap);
-      setSpeakersMap(backup.speakersMap);
-      setRecordingStartTime(backup.recordingStartTime);
-      if (backup.audioBlob) {
-        setAudioBlob(backup.audioBlob);
+    if (!backup) {
+      notification.destroy(NOTIF_KEY);
+      return;
+    }
+
+    console.log("🔍 Backup data structure:", {
+      hasAudioBlob: !!backup.audioBlob,
+      audioBlobSize: backup.audioBlob?.size || 0,
+      transcriptionsCount: backup.transcriptions?.length || 0,
+      rawTranscriptsCount: backup.rawTranscripts?.length || 0,
+      hasSummary: !!backup.geminiSummary,
+    });
+
+    // ── Step 4: Save audio to disk IMMEDIATELY after assembly ─────────────────
+    // This happens before setAudioBlob() / WaveSurfer rendering, so a tab crash
+    // from OOM during rendering cannot cause data loss.
+    let audioSavedToDisk = false;
+    if (backup.audioBlob && !skipAudio) {
+      showProgress(93, "Đang lưu file ghi âm về máy...");
+
+      const mime = backup.audioBlob.type || "audio/webm";
+      const ext = mime.includes("mp4")
+        ? "mp4"
+        : mime.includes("ogg")
+          ? "ogg"
+          : mime.includes("wav")
+            ? "wav"
+            : "webm";
+      const safeName =
+        (backup.meetingInfo.projectName || "ghi-am")
+          .replace(/[\\/:*?"<>|]/g, "_")
+          .trim() || "ghi-am";
+      const filename = `${safeName}_backup.${ext}`;
+
+      try {
+        if (fileHandle) {
+          // Write via File System Access API to user-chosen location
+          const writable = await fileHandle.createWritable();
+          await writable.write(backup.audioBlob);
+          await writable.close();
+          audioSavedToDisk = true;
+          notification.open({
+            key: "audio-saved-ok",
+            message: "✅ File ghi âm đã được lưu",
+            description: `Đã lưu: ${filename}`,
+            duration: 4,
+            placement: "bottomRight",
+            closable: true,
+          });
+        } else if (useFallbackDownload) {
+          // Firefox/Safari: trigger browser download to Downloads folder
+          const url = URL.createObjectURL(backup.audioBlob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 10_000);
+          audioSavedToDisk = true;
+        }
+        // If fileHandle is null AND FSAPI exists = user cancelled picker → skip save
+      } catch (saveErr) {
+        console.error("Failed to save audio to disk:", saveErr);
+        // Don't block restore — warn and continue; DownloadButton in error notification is fallback
       }
-      setIsSaved(backup.isSaved);
+    }
 
-      // Restore transcriptions and rawTranscripts if available
-      if (backup.transcriptions && backup.transcriptions.length > 0) {
-        setTranscriptions(backup.transcriptions);
-      } else {
-        setTranscriptions([]); // Clear if no transcriptions in backup
-      }
-      if (backup.rawTranscripts && backup.rawTranscripts.length > 0) {
-        setRawTranscripts(backup.rawTranscripts);
-      } else {
-        setRawTranscripts([]); // Clear if no raw transcripts in backup
-      }
+    // ── Step 5: Apply all state ───────────────────────────────────────────────
+    setMeetingInfo({
+      title: backup.meetingInfo.projectName,
+      date: backup.meetingInfo.date || new Date().toISOString().split("T")[0],
+      time: backup.meetingInfo.time || new Date().toTimeString().slice(0, 5),
+      location: backup.meetingInfo.location,
+      host: backup.meetingInfo.host || "",
+      attendees: backup.meetingInfo.participants,
+    });
+    setNotes(backup.notes);
+    setTimestampMap(backup.timestampMap);
+    setSpeakersMap(backup.speakersMap);
+    setRecordingStartTime(backup.recordingStartTime);
 
-      // Restore geminiSummary if available
-      if (backup.geminiSummary) {
-        setGeminiSummary(backup.geminiSummary);
-      } else {
-        setGeminiSummary(""); // Clear if no summary in backup
-      }
+    setIsSaved(backup.isSaved);
 
-      // Update snapshots and unsaved changes flag
-      setHasUnsavedChanges(!backup.isSaved);
-      setSavedNotesSnapshot(backup.notes);
-      setSavedSpeakersSnapshot(new Map(backup.speakersMap));
-      setSavedTranscriptionsSnapshot(
-        backup.transcriptions ? [...backup.transcriptions] : [],
-      );
-      setSavedMeetingInfoSnapshot({
-        title: backup.meetingInfo.projectName,
-        date: backup.meetingInfo.date || new Date().toISOString().split("T")[0],
-        time: backup.meetingInfo.time || new Date().toTimeString().slice(0, 5),
-        location: backup.meetingInfo.location,
-        host: backup.meetingInfo.host || "",
-        attendees: backup.meetingInfo.participants,
-      });
+    if (backup.transcriptions && backup.transcriptions.length > 0) {
+      setTranscriptions(backup.transcriptions);
+    } else {
+      setTranscriptions([]);
+    }
+    if (backup.rawTranscripts && backup.rawTranscripts.length > 0) {
+      setRawTranscripts(backup.rawTranscripts);
+    } else {
+      setRawTranscripts([]);
+    }
+    if (backup.geminiSummary) {
+      setGeminiSummary(backup.geminiSummary);
+    } else {
+      setGeminiSummary("");
+    }
 
-      setShowBackupDialog(false);
-      // Switch to playback mode (not live recording) after restoring
-      if (backup.audioBlob) {
-        setIsLiveMode(false);
-      }
+    setHasUnsavedChanges(!backup.isSaved);
+    setSavedNotesSnapshot(backup.notes);
+    setSavedSpeakersSnapshot(new Map(backup.speakersMap));
+    setSavedTranscriptionsSnapshot(
+      backup.transcriptions ? [...backup.transcriptions] : [],
+    );
+    setSavedMeetingInfoSnapshot({
+      title: backup.meetingInfo.projectName,
+      date: backup.meetingInfo.date || new Date().toISOString().split("T")[0],
+      time: backup.meetingInfo.time || new Date().toTimeString().slice(0, 5),
+      location: backup.meetingInfo.location,
+      host: backup.meetingInfo.host || "",
+      attendees: backup.meetingInfo.participants,
+    });
 
-      if (backup.audioBlob) {
-        // Wait for WaveSurfer to finish decoding before showing success.
-        // Use closable:true so the user can dismiss if decode is extremely slow.
-        notification.open({
-          key: "restore-progress",
-          message: "🔄 Đang khôi phục dữ liệu tự động lưu",
-          description: (
-            <div>
-              <div style={{ marginBottom: 6, color: "#595959", fontSize: 13 }}>
-                Đang tải file âm thanh lên giao diện... (có thể mất vài phút với file lớn)
-              </div>
-              <Progress percent={95} size="small" status="active" />
+    setShowBackupDialog(false);
+
+    // ── Step 6: Trigger WaveSurfer rendering (setAudioBlob → AudioPlayer) ────
+    if (backup.audioBlob) {
+      setIsLiveMode(false);
+      setAudioBlob(backup.audioBlob);
+
+      // Show "rendering" progress — closable so user can dismiss if decode is very slow
+      notification.open({
+        key: NOTIF_KEY,
+        message: "🔄 Đang khôi phục dữ liệu tự động lưu",
+        description: (
+          <div>
+            <div style={{ marginBottom: 6, color: "#595959", fontSize: 13 }}>
+              Đang tải file âm thanh lên giao diện... (có thể mất vài phút với
+              file lớn)
             </div>
-          ),
-          placement: "bottomRight",
-          duration: 0,
-          closable: true, // User can dismiss if decode takes too long
-        });
+            <Progress percent={95} size="small" status="active" />
+          </div>
+        ),
+        placement: "bottomRight",
+        duration: 0,
+        closable: true,
+      });
 
-        // Clear any previous pending callbacks + safety timeout
+      // Clear any stale waveform callbacks from a previous restore
+      if (waveformWaitTimeoutRef.current) {
+        clearTimeout(waveformWaitTimeoutRef.current);
+      }
+      const clearWaveformRefs = () => {
+        onWaveformReadyRef.current = null;
+        onWaveformErrorRef.current = null;
         if (waveformWaitTimeoutRef.current) {
           clearTimeout(waveformWaitTimeoutRef.current);
+          waveformWaitTimeoutRef.current = null;
         }
+      };
 
-        const clearWaveformRefs = () => {
-          onWaveformReadyRef.current = null;
-          onWaveformErrorRef.current = null;
-          if (waveformWaitTimeoutRef.current) {
-            clearTimeout(waveformWaitTimeoutRef.current);
-            waveformWaitTimeoutRef.current = null;
-          }
-        };
+      // Inline download helper — safety net when WaveSurfer errors and audio wasn't saved yet
+      const downloadBackupAudio = () => {
+        if (!backup.audioBlob) return;
+        const mime = backup.audioBlob.type || "audio/webm";
+        const ext = mime.includes("mp4")
+          ? "mp4"
+          : mime.includes("ogg")
+            ? "ogg"
+            : mime.includes("wav")
+              ? "wav"
+              : "webm";
+        const safeName =
+          (backup.meetingInfo.projectName || "ghi-am")
+            .replace(/[\\/:*?"<>|]/g, "_")
+            .trim() || "ghi-am";
+        const url = URL.createObjectURL(backup.audioBlob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${safeName}_backup.${ext}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      };
 
-        onWaveformReadyRef.current = () => {
-          clearWaveformRefs();
-          notification.open({
-            key: "restore-progress",
-            message: "✅ Khôi phục hoàn tất",
-            description: (
-              <div>
-                <div
-                  style={{ marginBottom: 6, color: "#595959", fontSize: 13 }}
-                >
-                  Đã khôi phục ghi chú và file ghi âm.
-                </div>
-                <Progress percent={100} size="small" status="success" />
-              </div>
-            ),
-            placement: "bottomRight",
-            duration: 3,
-            closable: true,
-          });
-        };
-        onWaveformErrorRef.current = (errMsg: string) => {
-          clearWaveformRefs();
-          notification.open({
-            key: "restore-progress",
-            message: "⚠️ Khôi phục hoàn tất (không có waveform)",
-            description: (
-              <div>
-                <div
-                  style={{ marginBottom: 6, color: "#faad14", fontSize: 13 }}
-                >
-                  {errMsg}
-                </div>
-                <Progress percent={100} size="small" status="exception" />
-              </div>
-            ),
-            placement: "bottomRight",
-            duration: 6,
-            closable: true,
-          });
-        };
-
-        // Safety net: if WaveSurfer neither fires 'ready' nor 'error' within 10 minutes,
-        // silently clear the refs so stale callbacks don't fire later.
-        waveformWaitTimeoutRef.current = setTimeout(
-          () => {
-            if (onWaveformReadyRef.current || onWaveformErrorRef.current) {
-              clearWaveformRefs();
-              // Update notification to let user know waveform timed out
-              notification.open({
-                key: "restore-progress",
-                message: "⚠️ Khôi phục hoàn tất (waveform timeout)",
-                description: (
-                  <div>
-                    <div
-                      style={{
-                        marginBottom: 6,
-                        color: "#faad14",
-                        fontSize: 13,
-                      }}
-                    >
-                      Ghi chú đã được khôi phục. Waveform mất quá nhiều thời
-                      gian để tải.
-                    </div>
-                    <Progress percent={100} size="small" status="exception" />
-                  </div>
-                ),
-                placement: "bottomRight",
-                duration: 6,
-                closable: true,
-              });
-            }
-          },
-          10 * 60 * 1000,
-        ); // 10 minutes
-      } else {
-        // No audio — show success immediately
+      // WaveSurfer fired 'ready' → decode successful
+      onWaveformReadyRef.current = () => {
+        clearWaveformRefs();
         notification.open({
-          key: "restore-progress",
+          key: NOTIF_KEY,
           message: "✅ Khôi phục hoàn tất",
           description: (
             <div>
               <div style={{ marginBottom: 6, color: "#595959", fontSize: 13 }}>
-                Đã khôi phục ghi chú (không có audio).
+                Đã khôi phục ghi chú và file ghi âm.
               </div>
               <Progress percent={100} size="small" status="success" />
             </div>
@@ -2532,17 +2643,138 @@ export const App: React.FC = () => {
           duration: 3,
           closable: true,
         });
-      }
+      };
 
-      console.log("✅ Backup restored successfully:", {
-        speakersMapSize: backup.speakersMap.size,
-        transcriptionsRestored: backup.transcriptions?.length || 0,
-        audioRestored: !!backup.audioBlob,
-      });
+      // WaveSurfer fired 'error' → decode failed (OOM or corrupt)
+      onWaveformErrorRef.current = (errMsg: string) => {
+        clearWaveformRefs();
+        const isOOM = errMsg.startsWith("OOM:");
+        // Show download button only if audio wasn't already saved to disk
+        const showDownload = isOOM && !audioSavedToDisk;
+        notification.open({
+          key: NOTIF_KEY,
+          message: "⚠️ Khôi phục hoàn tất (không có waveform)",
+          description: (
+            <div>
+              <div style={{ marginBottom: 6, color: "#faad14", fontSize: 13 }}>
+                {errMsg}
+              </div>
+              {showDownload && (
+                <div style={{ marginTop: 10 }}>
+                  <div
+                    style={{ marginBottom: 6, fontSize: 13, color: "#595959" }}
+                  >
+                    File ghi âm vẫn còn trong bộ nhớ. Tải về máy để tránh mất dữ
+                    liệu:
+                  </div>
+                  <button
+                    onClick={downloadBackupAudio}
+                    style={{
+                      padding: "6px 16px",
+                      backgroundColor: "#1890ff",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 4,
+                      cursor: "pointer",
+                      fontSize: 13,
+                      fontWeight: 600,
+                    }}
+                  >
+                    💾 Tải file ghi âm về máy
+                  </button>
+                </div>
+              )}
+              <Progress
+                percent={100}
+                size="small"
+                status="exception"
+                style={{ marginTop: 10 }}
+              />
+            </div>
+          ),
+          placement: "bottomRight",
+          duration: showDownload ? 0 : 6,
+          closable: true,
+        });
+      };
+
+      // Safety timeout: clear stale refs if WaveSurfer never fires ready/error
+      waveformWaitTimeoutRef.current = setTimeout(
+        () => {
+          if (onWaveformReadyRef.current || onWaveformErrorRef.current) {
+            clearWaveformRefs();
+            const showDownload = !audioSavedToDisk;
+            notification.open({
+              key: NOTIF_KEY,
+              message: "⚠️ Khôi phục hoàn tất (waveform timeout)",
+              description: (
+                <div>
+                  <div
+                    style={{ marginBottom: 6, color: "#faad14", fontSize: 13 }}
+                  >
+                    Ghi chú đã được khôi phục. Waveform mất quá nhiều thời gian
+                    để tải.
+                  </div>
+                  {showDownload && (
+                    <div style={{ marginTop: 10 }}>
+                      <button
+                        onClick={downloadBackupAudio}
+                        style={{
+                          padding: "6px 16px",
+                          backgroundColor: "#1890ff",
+                          color: "#fff",
+                          border: "none",
+                          borderRadius: 4,
+                          cursor: "pointer",
+                          fontSize: 13,
+                          fontWeight: 600,
+                        }}
+                      >
+                        💾 Tải file ghi âm về máy
+                      </button>
+                    </div>
+                  )}
+                  <Progress
+                    percent={100}
+                    size="small"
+                    status="exception"
+                    style={{ marginTop: 10 }}
+                  />
+                </div>
+              ),
+              placement: "bottomRight",
+              duration: 0,
+              closable: true,
+            });
+          }
+        },
+        10 * 60 * 1000,
+      ); // 10 minutes safety net
     } else {
-      // loadBackup returned null (no data or parse error) — close the progress notification
-      notification.destroy("restore-progress");
+      // No audio — show success immediately
+      notification.open({
+        key: NOTIF_KEY,
+        message: "✅ Khôi phục hoàn tất",
+        description: (
+          <div>
+            <div style={{ marginBottom: 6, color: "#595959", fontSize: 13 }}>
+              Đã khôi phục ghi chú (không có audio).
+            </div>
+            <Progress percent={100} size="small" status="success" />
+          </div>
+        ),
+        placement: "bottomRight",
+        duration: 3,
+        closable: true,
+      });
     }
+
+    console.log("✅ Backup restored successfully:", {
+      speakersMapSize: backup.speakersMap.size,
+      transcriptionsRestored: backup.transcriptions?.length || 0,
+      audioRestored: !!backup.audioBlob,
+      audioSavedToDisk,
+    });
   };
 
   const handleDiscardBackup = async () => {
