@@ -2449,12 +2449,24 @@ export const App: React.FC = () => {
         : mime.includes("wav")
           ? "wav"
           : "webm";
+
+    // Build project folder name using the same convention as "Lưu ghi chú":
+    // YYYYMMDD_HHmm_TênCuộcHọp_backup
+    const backupDate =
+      backup.meetingInfo.date || new Date().toISOString().split("T")[0];
+    const backupTime =
+      backup.meetingInfo.time || new Date().toTimeString().slice(0, 5);
+    const dateStr = backupDate.replace(/-/g, ""); // "2026-03-05" → "20260305"
+    const timeStr = backupTime.replace(":", ""); // "14:30" → "1430"
     const safeName =
       (backup.meetingInfo.projectName || "ghi-am")
-        .replace(/[\\/:*?"<>|]/g, "_")
-        .trim() || "ghi-am";
-    const audioFilename = `${safeName}_backup.${ext}`;
-    const notesFilename = `${safeName}_notes.json`;
+        .replace(/[<>:"/\\|?*]/g, "_")
+        .replace(/[\s_]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 50) || "ghi-am";
+    const projectFolderName = `${dateStr}_${timeStr}_${safeName}_backup`;
+    const audioFilename = `${projectFolderName}.${ext}`;
+    const notesFilename = `${projectFolderName}_notes.json`;
 
     if (backup.audioBlob && !skipAudio) {
       showProgress(96, "Đang lưu file ghi âm và ghi chú về máy...");
@@ -2475,9 +2487,15 @@ export const App: React.FC = () => {
 
       try {
         if (dirHandle) {
-          // ── FSAPI path: write both files into selected folder ───────────────
+          // ── FSAPI path: create subfolder then write both files into it ──────
+          // Folder: <dirHandle>/<YYYYMMDD_HHmm_TênCuộcHọp_backup>/
+          const subDirHandle = await dirHandle.getDirectoryHandle(
+            projectFolderName,
+            { create: true },
+          );
+
           // Audio
-          const audioHandle = await dirHandle.getFileHandle(audioFilename, {
+          const audioHandle = await subDirHandle.getFileHandle(audioFilename, {
             create: true,
           });
           const audioWritable = await audioHandle.createWritable();
@@ -2485,7 +2503,7 @@ export const App: React.FC = () => {
           await audioWritable.close();
 
           // Notes JSON
-          const notesHandle = await dirHandle.getFileHandle(notesFilename, {
+          const notesHandle = await subDirHandle.getFileHandle(notesFilename, {
             create: true,
           });
           const notesWritable = await notesHandle.createWritable();
@@ -2500,7 +2518,7 @@ export const App: React.FC = () => {
           notification.open({
             key: "files-saved-ok",
             message: "✅ Đã lưu file về máy",
-            description: `📁 ${dirHandle.name}: ${audioFilename}, ${notesFilename}`,
+            description: `📁 ${dirHandle.name}/${projectFolderName}/`,
             duration: 5,
             placement: "bottomRight",
             closable: true,
