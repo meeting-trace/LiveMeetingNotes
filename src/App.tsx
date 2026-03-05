@@ -2459,11 +2459,11 @@ export const App: React.FC = () => {
     const dateStr = backupDate.replace(/-/g, ""); // "2026-03-05" → "20260305"
     const timeStr = backupTime.replace(":", ""); // "14:30" → "1430"
     const safeName =
-      (backup.meetingInfo.projectName || "ghi-am")
+      (backup.meetingInfo.projectName || "Meeting")
         .replace(/[<>:"/\\|?*]/g, "_")
         .replace(/[\s_]+/g, "_")
         .replace(/^_+|_+$/g, "")
-        .slice(0, 50) || "ghi-am";
+        .slice(0, 50) || "Meeting";
     const projectFolderName = `${dateStr}_${timeStr}_${safeName}_backup`;
     const audioFilename = `${projectFolderName}.${ext}`;
     const notesFilename = `${projectFolderName}_notes.json`;
@@ -2665,13 +2665,13 @@ export const App: React.FC = () => {
               ? "wav"
               : "webm";
         const safeName =
-          (backup.meetingInfo.projectName || "ghi-am")
+          (backup.meetingInfo.projectName || "Meeting")
             .replace(/[\\/:*?"<>|]/g, "_")
-            .trim() || "ghi-am";
+            .trim() || "Meeting";
         const url = URL.createObjectURL(backup.audioBlob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `${safeName}_backup.${ext}`;
+        a.download = `${safeName}_Backup.${ext}`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);

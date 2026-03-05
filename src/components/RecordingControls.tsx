@@ -1667,9 +1667,9 @@ export const RecordingControls: React.FC<Props> = ({
                 <Select.Option value={"microphone" as AudioSourceType}>
                   🎤 Microphone
                 </Select.Option>
-                {/* <Select.Option value={'system' as AudioSourceType}>
+                <Select.Option value={'system' as AudioSourceType}>
                 🔊 Nguồn khác
-              </Select.Option> */}
+              </Select.Option>
                 <Select.Option value={"both" as AudioSourceType}>
                   🎤+🔊 Kết hợp
                 </Select.Option>
