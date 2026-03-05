@@ -19,9 +19,11 @@ export const LiveWaveform: React.FC<Props> = ({
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationIdRef = useRef<number | null>(null);
-  const waveformDataRef = useRef<number[]>([]); // Store waveform history
+  const waveformDataRef = useRef<number[]>([]); // Store waveform amplitude history
+  const waveformTimesRef = useRef<number[]>([]); // ms from recording start for each sample
   const lastUpdateTimeRef = useRef<number>(0); // Track last update for throttling
   const recordingRealStartRef = useRef<number>(0); // performance.now() when first sample captured
+  const droppedSamplesRef = useRef<number>(0); // Samples shifted off the front (for long recordings)
   const [zoom, setZoom] = useState(1); // 1 = 10 minutes visible
   const [scrollPosition, setScrollPosition] = useState(0);
 
@@ -96,13 +98,17 @@ export const LiveWaveform: React.FC<Props> = ({
 
       // Track real start time on first sample
       if (waveformDataRef.current.length === 0) {
-        recordingRealStartRef.current = performance.now();
+        recordingRealStartRef.current = now;
       }
+      const sampleTimeMs = now - recordingRealStartRef.current;
       waveformDataRef.current.push(avgAmplitude * amplificationFactor);
+      waveformTimesRef.current.push(sampleTimeMs);
 
       // Limit history to maxWidth (prevents memory leak for long recordings)
       if (waveformDataRef.current.length > maxWidth) {
         waveformDataRef.current.shift();
+        waveformTimesRef.current.shift();
+        droppedSamplesRef.current += 1;
       }
 
       // Clear canvas
@@ -143,23 +149,55 @@ export const LiveWaveform: React.FC<Props> = ({
       canvasContext.lineTo(canvas.width, canvas.height / 2);
       canvasContext.stroke();
 
-      // Draw time markers
-      const totalSeconds =
-        (performance.now() - recordingRealStartRef.current) / 1000;
-      const markerInterval = totalSeconds > 120 ? 60 : 30; // seconds
-      // Convert seconds → sample index using real sample rate
-      const sampleRate = totalSeconds > 0 ? totalDataPoints / totalSeconds : 20;
+      // Draw time markers using exact sample timestamps (binary search)
+      const totalMs =
+        waveformTimesRef.current.length > 0
+          ? waveformTimesRef.current[waveformTimesRef.current.length - 1]
+          : 0;
+      const totalSeconds = totalMs / 1000;
+      // const markerInterval = totalSeconds > 120 ? 60 : 30; // seconds
+      const markerInterval = 30; // seconds
 
       canvasContext.fillStyle = "black";
       canvasContext.font = "10px monospace";
 
-      for (let sec = 0; sec <= totalSeconds; sec += markerInterval) {
-        const dataIndex = sec * sampleRate;
+      // Draw 0:00 label at the very first sample if visible
+      if (startIndex === 0 || startIndex <= 0) {
+        const x = ((0 - startIndex) / visibleWidth) * canvas.width;
+        if (x >= 0 && x <= canvas.width) {
+          canvasContext.fillText("0:00", x + 2, 12);
+          canvasContext.strokeStyle = "rgba(0, 0, 0, 0.12)";
+          canvasContext.beginPath();
+          canvasContext.moveTo(x, 0);
+          canvasContext.lineTo(x, canvas.height);
+          canvasContext.stroke();
+        }
+      }
+
+      for (
+        let sec = markerInterval;
+        sec <= totalSeconds;
+        sec += markerInterval
+      ) {
+        const targetMs = sec * 1000;
+        // Binary search for the sample closest to targetMs
+        let lo = 0,
+          hi = waveformTimesRef.current.length - 1,
+          best = -1;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          if (waveformTimesRef.current[mid] <= targetMs) {
+            best = mid;
+            lo = mid + 1;
+          } else {
+            hi = mid - 1;
+          }
+        }
+        if (best < 0) continue;
+        const dataIndex = best; // index in current waveformDataRef array
         if (dataIndex >= startIndex && dataIndex <= endIndex) {
           const x = ((dataIndex - startIndex) / visibleWidth) * canvas.width;
           canvasContext.fillText(formatTime(sec), x + 2, 12);
-
-          // Draw marker line
           canvasContext.strokeStyle = "rgba(0, 0, 0, 0.12)";
           canvasContext.beginPath();
           canvasContext.moveTo(x, 0);
@@ -186,7 +224,9 @@ export const LiveWaveform: React.FC<Props> = ({
   useEffect(() => {
     if (!isRecording) {
       waveformDataRef.current = [];
+      waveformTimesRef.current = [];
       recordingRealStartRef.current = 0;
+      droppedSamplesRef.current = 0;
       setScrollPosition(0);
     }
   }, [isRecording]);
