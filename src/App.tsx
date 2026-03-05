@@ -2413,11 +2413,11 @@ export const App: React.FC = () => {
         // Use closable:true so the user can dismiss if decode is extremely slow.
         notification.open({
           key: "restore-progress",
-          message: "🔄 Đang vẽ dạng sóng...",
+          message: "🔄 Đang khôi phục dữ liệu tự động lưu",
           description: (
             <div>
               <div style={{ marginBottom: 6, color: "#595959", fontSize: 13 }}>
-                Đang vẽ dạng sóng... (có thể mất vài phút với file lớn)
+                Đang tải file âm thanh lên giao diện... (có thể mất vài phút với file lớn)
               </div>
               <Progress percent={95} size="small" status="active" />
             </div>
