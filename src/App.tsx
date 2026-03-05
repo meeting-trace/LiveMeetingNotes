@@ -2244,48 +2244,38 @@ export const App: React.FC = () => {
     // Close backup dialog immediately
     setShowBackupDialog(false);
 
-    // ── Step 1: Read audio metadata from localStorage (no IndexedDB read needed) ──
+    // ── Step 1: Read audio metadata (no blob loaded yet) ──────────────────────
     const audioInfo = await getBackupAudioInfo();
     const hasAudio = audioInfo.chunkCount > 0 || audioInfo.hasMonolithicBlob;
 
-    // ── Step 2: ONE decision modal — shown only when audio exists ─────────────
-    // User chooses: cancel / notes-only / full restore (with save location).
-    // Save location is collected HERE via showSaveFilePicker, before any loading,
-    // so we can write the file immediately after chunks are assembled.
+    // ── Step 2: ONE decision modal ────────────────────────────────────────────
+    // Collect: cancel / notes-only / full-restore.
+    // For full-restore with directory support, collect the dirHandle HERE using
+    // showDirectoryPicker — this only opens a folder picker, it does NOT create
+    // any files on disk yet, so there is no premature empty-file problem.
     type Decision =
       | { action: "cancel" }
       | { action: "notesOnly" }
-      | { action: "full"; handle: any | null }; // handle = FileSystemFileHandle | null
+      | { action: "full"; dirHandle: FileSystemDirectoryHandle | null };
 
-    let decision: Decision = { action: "full", handle: null };
+    let decision: Decision = { action: "full", dirHandle: null };
 
     if (hasAudio) {
       const durationMin = audioInfo.estimatedDurationMin;
-      const ramMB = Math.round(durationMin * 11); // ~11 MB RAM per minute after decode
+      const ramMB = Math.round(durationMin * 11);
       const isLarge = durationMin > 45;
-
-      // Derive file extension from known mime type — used in save-picker suggestedName
-      const knownMime = audioInfo.mimeType || "audio/webm";
-      const knownExt = knownMime.includes("mp4")
-        ? "mp4"
-        : knownMime.includes("ogg")
-          ? "ogg"
-          : knownMime.includes("wav")
-            ? "wav"
-            : "webm";
+      const hasDirPicker = "showDirectoryPicker" in window;
 
       decision = await new Promise<Decision>((resolve) => {
         const modalRef = modal.info({
           title: "🔄 Chọn cách khôi phục dữ liệu",
           width: 500,
-          // Prevent X / ESC from closing the modal without picking an action.
-          // All code paths in the custom footer call resolve(), so the awaited
-          // Promise always settles — no risk of hanging forever.
+          // Prevent X / ESC — every footer button calls resolve() so the Promise
+          // always settles and handleRestoreBackup never hangs.
           closable: false,
           maskClosable: false,
           content: (
             <div style={{ marginTop: 8 }}>
-              {/* Info row */}
               <div
                 style={{
                   padding: "10px 14px",
@@ -2301,7 +2291,6 @@ export const App: React.FC = () => {
                 🖥️ RAM cần để vẽ waveform: <strong>~{ramMB} MB</strong>
               </div>
 
-              {/* RAM warning — only for large files */}
               {isLarge && (
                 <div
                   style={{
@@ -2317,20 +2306,14 @@ export const App: React.FC = () => {
                   ⚠️ File lớn — có thể gây{" "}
                   <strong style={{ color: "#cf1322" }}>thiếu RAM</strong> khi
                   tải lên waveform.
-                  <br />
-                  Khi chọn <strong>Khôi phục toàn bộ</strong>, bạn sẽ được chọn
-                  vị trí lưu file trước khi render — dữ liệu an toàn dù có lỗi.
                 </div>
               )}
 
-              {!isLarge && (
-                <div
-                  style={{ fontSize: 13, color: "#595959", lineHeight: 1.7 }}
-                >
-                  Khi chọn <strong>Khôi phục toàn bộ</strong>, bạn sẽ được chọn
-                  vị trí lưu file ghi âm trước khi tải lên giao diện.
-                </div>
-              )}
+              <div style={{ fontSize: 13, color: "#595959", lineHeight: 1.7 }}>
+                {hasDirPicker
+                  ? "Khi chọn Khôi phục toàn bộ, bạn sẽ chọn thư mục lưu. Sau khi ghép xong file ghi âm và ghi chú sẽ được lưu vào đó trước khi tải lên giao diện."
+                  : "Khi chọn Khôi phục toàn bộ, file ghi âm sẽ tự động tải về thư mục Downloads sau khi ghép xong."}
+              </div>
             </div>
           ),
           footer: (
@@ -2342,7 +2325,6 @@ export const App: React.FC = () => {
                 marginTop: 16,
               }}
             >
-              {/* ❌ Cancel — re-show backup dialog */}
               <button
                 style={{
                   padding: "6px 14px",
@@ -2358,7 +2340,6 @@ export const App: React.FC = () => {
                 ❌ Hủy
               </button>
 
-              {/* 📝 Notes only */}
               <button
                 style={{
                   padding: "6px 14px",
@@ -2374,7 +2355,6 @@ export const App: React.FC = () => {
                 📝 Chỉ ghi chú
               </button>
 
-              {/* 🎵 Full restore — open save picker first */}
               <button
                 style={{
                   padding: "6px 14px",
@@ -2387,33 +2367,23 @@ export const App: React.FC = () => {
                 }}
                 onClick={async () => {
                   modalRef.destroy();
-                  // Open file-save picker so user chooses save location up-front.
-                  // On browsers without File System Access API, fall back to <a download>.
-                  if ("showSaveFilePicker" in window) {
+                  if (hasDirPicker) {
                     try {
-                      const handle = await (window as any).showSaveFilePicker({
-                        suggestedName: `ghi-am_backup.${knownExt}`,
-                        types: [
-                          {
-                            description: "File ghi âm",
-                            accept: {
-                              "audio/webm": [".webm"],
-                              "audio/mp4": [".mp4"],
-                              "audio/ogg": [".ogg"],
-                              "audio/wav": [".wav"],
-                            },
-                          },
-                        ],
+                      // showDirectoryPicker only selects a folder — NO files are
+                      // created on disk at this point. Actual writing happens in
+                      // Step 4, after all chunks have been assembled.
+                      const dh = await (window as any).showDirectoryPicker({
+                        mode: "readwrite",
                       });
-                      resolve({ action: "full", handle });
-                    } catch (e: any) {
-                      // AbortError = user closed picker without selecting → proceed without save
-                      // Any other error → same fallback
-                      resolve({ action: "full", handle: null });
+                      resolve({ action: "full", dirHandle: dh });
+                    } catch {
+                      // AbortError (user closed picker) or other error → proceed
+                      // without pre-selected dir (fallback <a download> later)
+                      resolve({ action: "full", dirHandle: null });
                     }
                   } else {
-                    // Firefox / Safari: no FSAPI — will trigger <a download> after load
-                    resolve({ action: "full", handle: null });
+                    // Firefox/Safari: no directory picker — will use <a download>
+                    resolve({ action: "full", dirHandle: null });
                   }
                 }}
               >
@@ -2431,14 +2401,20 @@ export const App: React.FC = () => {
     }
 
     const skipAudio = decision.action === "notesOnly";
-    // fileHandle is only set when action==='full' AND user picked a location
-    const fileHandle =
-      decision.action === "full" ? (decision as any).handle : null;
-    // If no FSAPI handle available, we'll trigger <a download> as fallback
+    const dirHandle =
+      decision.action === "full"
+        ? (
+            decision as {
+              action: "full";
+              dirHandle: FileSystemDirectoryHandle | null;
+            }
+          ).dirHandle
+        : null;
+    // Use <a download> fallback when: full restore + no dir handle + no directory picker
     const useFallbackDownload =
       decision.action === "full" &&
-      fileHandle === null &&
-      !("showSaveFilePicker" in window);
+      dirHandle === null &&
+      !("showDirectoryPicker" in window);
 
     // ── Step 3: Load from localStorage + IndexedDB with progress ─────────────
     showProgress(0, "Đang bắt đầu khôi phục...");
@@ -2460,58 +2436,107 @@ export const App: React.FC = () => {
       hasSummary: !!backup.geminiSummary,
     });
 
-    // ── Step 4: Save audio to disk IMMEDIATELY after assembly ─────────────────
-    // This happens before setAudioBlob() / WaveSurfer rendering, so a tab crash
-    // from OOM during rendering cannot cause data loss.
-    let audioSavedToDisk = false;
-    if (backup.audioBlob && !skipAudio) {
-      showProgress(93, "Đang lưu file ghi âm về máy...");
+    // ── Step 4: Save files to disk BEFORE WaveSurfer rendering ───────────────
+    // Chunks are now fully assembled in backup.audioBlob. Writing happens here,
+    // so an OOM crash during WaveSurfer decode cannot cause data loss.
+    let dataSavedToDisk = false;
 
-      const mime = backup.audioBlob.type || "audio/webm";
-      const ext = mime.includes("mp4")
-        ? "mp4"
-        : mime.includes("ogg")
-          ? "ogg"
-          : mime.includes("wav")
-            ? "wav"
-            : "webm";
-      const safeName =
-        (backup.meetingInfo.projectName || "ghi-am")
-          .replace(/[\\/:*?"<>|]/g, "_")
-          .trim() || "ghi-am";
-      const filename = `${safeName}_backup.${ext}`;
+    const mime = backup.audioBlob?.type || "audio/webm";
+    const ext = mime.includes("mp4")
+      ? "mp4"
+      : mime.includes("ogg")
+        ? "ogg"
+        : mime.includes("wav")
+          ? "wav"
+          : "webm";
+    const safeName =
+      (backup.meetingInfo.projectName || "ghi-am")
+        .replace(/[\\/:*?"<>|]/g, "_")
+        .trim() || "ghi-am";
+    const audioFilename = `${safeName}_backup.${ext}`;
+    const notesFilename = `${safeName}_notes.json`;
+
+    if (backup.audioBlob && !skipAudio) {
+      showProgress(96, "Đang lưu file ghi âm và ghi chú về máy...");
+
+      // Notes payload — everything useful for the user to have on disk
+      const notesPayload = {
+        projectName: backup.meetingInfo.projectName,
+        date: backup.meetingInfo.date,
+        time: backup.meetingInfo.time,
+        location: backup.meetingInfo.location,
+        host: backup.meetingInfo.host,
+        participants: backup.meetingInfo.participants,
+        notes: backup.notes,
+        transcriptions: backup.transcriptions ?? [],
+        geminiSummary: backup.geminiSummary ?? "",
+        savedAt: new Date().toISOString(),
+      };
 
       try {
-        if (fileHandle) {
-          // Write via File System Access API to user-chosen location
-          const writable = await fileHandle.createWritable();
-          await writable.write(backup.audioBlob);
-          await writable.close();
-          audioSavedToDisk = true;
+        if (dirHandle) {
+          // ── FSAPI path: write both files into selected folder ───────────────
+          // Audio
+          const audioHandle = await dirHandle.getFileHandle(audioFilename, {
+            create: true,
+          });
+          const audioWritable = await audioHandle.createWritable();
+          await audioWritable.write(backup.audioBlob);
+          await audioWritable.close();
+
+          // Notes JSON
+          const notesHandle = await dirHandle.getFileHandle(notesFilename, {
+            create: true,
+          });
+          const notesWritable = await notesHandle.createWritable();
+          await notesWritable.write(
+            new Blob([JSON.stringify(notesPayload, null, 2)], {
+              type: "application/json",
+            }),
+          );
+          await notesWritable.close();
+
+          dataSavedToDisk = true;
           notification.open({
-            key: "audio-saved-ok",
-            message: "✅ File ghi âm đã được lưu",
-            description: `Đã lưu: ${filename}`,
-            duration: 4,
+            key: "files-saved-ok",
+            message: "✅ Đã lưu file về máy",
+            description: `📁 ${dirHandle.name}: ${audioFilename}, ${notesFilename}`,
+            duration: 5,
             placement: "bottomRight",
             closable: true,
           });
         } else if (useFallbackDownload) {
-          // Firefox/Safari: trigger browser download to Downloads folder
-          const url = URL.createObjectURL(backup.audioBlob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = filename;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          setTimeout(() => URL.revokeObjectURL(url), 10_000);
-          audioSavedToDisk = true;
+          // ── Fallback: <a download> for audio + notes ────────────────────────
+          // Audio
+          const audioUrl = URL.createObjectURL(backup.audioBlob);
+          const a1 = document.createElement("a");
+          a1.href = audioUrl;
+          a1.download = audioFilename;
+          document.body.appendChild(a1);
+          a1.click();
+          document.body.removeChild(a1);
+          setTimeout(() => URL.revokeObjectURL(audioUrl), 10_000);
+
+          // Notes JSON
+          const notesUrl = URL.createObjectURL(
+            new Blob([JSON.stringify(notesPayload, null, 2)], {
+              type: "application/json",
+            }),
+          );
+          const a2 = document.createElement("a");
+          a2.href = notesUrl;
+          a2.download = notesFilename;
+          document.body.appendChild(a2);
+          a2.click();
+          document.body.removeChild(a2);
+          setTimeout(() => URL.revokeObjectURL(notesUrl), 10_000);
+
+          dataSavedToDisk = true;
         }
-        // If fileHandle is null AND FSAPI exists = user cancelled picker → skip save
+        // dirHandle === null && hasDirPicker → user cancelled picker → skip pre-save
       } catch (saveErr) {
-        console.error("Failed to save audio to disk:", saveErr);
-        // Don't block restore — warn and continue; DownloadButton in error notification is fallback
+        console.error("Failed to save files to disk:", saveErr);
+        // Non-fatal — restore continues; download button appears on OOM error
       }
     }
 
@@ -2547,7 +2572,17 @@ export const App: React.FC = () => {
       setGeminiSummary("");
     }
 
-    setHasUnsavedChanges(!backup.isSaved);
+    // If we successfully saved to disk, treat this as a "save complete" event
+    // so the session is marked saved and the autosave backup is cleared.
+    if (dataSavedToDisk) {
+      // Snapshots will be set immediately after; mark saved synchronously
+      setIsSaved(true);
+      setHasUnsavedChanges(false);
+      clearBackup(); // safe to clear — data is on disk
+    } else {
+      setHasUnsavedChanges(!backup.isSaved);
+    }
+
     setSavedNotesSnapshot(backup.notes);
     setSavedSpeakersSnapshot(new Map(backup.speakersMap));
     setSavedTranscriptionsSnapshot(
@@ -2650,7 +2685,7 @@ export const App: React.FC = () => {
         clearWaveformRefs();
         const isOOM = errMsg.startsWith("OOM:");
         // Show download button only if audio wasn't already saved to disk
-        const showDownload = isOOM && !audioSavedToDisk;
+        const showDownload = isOOM && !dataSavedToDisk;
         notification.open({
           key: NOTIF_KEY,
           message: "⚠️ Khôi phục hoàn tất (không có waveform)",
@@ -2703,7 +2738,7 @@ export const App: React.FC = () => {
         () => {
           if (onWaveformReadyRef.current || onWaveformErrorRef.current) {
             clearWaveformRefs();
-            const showDownload = !audioSavedToDisk;
+            const showDownload = !dataSavedToDisk;
             notification.open({
               key: NOTIF_KEY,
               message: "⚠️ Khôi phục hoàn tất (waveform timeout)",
@@ -2773,7 +2808,7 @@ export const App: React.FC = () => {
       speakersMapSize: backup.speakersMap.size,
       transcriptionsRestored: backup.transcriptions?.length || 0,
       audioRestored: !!backup.audioBlob,
-      audioSavedToDisk,
+      dataSavedToDisk,
     });
   };
 

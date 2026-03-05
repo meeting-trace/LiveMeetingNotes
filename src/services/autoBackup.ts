@@ -1,6 +1,11 @@
 // Auto-backup service using localStorage and IndexedDB
 // Protects against browser crashes and accidental closures
 
+import fixWebmDuration from 'fix-webm-duration';
+
+// Must match the timeslice used in audioRecorder.ts → MediaRecorder.start(5000)
+const RECORDING_TIMESLICE_MS = 5000;
+
 const STORAGE_KEY = 'meetingNote_autoBackup';
 const DB_NAME = 'MeetingNoteDB';
 const DB_VERSION = 2;          // v2: added audioChunks store for delta backup
@@ -105,7 +110,37 @@ const loadAudioBlobWithProgress = async (
         tx.oncomplete = () => resolve(collected);
         tx.onerror = () => reject(tx.error);
       });
-      return new Blob(chunks, { type: mimeType });
+      const rawBlob = new Blob(chunks, { type: mimeType });
+
+      // ── Diagnostic: log assembly stats to help verify all chunks are present ──
+      const estimatedDurationMs = totalCount * RECORDING_TIMESLICE_MS;
+      console.log(
+        `[Backup] Assembled ${totalCount} chunks → ~${
+          Math.round(estimatedDurationMs / 60_000)
+        } min | total size: ${(rawBlob.size / 1_048_576).toFixed(1)} MB | mime: ${mimeType}`
+      );
+
+      // ── Fix WebM Duration metadata ─────────────────────────────────────────
+      // MediaRecorder.start(timeslice) produces chunks where only the FIRST
+      // chunk has the EBML/Segment-Info header.  The Duration field in that
+      // header is either 0 or covers only one timeslice (5 s), so every
+      // player shows the wrong total duration even though all audio data is
+      // present.  fix-webm-duration patches the Duration field in place.
+      if (mimeType.includes('webm') || mimeType.includes('ogg')) {
+        try {
+          const fixedBlob = await fixWebmDuration(
+            rawBlob,
+            estimatedDurationMs,
+            { logger: false }
+          );
+          console.log(`[Backup] Duration metadata fixed: ${(estimatedDurationMs / 60_000).toFixed(1)} min written to header`);
+          return fixedBlob;
+        } catch (fixErr) {
+          console.warn('[Backup] fix-webm-duration failed, using raw blob:', fixErr);
+          return rawBlob;
+        }
+      }
+      return rawBlob;
     }
 
     // ── Fallback: monolithic blob written by saveAudioBlob (stop-then-crash case)

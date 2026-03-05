@@ -1007,7 +1007,7 @@ export const NotesEditor: React.FC<Props> = ({
                   value={line.speaker || ""} // ✅ Read from NoteLine object
                   onChange={(e) => handleSpeakerChange(index, e.target.value)}
                   onKeyDown={(e) => handleSpeakerKeyDown(index, e)}
-                  placeholder="Người nói ..."
+                  placeholder="Người nói"
                   autoSize={{ minRows: 1, maxRows: 10 }}
                   style={{
                     fontFamily: "monospace",

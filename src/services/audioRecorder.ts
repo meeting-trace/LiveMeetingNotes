@@ -1,4 +1,5 @@
 import type { AudioSourceType } from '../types/types';
+import fixWebmDuration from 'fix-webm-duration';
 
 export class AudioRecorderService {
   private mediaRecorder: MediaRecorder | null = null;
@@ -244,6 +245,10 @@ export class AudioRecorderService {
   }
 
   async stopRecording(): Promise<Blob> {
+    // Capture duration before stop() is called — Date.now() inside onstop
+    // would be essentially the same but this is more explicit.
+    const recordingDurationMs = this.startTime > 0 ? Date.now() - this.startTime : 0;
+
     return new Promise((resolve, reject) => {
       if (!this.mediaRecorder) {
         reject(new Error('No active recording'));
@@ -252,34 +257,53 @@ export class AudioRecorderService {
 
       const recorder = this.mediaRecorder;
       
-      recorder.onstop = () => {
-        // console.log(`Recording stopped. Total chunks: ${this.audioChunks.length}, Total size: ${(this.currentChunkSize / (1024 * 1024)).toFixed(2)} MB`);
-        
-        // Combine all chunks into single blob
-        const mimeType = recorder.mimeType || 'audio/webm';
-        const blob = new Blob(this.audioChunks, { type: mimeType });
-        
-        // Stop all tracks
-        if (this.stream) {
-          this.stream.getTracks().forEach(track => track.stop());
-        }
-        if (this.micStream) {
-          this.micStream.getTracks().forEach(track => track.stop());
-        }
-        if (this.systemStream) {
-          this.systemStream.getTracks().forEach(track => track.stop());
-        }
+      recorder.onstop = async () => {
+        // Wrap the entire handler so any unexpected throw still resolves/rejects
+        // the outer Promise instead of hanging it forever.
+        try {
+          // console.log(`Recording stopped. Total chunks: ${this.audioChunks.length}, Total size: ${(this.currentChunkSize / (1024 * 1024)).toFixed(2)} MB`);
+          
+          // Combine all chunks into single blob
+          const mimeType = recorder.mimeType || 'audio/webm';
+          const rawBlob = new Blob(this.audioChunks, { type: mimeType });
+          
+          // Stop all tracks
+          if (this.stream) {
+            this.stream.getTracks().forEach(track => track.stop());
+          }
+          if (this.micStream) {
+            this.micStream.getTracks().forEach(track => track.stop());
+          }
+          if (this.systemStream) {
+            this.systemStream.getTracks().forEach(track => track.stop());
+          }
 
-        this.mediaRecorder = null;
-        this.stream = null;
-        this.micStream = null;
-        this.systemStream = null;
-        this.audioChunks = [];
-        this.currentChunkSize = 0;
-        this.isPausedState = false; // Reset pause state
-        this.lastBackupChunkIndex = 0; // Reset delta pointer
-        
-        resolve(blob);
+          this.mediaRecorder = null;
+          this.stream = null;
+          this.micStream = null;
+          this.systemStream = null;
+          this.audioChunks = [];
+          this.currentChunkSize = 0;
+          this.isPausedState = false; // Reset pause state
+          this.lastBackupChunkIndex = 0; // Reset delta pointer
+          
+          // Fix WebM/OGG Duration metadata — MediaRecorder.start(timeslice) leaves
+          // Duration = 0 or = one timeslice in the header; fix-webm-duration patches
+          // the Segment Info Duration field to the actual recording length.
+          if (recordingDurationMs > 0 && (mimeType.includes('webm') || mimeType.includes('ogg'))) {
+            try {
+              const fixedBlob = await fixWebmDuration(rawBlob, recordingDurationMs, { logger: false });
+              resolve(fixedBlob);
+              return;
+            } catch (fixErr) {
+              console.warn('[Recorder] fix-webm-duration failed, using raw blob:', fixErr);
+            }
+          }
+          resolve(rawBlob);
+        } catch (err) {
+          // Safety net: if any code above throws unexpectedly, reject instead of hanging
+          reject(err);
+        }
       };
 
       recorder.stop();
