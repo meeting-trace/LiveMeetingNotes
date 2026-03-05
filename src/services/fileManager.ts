@@ -116,6 +116,7 @@ export class FileManagerService {
     meetingInfo: any;
     metadata: any;
     audioBlob: Blob | null;
+    audioFiles: { name: string; blob: Blob }[];
     projectName: string;
     transcriptionData?: any;
     rawTranscriptsData?: any;
@@ -151,6 +152,7 @@ export class FileManagerService {
       let meetingInfoData = null;
       let metadataData = null;
       let audioBlob = null;
+      const audioFiles: { name: string; blob: Blob }[] = []; // Collect all audio files
       let transcriptionData = null;
       let rawTranscriptsData = null; // Raw data from Web Speech API
 
@@ -196,20 +198,31 @@ export class FileManagerService {
             // .m4a / .mp4a / .aac: browsers may not auto-detect MIME type → assign explicitly
             const needsMimeOverride = ['m4a', 'mp4a', 'aac'].includes(ext) &&
               (!file.type || file.type === 'application/octet-stream');
+            let blob: Blob;
             if (needsMimeOverride) {
               const mimeType = ext === 'aac' ? 'audio/aac' : 'audio/mp4';
-              audioBlob = new Blob([await file.arrayBuffer()], { type: mimeType });
+              blob = new Blob([await file.arrayBuffer()], { type: mimeType });
             } else {
-              audioBlob = file;
+              blob = file;
             }
-            // console.log('Loaded audio file:', name, 'size:', audioBlob.size, 'type:', audioBlob.type);
+            audioFiles.push({ name, blob });
+            // console.log('Found audio file:', name, 'size:', blob.size, 'type:', blob.type);
           }
         }
       }
 
+      // Sort audio files by name (default order)
+      audioFiles.sort((a, b) => a.name.localeCompare(b.name));
+
+      // Set primary audioBlob: use solo file directly, multiple files handled by caller
+      if (audioFiles.length === 1) {
+        audioBlob = audioFiles[0].blob;
+      }
+
       // Flexible loading: Allow audio-only projects without JSON files
       // If JSON files are missing, use default values
-      if (!meetingInfoData && !metadataData && !audioBlob) {
+      // Note: audioBlob is null when there are multiple audio files (handled by caller), so check audioFiles.length
+      if (!meetingInfoData && !metadataData && audioFiles.length === 0) {
         throw new Error('Thư mục trống - không tìm thấy file audio hoặc file thông tin cuộc họp');
       }
       
@@ -241,7 +254,7 @@ export class FileManagerService {
       }
       
       // Audio file is optional (for notes-only projects)
-      if (!audioBlob) {
+      if (audioFiles.length === 0) {
         console.warn('⚠️ Không tìm thấy file audio - đây là project chỉ có ghi chú');
       }
 
@@ -258,6 +271,7 @@ export class FileManagerService {
         meetingInfo: meetingInfoData,
         metadata: metadataData,
         audioBlob: audioBlob,
+        audioFiles: audioFiles,
         projectName: projectName,
         transcriptionData: transcriptionData,
         rawTranscriptsData: rawTranscriptsData

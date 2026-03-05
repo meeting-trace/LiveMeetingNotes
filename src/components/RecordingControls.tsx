@@ -26,6 +26,8 @@ import {
 } from "../services/speechToText";
 import { appendAudioChunks } from "../services/autoBackup";
 import type { RawTranscriptData } from "../services/aiRefinement";
+import { AudioFileMergeDialog } from "./AudioFileMergeDialog";
+import type { AudioFileItem } from "./AudioFileMergeDialog";
 import type {
   MeetingInfo,
   SpeechToTextConfig,
@@ -123,6 +125,13 @@ export const RecordingControls: React.FC<Props> = ({
   const [lastProjectName, setLastProjectName] = useState<string>("");
   const [lastRecordingDuration, setLastRecordingDuration] = useState<number>(0);
   const [autoTranscribe, setAutoTranscribe] = useState<boolean>(true);
+
+  // Audio file merge dialog state
+  const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [pendingAudioFiles, setPendingAudioFiles] = useState<AudioFileItem[]>(
+    [],
+  );
+  const pendingProjectDataRef = useRef<any>(null); // Holds the loaded project data awaiting audio selection
 
   // Notify parent about fileManager instance on mount
   useEffect(() => {
@@ -1284,259 +1293,215 @@ export const RecordingControls: React.FC<Props> = ({
     }
   };
 
+  // ─── Helper: apply fully-resolved project data to parent state ────────────
+  const applyLoadedProject = (
+    projectData: NonNullable<
+      Awaited<ReturnType<FileManagerService["loadProjectFromFolder"]>>
+    >,
+    resolvedAudioBlob: Blob | null,
+  ) => {
+    const {
+      meetingInfo: meetingInfoData,
+      metadata: metadataData,
+      transcriptionData,
+      rawTranscriptsData,
+    } = projectData;
+
+    // Map PascalCase from saved files to camelCase for MeetingInfo
+    const loadedMeetingInfo = {
+      title: meetingInfoData.MeetingTitle || "",
+      date: meetingInfoData.MeetingDate || "",
+      time: meetingInfoData.MeetingTime || "",
+      location: meetingInfoData.Location || "",
+      host: meetingInfoData.Host || "",
+      attendees: meetingInfoData.Attendees || "",
+    };
+
+    // Parse metadata to reconstruct timestampMap, speakersMap and notes
+    const timestampMapData = new Map<number, number>();
+    const speakersMapData = new Map<number, string>();
+    let notesText = "";
+
+    // Get recording start time - prefer from metadata, fallback to calculation
+    let recordingStart = Date.now();
+
+    if (metadataData.RecordingStartTime) {
+      recordingStart = new Date(metadataData.RecordingStartTime).getTime();
+    } else if (metadataData.Timestamps && metadataData.Timestamps.length > 0) {
+      const firstTimestamp = metadataData.Timestamps[0];
+      const firstDatetime = new Date(firstTimestamp.DateTime).getTime();
+      const startTimeMatch = firstTimestamp.StartTime.match(
+        /(\d+):(\d+):(\d+)\.(\d+)/,
+      );
+      if (startTimeMatch) {
+        const fractionalPart = startTimeMatch[4];
+        const ms =
+          fractionalPart.length === 7
+            ? parseInt(fractionalPart) / 10000
+            : parseInt(fractionalPart);
+        const offsetMs =
+          parseInt(startTimeMatch[1]) * 3600000 +
+          parseInt(startTimeMatch[2]) * 60000 +
+          parseInt(startTimeMatch[3]) * 1000 +
+          ms;
+        recordingStart = firstDatetime - offsetMs;
+      }
+    }
+
+    if (metadataData.Timestamps && Array.isArray(metadataData.Timestamps)) {
+      const BLOCK_SEPARATOR = "§§§";
+      const sortedTimestamps = metadataData.Timestamps.sort(
+        (a: any, b: any) => a.Index - b.Index,
+      );
+
+      sortedTimestamps.forEach((ts: any, index: number) => {
+        if (index > 0) notesText += BLOCK_SEPARATOR;
+        const position = notesText.length;
+
+        let startTimeMs = 0;
+        const startTimeMatch = ts.StartTime.match(/(\d+):(\d+):(\d+)\.(\d+)/);
+        if (startTimeMatch) {
+          const fractionalPart = startTimeMatch[4];
+          const ms =
+            fractionalPart.length === 7
+              ? parseInt(fractionalPart) / 10000
+              : parseInt(fractionalPart);
+          startTimeMs =
+            parseInt(startTimeMatch[1]) * 3600000 +
+            parseInt(startTimeMatch[2]) * 60000 +
+            parseInt(startTimeMatch[3]) * 1000 +
+            ms;
+        }
+
+        timestampMapData.set(position, recordingStart + startTimeMs);
+        if (ts.Speaker) speakersMapData.set(index, ts.Speaker);
+        notesText += ts.Text || "";
+      });
+    }
+
+    // Parse duration
+    let durationMs = 0;
+    if (metadataData.Duration) {
+      const match = metadataData.Duration.match(/(\d+):(\d+):(\d+)\.(\d+)/);
+      if (match) {
+        const fractionalPart = match[4];
+        const ms =
+          fractionalPart.length === 7
+            ? parseInt(fractionalPart) / 10000
+            : parseInt(fractionalPart);
+        durationMs =
+          parseInt(match[1]) * 3600000 +
+          parseInt(match[2]) * 60000 +
+          parseInt(match[3]) * 1000 +
+          ms;
+      }
+    }
+
+    onLoadProject({
+      meetingInfo: loadedMeetingInfo,
+      notes: notesText,
+      timestampMap: timestampMapData,
+      speakersMap: speakersMapData,
+      audioBlob: resolvedAudioBlob,
+      recordingStartTime: recordingStart,
+      transcriptions: transcriptionData?.transcriptions || [],
+      rawTranscripts: rawTranscriptsData?.rawTranscripts || [],
+      summary: transcriptionData?.summary || "",
+    });
+
+    if (transcriptionData?.transcriptions?.length > 0) {
+      message.success(
+        `Loaded ${transcriptionData.transcriptions.length} transcription results`,
+      );
+    }
+
+    setLastProjectName(projectData.projectName);
+    setLastRecordingDuration(durationMs);
+
+    const parentHandle = fileManager.getParentDirHandle();
+    const projectDirHandle = fileManager.getProjectDirHandle();
+    if (parentHandle) {
+      onFolderSelect(parentHandle.name + " (parent of loaded project)");
+    } else if (projectDirHandle) {
+      onFolderSelect(projectDirHandle.name + " (loaded project folder)");
+    }
+
+    message.success(`Project loaded: ${projectData.projectName}`);
+  };
+
   const handleLoadProject = async () => {
     // console.log('handleLoadProject called');
 
     try {
       if (!FileManagerService.isSupported()) {
-        // console.error('Browser not supported');
         message.error(
           "Trình duyệt của bạn không hỗ trợ tải project. Vui lòng sử dụng Chrome hoặc Edge.",
         );
         return;
       }
 
-      // console.log('Checking unsaved changes...');
       if (hasUnsavedChanges) {
         const confirmed = window.confirm(
           "Bạn có dữ liệu chưa lưu. Tải project mới sẽ mất dữ liệu hiện tại. Tiếp tục?",
         );
-        if (!confirmed) {
-          // console.log('User cancelled due to unsaved changes');
-          return;
-        }
+        if (!confirmed) return;
       }
 
-      // console.log('Calling fileManager.loadProjectFromFolder...');
       const projectData = await fileManager.loadProjectFromFolder();
 
-      // console.log('fileManager returned:', projectData);
+      if (!projectData) return; // User cancelled
 
-      if (!projectData) {
-        // console.log('User cancelled folder selection');
-        return; // User cancelled
+      const { audioFiles, audioBlob } = projectData;
+
+      // If multiple audio files found, show merge dialog
+      if (audioFiles.length > 1) {
+        pendingProjectDataRef.current = projectData;
+        setPendingAudioFiles(audioFiles);
+        setShowMergeDialog(true);
+        return; // Wait for user's choice in dialog
       }
 
-      // Extract data (with rawTranscripts support)
-      const {
-        meetingInfo: meetingInfoData,
-        metadata: metadataData,
-        audioBlob,
-        transcriptionData,
-        rawTranscriptsData,
-      } = projectData;
-
-      // Map PascalCase from saved files to camelCase for MeetingInfo
-      const loadedMeetingInfo = {
-        title: meetingInfoData.MeetingTitle || "",
-        date: meetingInfoData.MeetingDate || "",
-        time: meetingInfoData.MeetingTime || "",
-        location: meetingInfoData.Location || "",
-        host: meetingInfoData.Host || "",
-        attendees: meetingInfoData.Attendees || "",
-      };
-
-      // console.log('📋 Mapping meetingInfo from file:', {
-      //   rawData: meetingInfoData,
-      //   mapped: loadedMeetingInfo
-      // });
-
-      // console.log('🔍 Individual field mapping:', {
-      //   'MeetingTitle → title': `"${meetingInfoData.MeetingTitle}" → "${loadedMeetingInfo.title}"`,
-      //   'MeetingDate → date': `"${meetingInfoData.MeetingDate}" → "${loadedMeetingInfo.date}"`,
-      //   'MeetingTime → time': `"${meetingInfoData.MeetingTime}" → "${loadedMeetingInfo.time}"`,
-      //   'Location → location': `"${meetingInfoData.Location}" → "${loadedMeetingInfo.location}"`,
-      //   'Host → host': `"${meetingInfoData.Host}" → "${loadedMeetingInfo.host}"`,
-      //   'Attendees → attendees': `"${meetingInfoData.Attendees}" → "${loadedMeetingInfo.attendees}"`
-      // });
-
-      // Parse metadata to reconstruct timestampMap, speakersMap and notes
-      const timestampMapData = new Map<number, number>();
-      const speakersMapData = new Map<number, string>();
-      let notesText = "";
-
-      // Get recording start time - prefer from metadata, fallback to calculation
-      let recordingStart = Date.now();
-
-      if (metadataData.RecordingStartTime) {
-        // Use saved RecordingStartTime from metadata (chuẩn nhất)
-        recordingStart = new Date(metadataData.RecordingStartTime).getTime();
-
-        // console.log('🕐 Using RecordingStartTime from metadata:', {
-        //   raw: metadataData.RecordingStartTime,
-        //   parsed: new Date(recordingStart).toISOString(),
-        //   timestamp: recordingStart
-        // });
-      } else if (
-        metadataData.Timestamps &&
-        metadataData.Timestamps.length > 0
-      ) {
-        // Fallback: Calculate from first timestamp (old projects without RecordingStartTime)
-        const firstTimestamp = metadataData.Timestamps[0];
-        const firstDatetime = new Date(firstTimestamp.DateTime).getTime();
-        // Parse StartTime to get offset (format: HH:MM:SS.NNNNNNN with 7 decimal digits)
-        const startTimeMatch = firstTimestamp.StartTime.match(
-          /(\d+):(\d+):(\d+)\.(\d+)/,
-        );
-        if (startTimeMatch) {
-          const fractionalPart = startTimeMatch[4];
-          // Convert to milliseconds: if 7 digits (e.g., 9900000), divide by 10000
-          const ms =
-            fractionalPart.length === 7
-              ? parseInt(fractionalPart) / 10000
-              : parseInt(fractionalPart);
-          const offsetMs =
-            parseInt(startTimeMatch[1]) * 3600000 +
-            parseInt(startTimeMatch[2]) * 60000 +
-            parseInt(startTimeMatch[3]) * 1000 +
-            ms;
-          recordingStart = firstDatetime - offsetMs;
-
-          // console.log('🕐 Calculated RecordingStartTime from first block:', {
-          //   raw: firstTimestamp.StartTime,
-          //   fractionalPart,
-          //   parsedMs: ms,
-          //   totalOffsetMs: offsetMs,
-          //   firstDatetime: new Date(firstDatetime).toISOString(),
-          //   calculatedRecordingStart: new Date(recordingStart).toISOString()
-          // });
-        }
-      }
-
-      if (metadataData.Timestamps && Array.isArray(metadataData.Timestamps)) {
-        // Reconstruct notes from Timestamps array
-        const BLOCK_SEPARATOR = "§§§";
-        const sortedTimestamps = metadataData.Timestamps.sort(
-          (a: any, b: any) => a.Index - b.Index,
-        );
-
-        sortedTimestamps.forEach((ts: any, index: number) => {
-          // Add BLOCK_SEPARATOR before text (except for first line)
-          if (index > 0) {
-            notesText += BLOCK_SEPARATOR;
-          }
-
-          // Calculate position at start of this block (after separator if not first)
-          const position = notesText.length;
-
-          // Parse StartTime (relative time) from metadata and convert to absolute datetime
-          // StartTime format: HH:MM:SS.NNNNNNN (7 decimal digits)
-          let startTimeMs = 0;
-          const startTimeMatch = ts.StartTime.match(/(\d+):(\d+):(\d+)\.(\d+)/);
-          if (startTimeMatch) {
-            const hours = parseInt(startTimeMatch[1]);
-            const minutes = parseInt(startTimeMatch[2]);
-            const seconds = parseInt(startTimeMatch[3]);
-            const fractionalPart = startTimeMatch[4];
-            // Convert to milliseconds: if 7 digits, divide by 10000
-            const ms =
-              fractionalPart.length === 7
-                ? parseInt(fractionalPart) / 10000
-                : parseInt(fractionalPart);
-            startTimeMs =
-              hours * 3600000 + minutes * 60000 + seconds * 1000 + ms;
-          }
-
-          // Convert relative time to absolute datetime using RecordingStartTime
-          const datetime = recordingStart + startTimeMs;
-          timestampMapData.set(position, datetime);
-
-          // Store speaker name using lineIndex (which equals index in sorted array)
-          // Each timestamp entry corresponds to one line in the reconstructed notes
-          if (ts.Speaker) {
-            speakersMapData.set(index, ts.Speaker);
-            // console.log(`📢 Loading speaker for line ${index}:`, ts.Speaker);
-          }
-
-          // Add text to notes
-          notesText += ts.Text || "";
-        });
-
-        // console.log('🕐 Timestamp reconstruction:', {
-        //   recordingStart,
-        //   firstTimestamp: sortedTimestamps[0]?.DateTime,
-        //   firstStartTime: sortedTimestamps[0]?.StartTime,
-        //   timestampCount: timestampMapData.size,
-        //   speakerCount: speakersMapData.size,
-        //   speakers: Array.from(speakersMapData.entries()),
-        //   sampleTimestamps: Array.from(timestampMapData.entries()).slice(0, 3).map(([pos, time]) => ({
-        //     position: pos,
-        //     datetime: new Date(time).toISOString(),
-        //     relativeMs: time - recordingStart,
-        //     relativeFormatted: `${String(Math.floor((time - recordingStart) / 3600000)).padStart(2, '0')}:${String(Math.floor(((time - recordingStart) % 3600000) / 60000)).padStart(2, '0')}:${String(Math.floor(((time - recordingStart) % 60000) / 1000)).padStart(2, '0')}`
-        //   }))
-        // });
-      }
-
-      // Parse duration string to milliseconds (format: HH:MM:SS.NNNNNNN with 7 decimal digits)
-      let durationMs = 0;
-      if (metadataData.Duration) {
-        const durationStr = metadataData.Duration;
-        const match = durationStr.match(/(\d+):(\d+):(\d+)\.(\d+)/);
-        if (match) {
-          const hours = parseInt(match[1]);
-          const minutes = parseInt(match[2]);
-          const seconds = parseInt(match[3]);
-          const fractionalPart = match[4];
-          // Convert to milliseconds: if 7 digits, divide by 10000
-          const ms =
-            fractionalPart.length === 7
-              ? parseInt(fractionalPart) / 10000
-              : parseInt(fractionalPart);
-          durationMs = hours * 3600000 + minutes * 60000 + seconds * 1000 + ms;
-        }
-      }
-
-      // Call parent handler to update all state (recordingStart already calculated above)
-      onLoadProject({
-        meetingInfo: loadedMeetingInfo,
-        notes: notesText,
-        timestampMap: timestampMapData,
-        speakersMap: speakersMapData,
-        audioBlob: audioBlob,
-        recordingStartTime: recordingStart,
-        transcriptions: transcriptionData?.transcriptions || [], // Pass transcriptions array
-        rawTranscripts: rawTranscriptsData?.rawTranscripts || [], // Pass raw transcripts for AI refinement
-        summary: transcriptionData?.summary || "", // Pass summary if available
-      });
-
-      // Show message if transcriptions loaded
-      if (
-        transcriptionData?.transcriptions &&
-        transcriptionData.transcriptions.length > 0
-      ) {
-        message.success(
-          `Loaded ${transcriptionData.transcriptions.length} transcription results`,
-        );
-      }
-
-      // console.log('Load complete:', {
-      //   meetingInfo: loadedMeetingInfo,
-      //   notesLength: notesText.length,
-      //   timestampCount: timestampMapData.size,
-      //   timestampMap: Array.from(timestampMapData.entries()),
-      //   recordingStart
-      // });
-
-      // Update local state
-      setLastProjectName(projectData.projectName);
-      setLastRecordingDuration(durationMs);
-
-      // Update folder path display to show where files will be saved
-      // Priority: Parent folder > Project folder
-      const parentHandle = fileManager.getParentDirHandle();
-      const projectHandle = fileManager.getProjectDirHandle();
-
-      if (parentHandle) {
-        onFolderSelect(parentHandle.name + " (parent of loaded project)");
-      } else if (projectHandle) {
-        onFolderSelect(projectHandle.name + " (loaded project folder)");
-      }
-
-      message.success(`Project loaded: ${projectData.projectName}`);
+      // Single or no audio file → apply directly
+      applyLoadedProject(projectData, audioBlob);
     } catch (error: any) {
       console.error("Load project error:", error);
       message.error(`Failed to load project: ${error.message}`);
+    }
+  };
+
+  // Called when user confirms audio selection/merge in dialog
+  const handleMergeConfirm = (mergedBlob: Blob) => {
+    setShowMergeDialog(false);
+    const projectData = pendingProjectDataRef.current;
+    pendingProjectDataRef.current = null;
+    if (!projectData) return;
+    try {
+      applyLoadedProject(projectData, mergedBlob);
+    } catch (error: any) {
+      console.error("Apply project after merge error:", error);
+      message.error(`Lỗi khi tải project: ${error.message}`);
+    }
+  };
+
+  // Called when user cancels the merge dialog
+  const handleMergeCancel = () => {
+    setShowMergeDialog(false);
+    setPendingAudioFiles([]);
+    pendingProjectDataRef.current = null;
+    message.info("Đã hủy tải project");
+  };
+
+  // Called when user wants to use only first audio file
+  const handleMergeUseSingle = (blob: Blob) => {
+    setShowMergeDialog(false);
+    const projectData = pendingProjectDataRef.current;
+    pendingProjectDataRef.current = null;
+    if (!projectData) return;
+    try {
+      applyLoadedProject(projectData, blob);
+    } catch (error: any) {
+      console.error("Apply project (single audio) error:", error);
+      message.error(`Lỗi khi tải project: ${error.message}`);
     }
   };
 
@@ -1553,6 +1518,15 @@ export const RecordingControls: React.FC<Props> = ({
 
   return (
     <div className="recording-controls">
+      {/* Audio File Merge Dialog - shown when multiple audio files detected on project load */}
+      <AudioFileMergeDialog
+        open={showMergeDialog}
+        audioFiles={pendingAudioFiles}
+        onConfirm={handleMergeConfirm}
+        onCancel={handleMergeCancel}
+        onUseSingle={handleMergeUseSingle}
+      />
+
       <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
         {/* Row 1: File Management & Configuration */}
         <div
@@ -1667,9 +1641,9 @@ export const RecordingControls: React.FC<Props> = ({
                 <Select.Option value={"microphone" as AudioSourceType}>
                   🎤 Microphone
                 </Select.Option>
-                <Select.Option value={'system' as AudioSourceType}>
-                🔊 Nguồn khác
-              </Select.Option>
+                <Select.Option value={"system" as AudioSourceType}>
+                  🔊 Nguồn khác
+                </Select.Option>
                 <Select.Option value={"both" as AudioSourceType}>
                   🎤+🔊 Kết hợp
                 </Select.Option>
