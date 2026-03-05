@@ -65,31 +65,55 @@ const saveAudioBlob = async (blob: Blob): Promise<void> => {
 // Load audio blob from IndexedDB.
 // Prefers reconstructing from delta chunks (crash-during-recording case);
 // falls back to the monolithic 'currentRecording' key (stop-then-crash case).
-const loadAudioBlob = async (): Promise<Blob | null> => {
+// onProgress receives 0-100.
+const loadAudioBlobWithProgress = async (
+  onProgress?: (pct: number) => void
+): Promise<Blob | null> => {
   try {
     const db = await openDB();
-    // Try delta chunks first
-    const { chunks, mimeType } = await new Promise<{ chunks: Blob[]; mimeType: string }>(
+    // ── Step 1: read mimeType + count chunks (no data loaded yet)
+    const { totalCount, mimeType } = await new Promise<{ totalCount: number; mimeType: string }>(
       (resolve, reject) => {
         const tx = db.transaction([AUDIO_STORE, CHUNKS_STORE], 'readonly');
-        const results: { chunks: Blob[]; mimeType: string } = { chunks: [], mimeType: 'audio/webm' };
+        let count = 0;
+        let mime = 'audio/webm';
+        const countReq = tx.objectStore(CHUNKS_STORE).count();
+        countReq.onsuccess = () => { count = countReq.result; };
         const mimeReq = tx.objectStore(AUDIO_STORE).get('mimeType');
-        mimeReq.onsuccess = () => { if (mimeReq.result) results.mimeType = mimeReq.result as string; };
-        const chunksReq = tx.objectStore(CHUNKS_STORE).getAll();
-        chunksReq.onsuccess = () => { results.chunks = (chunksReq.result as Blob[]) || []; };
-        tx.oncomplete = () => resolve(results);
+        mimeReq.onsuccess = () => { if (mimeReq.result) mime = mimeReq.result as string; };
+        tx.oncomplete = () => resolve({ totalCount: count, mimeType: mime });
         tx.onerror = () => reject(tx.error);
       }
     );
-    if (chunks.length > 0) {
+
+    if (totalCount > 0) {
+      // ── Step 2: load chunks one-by-one via cursor for fine-grained progress
+      const chunks = await new Promise<Blob[]>((resolve, reject) => {
+        const tx = db.transaction([CHUNKS_STORE], 'readonly');
+        const collected: Blob[] = [];
+        let loaded = 0;
+        const cursorReq = tx.objectStore(CHUNKS_STORE).openCursor();
+        cursorReq.onsuccess = (e) => {
+          const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
+          if (cursor) {
+            collected.push(cursor.value as Blob);
+            loaded++;
+            onProgress?.(Math.round((loaded / totalCount) * 100));
+            cursor.continue();
+          }
+        };
+        tx.oncomplete = () => resolve(collected);
+        tx.onerror = () => reject(tx.error);
+      });
       return new Blob(chunks, { type: mimeType });
     }
-    // Fall back to monolithic blob (written by saveAudioBlob)
+
+    // ── Fallback: monolithic blob written by saveAudioBlob (stop-then-crash case)
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([AUDIO_STORE], 'readonly');
       const store = transaction.objectStore(AUDIO_STORE);
       const request = store.get('currentRecording');
-      request.onsuccess = () => resolve(request.result || null);
+      request.onsuccess = () => { onProgress?.(100); resolve(request.result || null); };
       request.onerror = () => reject(request.error);
     });
   } catch (error) {
@@ -202,8 +226,42 @@ export const saveBackup = async (
   }
 };
 
+// Get audio backup metadata (chunk count + estimated duration) WITHOUT loading
+// the actual binary data. Used to warn the user before attempting a large restore.
+export const getBackupAudioInfo = async (): Promise<{
+  chunkCount: number;
+  estimatedDurationMin: number; // each chunk ≈ 5 s (MediaRecorder timeslice)
+  hasMonolithicBlob: boolean;
+}> => {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([AUDIO_STORE, CHUNKS_STORE], 'readonly');
+      let count = 0;
+      let hasMonolithic = false;
+      const countReq = tx.objectStore(CHUNKS_STORE).count();
+      countReq.onsuccess = () => { count = countReq.result; };
+      const keyReq = tx.objectStore(AUDIO_STORE).getKey('currentRecording');
+      keyReq.onsuccess = () => { hasMonolithic = keyReq.result !== undefined; };
+      tx.oncomplete = () => resolve({
+        chunkCount: count,
+        estimatedDurationMin: Math.round((count * 5) / 60), // 5 s per chunk
+        hasMonolithicBlob: hasMonolithic,
+      });
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    return { chunkCount: 0, estimatedDurationMin: 0, hasMonolithicBlob: false };
+  }
+};
+
 // Load backup from localStorage and IndexedDB
-export const loadBackup = async (): Promise<{
+export const loadBackup = async (options?: {
+  /** Reports overall progress 0-100 with a human-readable step label */
+  onProgress?: (percent: number, step: string) => void;
+  /** When true, skip loading audio (useful for very large recordings) */
+  skipAudio?: boolean;
+}): Promise<{
   meetingInfo: { projectName: string; location: string; participants: string; date?: string; time?: string; host?: string };
   notes: string;
   timestampMap: Map<number, number>;
@@ -216,22 +274,32 @@ export const loadBackup = async (): Promise<{
   rawTranscripts?: any[];
   geminiSummary?: string;
 } | null> => {
+  const { onProgress, skipAudio = false } = options ?? {};
   try {
+    onProgress?.(5, 'Đọc dữ liệu cuộc họp...');
     const data = localStorage.getItem(STORAGE_KEY);
     if (!data) return null;
     
     const backupData: BackupData = JSON.parse(data);
     
+    onProgress?.(20, 'Khôi phục ghi chú và mốc thời gian...');
     // Convert array back to Map
     const timestampMap = new Map(backupData.timestampMap);
     const speakersMap = backupData.speakersMap ? new Map(backupData.speakersMap) : new Map();
     
-    // Load audio blob if it exists
+    // Load audio blob if it exists and user hasn't opted to skip
     let audioBlob: Blob | null = null;
-    if (backupData.hasAudioBlob) {
-      audioBlob = await loadAudioBlob();
+    if (backupData.hasAudioBlob && !skipAudio) {
+      onProgress?.(35, 'Đang tải file ghi âm...');
+      audioBlob = await loadAudioBlobWithProgress((pct) => {
+        // Map 0–100 of audio loading → overall 35–92
+        onProgress?.(35 + Math.round(pct * 0.57), 'Đang tải file ghi âm...');
+      });
+    } else if (skipAudio) {
+      onProgress?.(92, 'Bỏ qua file ghi âm theo yêu cầu...');
     }
     
+    onProgress?.(95, 'Hoàn thiện khôi phục...');
     return {
       meetingInfo: backupData.meetingInfo,
       notes: backupData.notes,

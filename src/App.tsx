@@ -16,6 +16,7 @@ import {
   clearBackup,
   hasBackup,
   getBackupAge,
+  getBackupAudioInfo,
 } from "./services/autoBackup";
 import {
   speechToTextService,
@@ -2208,8 +2209,124 @@ export const App: React.FC = () => {
     clearBackup();
   };
 
-  const handleRestoreBackup = async () => {
-    const backup = await loadBackup();
+  const handleRestoreBackup = async (skipAudio = false) => {
+    const NOTIF_KEY = "restore-progress";
+
+    // Helper: update the bottom-right progress notification
+    const showProgress = (percent: number, step: string) => {
+      notification.open({
+        key: NOTIF_KEY,
+        message: "🔄 Đang khôi phục dữ liệu tự động lưu",
+        description: (
+          <div>
+            <div style={{ marginBottom: 6, color: "#595959", fontSize: 13 }}>
+              {step}
+            </div>
+            <Progress
+              percent={percent}
+              size="small"
+              status={percent < 100 ? "active" : "success"}
+            />
+          </div>
+        ),
+        placement: "bottomRight",
+        duration: 0,
+        closable: false,
+      });
+    };
+
+    // ── If audio exists and not yet decided to skip, check size first
+    if (!skipAudio) {
+      const audioInfo = await getBackupAudioInfo();
+      // Warn when estimated duration > 45 min:
+      // WaveSurfer will need ~450 MB RAM to decode the waveform
+      const WARN_DURATION_MIN = 45;
+      if (
+        (audioInfo.chunkCount > 0 || audioInfo.hasMonolithicBlob) &&
+        audioInfo.estimatedDurationMin > WARN_DURATION_MIN
+      ) {
+        // Use modal.info with custom footer buttons so closing by X/ESC
+        // does NOT accidentally trigger a partial restore (onCancel side-effect)
+        const modalRef = modal.info({
+          title: "⚠️ File ghi âm lớn — nguy cơ thiếu RAM",
+          content: (
+            <div>
+              <p>
+                File ghi âm ước tính{" "}
+                <strong>~{audioInfo.estimatedDurationMin} phút</strong>. Khi tải
+                toàn bộ, WaveSurfer cần giải mã âm thanh và có thể dùng{" "}
+                <strong>
+                  ~{Math.round(audioInfo.estimatedDurationMin * 11)} MB RAM
+                </strong>
+                , dễ gây treo tab trên các máy ít bộ nhớ.
+              </p>
+              <p style={{ marginTop: 8 }}>Bạn muốn khôi phục thế nào?</p>
+            </div>
+          ),
+          footer: (
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                justifyContent: "flex-end",
+                marginTop: 16,
+              }}
+            >
+              <button
+                style={{
+                  padding: "6px 14px",
+                  cursor: "pointer",
+                  borderRadius: 4,
+                  border: "1px solid #d9d9d9",
+                }}
+                onClick={() => {
+                  modalRef.destroy();
+                }}
+              >
+                ❌ Hủy
+              </button>
+              <button
+                style={{
+                  padding: "6px 14px",
+                  cursor: "pointer",
+                  borderRadius: 4,
+                  border: "1px solid #d9d9d9",
+                }}
+                onClick={() => {
+                  modalRef.destroy();
+                  handleRestoreBackup(true);
+                }}
+              >
+                📝 Chỉ ghi chú
+              </button>
+              <button
+                style={{
+                  padding: "6px 14px",
+                  backgroundColor: "#1890ff",
+                  color: "#fff",
+                  border: "none",
+                  cursor: "pointer",
+                  borderRadius: 4,
+                }}
+                onClick={() => {
+                  modalRef.destroy();
+                  handleRestoreBackup(false);
+                }}
+              >
+                🎵 Khôi phục đầy đủ
+              </button>
+            </div>
+          ),
+        });
+        return; // wait for user choice
+      }
+    }
+
+    showProgress(0, "Đang bắt đầu khôi phục...");
+    const backup = await loadBackup({
+      skipAudio,
+      onProgress: (pct, step) => showProgress(pct, step),
+    });
     if (backup) {
       console.log("🔍 Backup data structure:", {
         hasAudioBlob: !!backup.audioBlob,
@@ -2277,11 +2394,31 @@ export const App: React.FC = () => {
       if (backup.audioBlob) {
         setIsLiveMode(false);
       }
+      notification.open({
+        key: "restore-progress",
+        message: "✅ Khôi phục hoàn tất",
+        description: (
+          <div>
+            <div style={{ marginBottom: 6, color: "#595959", fontSize: 13 }}>
+              {backup.audioBlob
+                ? "Đã khôi phục ghi chú và file ghi âm."
+                : "Đã khôi phục ghi chú (không có audio)."}
+            </div>
+            <Progress percent={100} size="small" status="success" />
+          </div>
+        ),
+        placement: "bottomRight",
+        duration: 3,
+        closable: true,
+      });
       console.log("✅ Backup restored successfully:", {
         speakersMapSize: backup.speakersMap.size,
         transcriptionsRestored: backup.transcriptions?.length || 0,
         audioRestored: !!backup.audioBlob,
       });
+    } else {
+      // loadBackup returned null (no data or parse error) — close the progress notification
+      notification.destroy("restore-progress");
     }
   };
 
@@ -3175,7 +3312,7 @@ export const App: React.FC = () => {
               </p>
               <div style={{ display: "flex", gap: "12px", marginTop: "20px" }}>
                 <button
-                  onClick={handleRestoreBackup}
+                  onClick={() => handleRestoreBackup()}
                   style={{
                     flex: 1,
                     padding: "12px 20px",
