@@ -21,6 +21,7 @@ export const LiveWaveform: React.FC<Props> = ({
   const animationIdRef = useRef<number | null>(null);
   const waveformDataRef = useRef<number[]>([]); // Store waveform history
   const lastUpdateTimeRef = useRef<number>(0); // Track last update for throttling
+  const recordingRealStartRef = useRef<number>(0); // performance.now() when first sample captured
   const [zoom, setZoom] = useState(1); // 1 = 10 minutes visible
   const [scrollPosition, setScrollPosition] = useState(0);
 
@@ -59,7 +60,7 @@ export const LiveWaveform: React.FC<Props> = ({
     canvas.width = canvas.offsetWidth;
     canvas.height = canvas.offsetHeight;
 
-    const pixelsPerSecond = PIXELS_PER_SECOND;
+    // const pixelsPerSecond = PIXELS_PER_SECOND;
     const maxWidth = MAX_SAMPLES;
 
     // Pre-calculate amplification factor based on audio source (avoid recalculating every frame)
@@ -93,6 +94,10 @@ export const LiveWaveform: React.FC<Props> = ({
       }
       const avgAmplitude = sum / bufferLength;
 
+      // Track real start time on first sample
+      if (waveformDataRef.current.length === 0) {
+        recordingRealStartRef.current = performance.now();
+      }
       waveformDataRef.current.push(avgAmplitude * amplificationFactor);
 
       // Limit history to maxWidth (prevents memory leak for long recordings)
@@ -139,16 +144,17 @@ export const LiveWaveform: React.FC<Props> = ({
       canvasContext.stroke();
 
       // Draw time markers
-      const secondsVisible = visibleWidth / pixelsPerSecond;
-      const markerInterval =
-        secondsVisible > 120 ? 60 : secondsVisible > 60 ? 30 : 10; // seconds
-      const totalSeconds = totalDataPoints / pixelsPerSecond;
+      const totalSeconds =
+        (performance.now() - recordingRealStartRef.current) / 1000;
+      const markerInterval = totalSeconds > 120 ? 60 : 30; // seconds
+      // Convert seconds → sample index using real sample rate
+      const sampleRate = totalSeconds > 0 ? totalDataPoints / totalSeconds : 20;
 
       canvasContext.fillStyle = "black";
       canvasContext.font = "10px monospace";
 
       for (let sec = 0; sec <= totalSeconds; sec += markerInterval) {
-        const dataIndex = sec * pixelsPerSecond;
+        const dataIndex = sec * sampleRate;
         if (dataIndex >= startIndex && dataIndex <= endIndex) {
           const x = ((dataIndex - startIndex) / visibleWidth) * canvas.width;
           canvasContext.fillText(formatTime(sec), x + 2, 12);
@@ -180,6 +186,7 @@ export const LiveWaveform: React.FC<Props> = ({
   useEffect(() => {
     if (!isRecording) {
       waveformDataRef.current = [];
+      recordingRealStartRef.current = 0;
       setScrollPosition(0);
     }
   }, [isRecording]);
