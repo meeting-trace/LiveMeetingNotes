@@ -112,7 +112,7 @@ export class WordExporter {
 
             // Notes content
             new Paragraph({
-              text: 'NỘI DUNG CUỘC HỌP CHI TIẾT',
+              text: 'NỘI DUNG GHI CHÉP THỦ CÔNG',
               heading: HeadingLevel.HEADING_2,
               spacing: { before: 200, after: 200 },
               alignment: AlignmentType.JUSTIFIED
@@ -225,7 +225,7 @@ export class WordExporter {
     // Add heading
     paragraphs.push(
       new Paragraph({
-        text: 'SPEECH-TO-TEXT',
+        text: 'NỘI DUNG CHI TIẾT',
         heading: HeadingLevel.HEADING_2,
         spacing: { before: 400, after: 200 },
         alignment: AlignmentType.JUSTIFIED
