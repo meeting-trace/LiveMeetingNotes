@@ -2209,7 +2209,10 @@ export const App: React.FC = () => {
     clearBackup();
   };
 
-  const handleRestoreBackup = async (skipAudio = false) => {
+  const handleRestoreBackup = async (
+    skipAudio = false,
+    sizeCheckBypassed = false,
+  ) => {
     const NOTIF_KEY = "restore-progress";
 
     // Helper: update the bottom-right progress notification
@@ -2235,8 +2238,11 @@ export const App: React.FC = () => {
       });
     };
 
+    // Close the backup dialog immediately so it doesn't overlap any warning modal
+    setShowBackupDialog(false);
+
     // ── If audio exists and not yet decided to skip, check size first
-    if (!skipAudio) {
+    if (!skipAudio && !sizeCheckBypassed) {
       const audioInfo = await getBackupAudioInfo();
       // Warn when estimated duration > 45 min:
       // WaveSurfer will need ~450 MB RAM to decode the waveform
@@ -2281,6 +2287,7 @@ export const App: React.FC = () => {
                 }}
                 onClick={() => {
                   modalRef.destroy();
+                  setShowBackupDialog(true); // re-show so user can choose to discard instead
                 }}
               >
                 ❌ Hủy
@@ -2294,7 +2301,7 @@ export const App: React.FC = () => {
                 }}
                 onClick={() => {
                   modalRef.destroy();
-                  handleRestoreBackup(true);
+                  handleRestoreBackup(true, true); // skip audio, bypass size check
                 }}
               >
                 📝 Chỉ ghi chú
@@ -2310,7 +2317,7 @@ export const App: React.FC = () => {
                 }}
                 onClick={() => {
                   modalRef.destroy();
-                  handleRestoreBackup(false);
+                  handleRestoreBackup(false, true); // full restore, bypass size check
                 }}
               >
                 🎵 Khôi phục đầy đủ
