@@ -1128,6 +1128,79 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON với summary TRƯỚC, rồi
   }
 
   /**
+   * Diagnose "Failed to fetch" and other network errors, returning a user-friendly
+   * Vietnamese message with actionable troubleshooting steps.
+   * @param error - The caught error from fetch()
+   * @param payloadSizeMB - Optional: estimated request payload size in MB
+   */
+  private static diagnoseNetworkError(error: any, payloadSizeMB?: number): string {
+    const msg: string = (error?.message || String(error)).toLowerCase();
+
+    // ── OOM / heap / string too large ─────────────────────────────────────
+    if (
+      msg.includes('out of memory') ||
+      msg.includes('allocation failed') ||
+      msg.includes('maximum call stack') ||
+      msg.includes('string too long') ||
+      msg.includes('invalid string length')
+    ) {
+      const sizeHint = payloadSizeMB ? ` (payload ~${payloadSizeMB.toFixed(1)} MB)` : '';
+      return (
+        `Thiết bị thiếu bộ nhớ để xử lý file audio${sizeHint}.\n` +
+        `💡 Giải pháp:\n` +
+        `  • Dùng file ngắn hơn (< 10 phút) hoặc giảm chất lượng ghi âm\n` +
+        `  • Đóng bớt tab/ứng dụng khác để giải phóng RAM\n` +
+        `  • Thử trên máy tính có RAM cao hơn`
+      );
+    }
+
+    // ── Network-level failures: Failed to fetch / Load failed / NetworkError ─
+    if (
+      msg.includes('failed to fetch') ||
+      msg.includes('load failed') ||          // Safari
+      msg.includes('networkerror') ||          // Firefox
+      msg.includes('network request failed') ||
+      msg.includes('fetch is aborted') ||
+      msg.includes('the internet connection appears to be offline')
+    ) {
+      const payloadNote =
+        payloadSizeMB && payloadSizeMB > 15
+          ? `\n  ⚠️ File audio lớn (~${payloadSizeMB.toFixed(1)} MB payload) – proxy/firewall có thể chặn request này`
+          : '';
+      return (
+        `Không thể kết nối đến máy chủ Gemini AI (generativelanguage.googleapis.com).${payloadNote}\n` +
+        `💡 Nguyên nhân phổ biến và cách xử lý:\n` +
+        `  1. Firewall/Proxy mạng chặn Google AI API → Thử dùng mạng khác (4G/5G)\n` +
+        `  2. ISP hoặc VPN chặn domain googleapis.com → Tắt VPN hoặc đổi DNS (8.8.8.8)\n` +
+        `  3. Mất kết nối internet trong lúc upload → Kiểm tra wifi/ethernet\n` +
+        `  4. Certificate TLS cũ (Windows/macOS chưa update) → Cập nhật hệ điều hành\n` +
+        `  5. Corporate network policy → Liên hệ IT để whitelist generativelanguage.googleapis.com\n` +
+        `\n🔍 Debug: Mở DevTools (F12) → Network → xem request bị lỗi gì`
+      );
+    }
+
+    // ── Timeout / abort ───────────────────────────────────────────────────
+    if (
+      msg.includes('timeout') ||
+      msg.includes('timed out') ||
+      msg.includes('aborted') ||
+      msg.includes('abort')
+    ) {
+      const sizeHint = payloadSizeMB ? ` (~${payloadSizeMB.toFixed(1)} MB)` : '';
+      return (
+        `Kết nối đến Gemini AI bị timeout${sizeHint}.\n` +
+        `💡 Giải pháp:\n` +
+        `  • File audio quá lớn, network chậm → thử file ngắn hơn (< 10 phút)\n` +
+        `  • Kiểm tra tốc độ mạng tại speedtest.net\n` +
+        `  • Thử lại sau vài phút nếu server Gemini đang quá tải`
+      );
+    }
+
+    // ── Fallback: return original message ──────────────────────────────────
+    return error?.message || String(error);
+  }
+
+  /**
    * Transcribe audio file using Gemini Multimodal API
    * Gemini API officially supports: WAV and MP3 only
    * Other formats (WebM, MP4, OGG, AAC, FLAC) must be converted to WAV first
@@ -1214,44 +1287,36 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON với summary TRƯỚC, rồi
       }
       
       // ============================================================
-      // BƯỚC 2: CHUYỂN ĐỔI TOÀN BỘ SANG WAV (chỉ khi ≤ 60 phút)
+      // BƯỚC 2: CHUẨN HÓA SANG WAV MONO 16kHz (luôn thực hiện)
       // ============================================================
-      // For short audio (≤ 60 min), convert entire file once
+      // Always normalize to mono 16kHz WAV regardless of input format.
+      // convertToWav() internally skips resampling if audio is already mono 16kHz,
+      // so there is no extra cost for already-correct files.
+      //
+      // WHY always normalize even for .WAV input:
+      //   • WAV files can be stereo (Zoom, Teams, Audacity exports) → 2× payload size
+      //   • WAV files can be 44100Hz or 48kHz → 2.75–3× payload vs 16kHz
+      //   • A stereo 44100Hz 60-min WAV = ~635 MB → base64 ~845 MB → "Failed to fetch"
       let processedAudio = audioBlob;
-      const isWav = audioType.includes('wav');
-      const needsConversion = !isWav; // Only skip conversion for WAV files
-      
-      if (needsConversion) {
+      {
         const originalSizeMB = audioBlob.size / (1024 * 1024);
-        console.log(`🔄 Bước 2: Converting ${audioType} to optimized WAV (mono, 16kHz)...`);
-        console.log(`📊 Original size: ${originalSizeMB.toFixed(2)} MB`);
+        console.log(`🔄 Bước 2: Normalizing audio → mono WAV 16kHz (${audioType}, ${originalSizeMB.toFixed(2)}MB)...`);
         
         if (onProgress) {
-          onProgress(18, `🔄 Đang chuyển đổi ${audioType.split('/')[1]?.toUpperCase() || 'audio'} → WAV...`);
+          onProgress(18, `🔄 Đang chuẩn hóa audio → WAV mono 16kHz...`);
         }
         
-        // ✨ Convert to WAV with mono + 16kHz to reduce file size dramatically
-        // 16kHz is optimal for speech recognition (telephony quality)
-        // Mono reduces size by 50%, 16kHz reduces by ~70% → total ~85% reduction
         processedAudio = await this.convertToWav(audioBlob, 16000);
         
         const newSizeMB = processedAudio.size / (1024 * 1024);
         const reduction = ((1 - newSizeMB / originalSizeMB) * 100).toFixed(1);
         const reductionType = newSizeMB < originalSizeMB ? 'giảm' : 'tăng';
         
-        console.log(`✅ Converted to WAV: ${originalSizeMB.toFixed(2)}MB → ${newSizeMB.toFixed(2)}MB (${reductionType} ${Math.abs(parseFloat(reduction))}%)`);
+        console.log(`✅ Normalized: ${originalSizeMB.toFixed(2)}MB → ${newSizeMB.toFixed(2)}MB (${reductionType} ${Math.abs(parseFloat(reduction))}%)`);
         
-        // Display conversion result on UI
         if (onProgress) {
           const sizeChange = newSizeMB > originalSizeMB ? '📈' : '📉';
-          onProgress(22, `${sizeChange} Đã chuyển đổi: ${newSizeMB.toFixed(1)}MB (${reductionType} ${Math.abs(parseFloat(reduction))}%)`);
-        }
-      } else {
-        const sizeMB = audioBlob.size / (1024 * 1024);
-        console.log(`✅ Bước 2: File đã là WAV (${sizeMB.toFixed(2)} MB) - bỏ qua conversion`);
-        
-        if (onProgress) {
-          onProgress(22, `✅ File đã là WAV: ${sizeMB.toFixed(1)}MB`);
+          onProgress(22, `${sizeChange} Đã chuẩn hóa: ${newSizeMB.toFixed(1)}MB (${reductionType} ${Math.abs(parseFloat(reduction))}%)`);
         }
       }
       
@@ -1522,14 +1587,31 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
 
       if (onProgress) onProgress(48, '📤 Đang gửi request tới Gemini AI...');
 
-      // Make API request
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody)
-      });
+      // Estimate payload size (base64 ≈ 1.33× original) for error diagnostics
+      const estimatedPayloadMB = (processedAudio.size * 1.33) / (1024 * 1024);
+      console.log(`📤 Estimated request payload: ~${estimatedPayloadMB.toFixed(1)} MB`);
+
+      // Make API request — wrap separately so OOM errors during JSON.stringify are caught
+      let bodyString: string;
+      try {
+        bodyString = JSON.stringify(requestBody);
+      } catch (serializeError: any) {
+        throw new Error(this.diagnoseNetworkError(serializeError, estimatedPayloadMB));
+      }
+
+      let response: Response;
+      try {
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: bodyString
+        });
+      } catch (fetchError: any) {
+        // "Failed to fetch" and other network-level errors land here
+        throw new Error(this.diagnoseNetworkError(fetchError, estimatedPayloadMB));
+      }
 
       if (onProgress) onProgress(70, '📥 Đã nhận response, đang xử lý...');
 
@@ -1812,11 +1894,15 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
           
           const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-          // Resample if needed to reduce file size
+          // Always resample+downmix: ensures mono output at target sample rate
+          // even if decodeAudioData already returns the right sample rate (could still be stereo)
+          const needsProcessing = audioBuffer.sampleRate !== targetSampleRate || audioBuffer.numberOfChannels > 1;
           let finalBuffer = audioBuffer;
-          if (audioBuffer.sampleRate !== targetSampleRate) {
-            console.log(`🔊 Resampling: ${audioBuffer.sampleRate}Hz → ${targetSampleRate}Hz`);
+          if (needsProcessing) {
+            console.log(`🔊 Resampling+Downmix: ${audioBuffer.numberOfChannels}ch ${audioBuffer.sampleRate}Hz → 1ch ${targetSampleRate}Hz`);
             finalBuffer = await this.resampleAudioBuffer(audioBuffer, targetSampleRate);
+          } else {
+            console.log(`✅ Audio đã đúng format (mono, ${targetSampleRate}Hz) - bỏ qua convert`);
           }
 
           // Convert to WAV
@@ -1858,17 +1944,20 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
   }
 
   /**
-   * Resample AudioBuffer to target sample rate (reduces file size)
+   * Resample AudioBuffer to target sample rate AND force mono
+   * Always outputs 1-channel (mono) regardless of input channels.
+   * Web Audio API automatically downmixes stereo→mono when destination has 1 channel.
+   * This ensures deterministic WAV size across different machines/browsers.
    */
   private static async resampleAudioBuffer(audioBuffer: AudioBuffer, targetSampleRate: number): Promise<AudioBuffer> {
-    const offlineContext = new OfflineAudioContext(
-      audioBuffer.numberOfChannels,
-      audioBuffer.duration * targetSampleRate,
-      targetSampleRate
-    );
+    const outputChannels = 1; // Force mono — reduces file size by 50% for stereo sources
+    // Use Math.ceil to ensure integer sample count (required by OfflineAudioContext)
+    const outputLength = Math.ceil(audioBuffer.duration * targetSampleRate);
+    const offlineContext = new OfflineAudioContext(outputChannels, outputLength, targetSampleRate);
 
     const source = offlineContext.createBufferSource();
     source.buffer = audioBuffer;
+    // Web Audio API automatically downmixes multi-channel → mono destination
     source.connect(offlineContext.destination);
     source.start();
 
@@ -2367,8 +2456,6 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
     
     let wavBlob = audioBlob;
     const audioType = audioBlob.type.toLowerCase();
-    const isWav = audioType.includes('wav');
-    const needsConversion = !isWav;
     
     const audioSizeMB = audioBlob.size / (1024 * 1024);
     console.log(`📦 Processing file: ${audioSizeMB.toFixed(2)}MB • ${audioType}`);
@@ -2380,41 +2467,40 @@ Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, kh
       throw new Error(
         `File quá lớn (${audioSizeMB.toFixed(0)}MB) - Vượt giới hạn khả năng xử lý của browser.\n\n` +
         `✨ Giải pháp:\n` +
-        `1. Nếu file là WAV: Convert sang MP3 format để giảm dung lượng (~70-90% nhỏ hơn)\n` +
+        `1. Nếu file là WAV/MP4/WebM: Đổi sang MP3 để giảm dung lượng (~70-90% nhỏ hơn)\n` +
         `2. Chia file thành các file nhỏ hơn (khuyến nghị < 500MB mỗi file)\n` +
         `3. Sử dụng công cụ bên ngoài để compress audio trước\n\n` +
         `⚠️ Browser không đủ memory để xử lý file này.`
       );
     }
     
-    if (needsConversion) {
+    // Always normalize to mono WAV 16kHz before chunking.
+    // convertToWav() skips resampling internally if audio is already mono 16kHz,
+    // so no extra cost for already-normalized files.
+    //
+    // WHY always normalize even for .WAV input:
+    //   • WAV from Zoom/Teams/Audacity is typically stereo 44100Hz or 48kHz
+    //   • Stereo 44100Hz 60-min WAV ≈ 635 MB → chunked fine, but each chunk base64 too large
+    //   • Without normalization, "Failed to fetch" can occur even on correctly-chunked files
+    {
       const originalSizeMB = audioBlob.size / (1024 * 1024);
       if (onProgress) {
-        onProgress(5, `🔄 Đang chuyển đổi ${audioType.split('/')[1]?.toUpperCase() || 'audio'} → WAV (16kHz)...`);
+        onProgress(5, `🔄 Đang chuẩn hóa ${audioType.split('/')[1]?.toUpperCase() || 'audio'} → WAV mono 16kHz...`);
       }
       
-      console.log(`🔄 Converting entire file to WAV first (required for chunk extraction)`);
+      console.log(`🔄 Normalizing entire file to mono WAV 16kHz (required for consistent chunking)`);
       console.log(`📊 Original: ${originalSizeMB.toFixed(2)}MB ${audioType}`);
       
-      // Convert with lower sample rate for smaller file size
-      const targetSampleRate = 16000; // Lower sample rate = smaller file
-      wavBlob = await this.convertToWav(audioBlob, targetSampleRate);
+      wavBlob = await this.convertToWav(audioBlob, 16000);
       
       const wavSizeMB = wavBlob.size / (1024 * 1024);
       const reduction = ((1 - wavSizeMB / originalSizeMB) * 100).toFixed(1);
       const reductionType = wavSizeMB < originalSizeMB ? 'giảm' : 'tăng';
       
-      console.log(`✅ Converted: ${originalSizeMB.toFixed(2)}MB → ${wavSizeMB.toFixed(2)}MB (${reductionType} ${Math.abs(parseFloat(reduction))}%)`);
+      console.log(`✅ Normalized: ${originalSizeMB.toFixed(2)}MB → ${wavSizeMB.toFixed(2)}MB (${reductionType} ${Math.abs(parseFloat(reduction))}%)`);
       
       if (onProgress) {
-        onProgress(7, `✅ Đã chuyển đổi: ${wavSizeMB.toFixed(1)}MB (${reductionType} ${Math.abs(parseFloat(reduction))}%)`);
-      }
-    } else {
-      const sizeMB = audioBlob.size / (1024 * 1024);
-      console.log(`✅ File đã là WAV (${sizeMB.toFixed(2)}MB) - không cần convert`);
-      
-      if (onProgress) {
-        onProgress(7, `✅ File đã tối ưu: ${sizeMB.toFixed(1)}MB • WAV`);
+        onProgress(7, `✅ Đã chuẩn hóa: ${wavSizeMB.toFixed(1)}MB (${reductionType} ${Math.abs(parseFloat(reduction))}%)`);
       }
     }
 
@@ -2779,11 +2865,17 @@ Hãy trả về MỘT bài tóm tắt tổng hợp có cấu trúc rõ ràng, d�
         ]
       };
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
-      });
+      let mergeResponse: Response;
+      try {
+        mergeResponse = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        });
+      } catch (fetchError: any) {
+        throw new Error(this.diagnoseNetworkError(fetchError));
+      }
+      const response = mergeResponse;
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -2791,13 +2883,6 @@ Hãy trả về MỘT bài tóm tắt tổng hợp có cấu trúc rõ ràng, d�
       }
 
       const data = await response.json();
-
-      // Save debug log
-      // await this.saveGeminiDebugLog(requestBody, data, {
-      //   type: 'text',
-      //   timestamp: new Date().toISOString(),
-      //   error: data.error ? data.error.message : undefined
-      // }, fileManager);
 
       // Extract merged summary from response
       const candidates = data?.candidates;
