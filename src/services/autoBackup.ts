@@ -1,7 +1,7 @@
 // Auto-backup service using localStorage and IndexedDB
 // Protects against browser crashes and accidental closures
 
-import fixWebmDuration from 'fix-webm-duration';
+import { patchWebmHeaderDuration } from './webmUtils';
 
 // Must match the timeslice used in audioRecorder.ts → MediaRecorder.start(5000)
 const RECORDING_TIMESLICE_MS = 5000;
@@ -110,37 +110,28 @@ const loadAudioBlobWithProgress = async (
         tx.oncomplete = () => resolve(collected);
         tx.onerror = () => reject(tx.error);
       });
-      const rawBlob = new Blob(chunks, { type: mimeType });
-
-      // ── Diagnostic: log assembly stats to help verify all chunks are present ──
       const estimatedDurationMs = totalCount * RECORDING_TIMESLICE_MS;
       console.log(
         `[Backup] Assembled ${totalCount} chunks → ~${
           Math.round(estimatedDurationMs / 60_000)
-        } min | total size: ${(rawBlob.size / 1_048_576).toFixed(1)} MB | mime: ${mimeType}`
+        } min | total size: ${((new Blob(chunks)).size / 1_048_576).toFixed(1)} MB | mime: ${mimeType}`
       );
 
-      // ── Fix WebM Duration metadata ─────────────────────────────────────────
-      // MediaRecorder.start(timeslice) produces chunks where only the FIRST
-      // chunk has the EBML/Segment-Info header.  The Duration field in that
-      // header is either 0 or covers only one timeslice (5 s), so every
-      // player shows the wrong total duration even though all audio data is
-      // present.  fix-webm-duration patches the Duration field in place.
-      if (mimeType.includes('webm') || mimeType.includes('ogg')) {
-        try {
-          const fixedBlob = await fixWebmDuration(
-            rawBlob,
-            estimatedDurationMs,
-            { logger: false }
-          );
-          console.log(`[Backup] Duration metadata fixed: ${(estimatedDurationMs / 60_000).toFixed(1)} min written to header`);
-          return fixedBlob;
-        } catch (fixErr) {
-          console.warn('[Backup] fix-webm-duration failed, using raw blob:', fixErr);
-          return rawBlob;
-        }
+      // ── Patch WebM Duration field in the FIRST CHUNK ONLY ─────────────────
+      // We do NOT feed the assembled blob through fix-webm-duration because
+      // that library rebuilds the full file (EBML parse → Uint8Array rewrite),
+      // and its re-serialisation of Unknown-type Cluster elements can shift
+      // block boundaries, producing "correct duration, but audio corrupted
+      // after the first cluster" (silence / no waveform past ~1 min).
+      //
+      // Instead: scan the first chunk's header (<8 KB) for the Duration field
+      // (EBML ID 0x4489) and overwrite only those 8 float bytes.  All audio
+      // cluster data in every chunk stays byte-for-byte identical.
+      if (chunks.length > 0 && (mimeType.includes('webm') || mimeType.includes('ogg'))) {
+        chunks[0] = await patchWebmHeaderDuration(chunks[0], estimatedDurationMs);
       }
-      return rawBlob;
+
+      return new Blob(chunks, { type: mimeType });
     }
 
     // ── Fallback: monolithic blob written by saveAudioBlob (stop-then-crash case)

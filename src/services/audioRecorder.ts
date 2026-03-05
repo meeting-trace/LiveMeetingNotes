@@ -1,5 +1,5 @@
 import type { AudioSourceType } from '../types/types';
-import fixWebmDuration from 'fix-webm-duration';
+import { patchWebmHeaderDuration } from './webmUtils';
 
 export class AudioRecorderService {
   private mediaRecorder: MediaRecorder | null = null;
@@ -261,12 +261,15 @@ export class AudioRecorderService {
         // Wrap the entire handler so any unexpected throw still resolves/rejects
         // the outer Promise instead of hanging it forever.
         try {
-          // console.log(`Recording stopped. Total chunks: ${this.audioChunks.length}, Total size: ${(this.currentChunkSize / (1024 * 1024)).toFixed(2)} MB`);
-          
-          // Combine all chunks into single blob
           const mimeType = recorder.mimeType || 'audio/webm';
-          const rawBlob = new Blob(this.audioChunks, { type: mimeType });
-          
+
+          // Snapshot chunk array BEFORE clearing internal state.
+          // We then patch only chunks[0] (the WebM header chunk) to fix
+          // the Duration field, and assemble the final Blob from the
+          // patched array.  This is O(firstChunkSize) and touches zero
+          // audio data — no risk of corrupt cluster boundaries.
+          const chunks = this.audioChunks.slice();
+
           // Stop all tracks
           if (this.stream) {
             this.stream.getTracks().forEach(track => track.stop());
@@ -286,20 +289,18 @@ export class AudioRecorderService {
           this.currentChunkSize = 0;
           this.isPausedState = false; // Reset pause state
           this.lastBackupChunkIndex = 0; // Reset delta pointer
-          
-          // Fix WebM/OGG Duration metadata — MediaRecorder.start(timeslice) leaves
-          // Duration = 0 or = one timeslice in the header; fix-webm-duration patches
-          // the Segment Info Duration field to the actual recording length.
-          if (recordingDurationMs > 0 && (mimeType.includes('webm') || mimeType.includes('ogg'))) {
-            try {
-              const fixedBlob = await fixWebmDuration(rawBlob, recordingDurationMs, { logger: false });
-              resolve(fixedBlob);
-              return;
-            } catch (fixErr) {
-              console.warn('[Recorder] fix-webm-duration failed, using raw blob:', fixErr);
-            }
+
+          // Patch Duration metadata directly in the first chunk's header.
+          // See src/services/webmUtils.ts for the rationale.
+          if (
+            recordingDurationMs > 0 &&
+            chunks.length > 0 &&
+            (mimeType.includes('webm') || mimeType.includes('ogg'))
+          ) {
+            chunks[0] = await patchWebmHeaderDuration(chunks[0], recordingDurationMs);
           }
-          resolve(rawBlob);
+
+          resolve(new Blob(chunks, { type: mimeType }));
         } catch (err) {
           // Safety net: if any code above throws unexpectedly, reject instead of hanging
           reject(err);
