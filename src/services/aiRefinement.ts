@@ -846,33 +846,14 @@ export class AIRefinementService {
     const segmentCount = transcriptData.length;
 
     // Prompt for refining existing transcription segments
-    return `Vai trò: Thư ký chuyên nghiệp chuẩn hóa biên bản họp.
+    return `Chuẩn hóa speech-to-text (thư ký chuyên nghiệp). Giữ đúng ${segmentCount} segments (1:1).
+Quy tắc: sửa lỗi từ ("công ti"→"công ty"), bỏ từ đệm (à/ừm/ờ), thêm dấu câu, viết hoa danh từ riêng. KHÔNG gộp/tóm tắt/bỏ segment. Giữ nguyên timestamp và audioTimeMs gốc.
+Output: JSON object duy nhất, không markdown:
+{"summary":"tóm tắt cuộc họp ~200-400 từ, chủ đề chính, quyết định, kết luận","segments":[{"timestamp":"...","audioTimeMs":123,"text":"..."}]}
 
-Nhiệm vụ: Chuẩn hóa văn bản speech-to-text CHO TỪNG SEGMENT, giữ nguyên số lượng và chi tiết:
-1. Sửa lỗi nhận diện từ (ví dụ: "công ti" → "công ty")
-2. Xóa từ đệm vô nghĩa (à, ừm, ờ) nhưng GIỮ NGUYÊN nội dung có ý nghĩa
-3. Thêm dấu câu, viết hoa danh từ riêng
-4. KHÔNG tóm tắt, KHÔNG gộp, KHÔNG bỏ sót segment nào
-5. Tóm tắt toàn bộ nội dung cuộc họp dựa trên các segment
-
-⚠️ NGUYÊN TẮC QUAN TRỌNG:
-   • Trả về ĐÚNG SỐ LƯỢNG segments như input (${segmentCount} segments)
-   • Mỗi segment input → đúng 1 segment output tương ứng
-   • GIỮ NGUYÊN timestamp và audioTimeMs gốc
-   • KHÔNG gộp nhiều segments thành một
-   • KHÔNG bỏ sót segment nào
-
-Output: CHỈ JSON object, KHÔNG markdown/giải thích
-Format: {
-  "summary": "Tóm tắt nội dung cuộc họp dạng văn xuôi (~200-400 từ), bao gồm các chủ đề chính, quyết định quan trọng, kết luận.",
-  "segments": [{"timestamp":"...","audioTimeMs":123,"text":"..."},...]
-}
-
-=== DỮ LIỆU CHÍNH (${segmentCount} segments) ===
+=== DỮ LIỆU (${segmentCount} segments) ===
 ${dataJson}
-${hasRawData ? `\n=== DỮ LIỆU BỔ TRỢ (tham khảo - dùng để đối chiếu sửa lỗi) ===\n${rawDataJson}` : ''}
-
-Giữ timestamp/audioTimeMs gốc. Trả về JSON với summary TRƯỚC, rồi segments (đúng ${segmentCount} segments).`;
+${hasRawData ? `=== THAM KHẢO (đối chiếu sửa lỗi) ===\n${rawDataJson}` : ''}`;
   }
 
   /**
@@ -1425,21 +1406,8 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON với summary TRƯỚC, rồi
       const isChunk = chunkInfo && chunkInfo.total > 1;
       
       const adaptiveInstruction = isChunk
-        ? `⚠️ QUAN TRỌNG: ĐÂY LÀ PHẦN ${chunkInfo!.index}/${chunkInfo!.total} CỦA FILE AUDIO LỚN
-
-🎯 YÊU CẦU CHO CHUNK:
-1️⃣ SEGMENTS: Phiên âm CHI TIẾT và ĐẦY ĐỦ từng lượt nói
-   • Ghi lại CHÍNH XÁC nội dung từng câu nói (verbatim transcription)
-   • Giữ nguyên wording, KHÔNG tóm tắt hay lược bỏ nội dung
-   • Timestamp tính từ 0:00 (đầu chunk này, không phải đầu file gốc)
-   • Đảm bảo bắt TẤT CẢ nội dung trong phần này
-
-2️⃣ SUMMARY: Tóm tắt NGẮN GỌN nội dung chính trong phần này
-   • Tập trung vào các điểm nổi bật, quyết định, action items
-   • Không cần tóm tắt toàn diện (sẽ merge với các phần khác)
-
-💡 ƯU TIÊN: Segments chi tiết đầy đủ > Summary dài dòng`
-        : `AUDIO ${durationMinutes} PHÚT: Phiên âm CHI TIẾT từng câu nói, ghi lại CHÍNH XÁC nội dung (verbatim). Giữ nguyên wording và ngữ điệu.`;
+        ? `Chunk ${chunkInfo!.index}/${chunkInfo!.total}. Timestamp từ 0:00 (đầu chunk này). Ưu tiên segments verbatim đầy đủ; summary ngắn (~100-150 từ, sẽ merge sau).`
+        : `Audio ${durationMinutes} phút. Phiên âm verbatim (chính xác từng câu), giữ nguyên wording.`;
 
       // Prepare request
       const endpoint = `https://generativelanguage.googleapis.com/${this.GEMINI_API_VERSION}/${modelName}:generateContent?key=${apiKey}`;
@@ -1465,87 +1433,24 @@ Giữ timestamp/audioTimeMs gốc. Trả về JSON với summary TRƯỚC, rồi
         contents: [{
           parts: [
             {
-              text: `BẠN LÀ CHUYÊN GIA PHIÊN ÂM CUỘC HỌP (AI TRANSCRIBER).
-NHIỆM VỤ: Nghe file âm thanh và phiên âm CHI TIẾT (verbatim transcription) từng lượt nói.
-
+              text: `Chuyên gia phiên âm cuộc họp. Nghe file audio và xuất JSON.
 ${adaptiveInstruction}
 ${languageInstruction}
+Max output: ~${modelInfo.outputTokenLimit} tokens. Audio: ${durationMinutes} phút (đến ${Math.floor(audioDuration/60)}:${String(Math.floor(audioDuration%60)).padStart(2,'0')}).
 
-📊 NGÂN SÁCH TOKEN (OUTPUT BUDGET):
-Bạn có tối đa ~${modelInfo.outputTokenLimit} tokens cho output. Âm thanh dài ${durationMinutes} phút.
+**SUMMARY** (xuất trước):
+${summaryPrompt || 'Tóm tắt chủ đề chính, quyết định, kết luận theo trình tự thời gian. Dùng gạch đầu dòng.'} ${isChunk ? 'Giữ ~100-150 từ.' : 'Giữ ~300-700 từ.'}
 
-HƯỚNG DẪN PHIÊN ÂM:
+**SEGMENTS** (phiên âm chi tiết):
+1. ${durationMinutes <= 45 ? 'Verbatim - ghi chính xác từng câu, giữ nguyên wording.' : 'Ghi lại nội dung chính từng lượt nói.'}
+2. Gán Speaker 1, Speaker 2... (nhận diện tên nếu tự giới thiệu).
+3. Timestamp BẮT ĐẦU lượt nói: ${durationMinutes < 60 ? '[mm:ss]' : '[h:mm:ss]'}, không vượt ${Math.floor(audioDuration/60)}:${String(Math.floor(audioDuration%60)).padStart(2,'0')}.
+4. Bỏ từ đệm (à/ừ/ờ/ừm); sửa lỗi nhận dạng; thêm dấu câu; âm không rõ → "[không rõ]".
+5. KHÔNG gộp lượt nói, KHÔNG bịa đặt/suy diễn, CHỈ phiên âm nội dung có trong audio.
+6. Nếu gần hết token → đóng JSON hợp lệ ngay (summary đã an toàn).
 
-PHẦN 1: TÓM TẮT TỔNG QUAN (SUMMARY) - XUẤT RA TRƯỚC
-Sau khi nghe toàn bộ file âm thanh, tóm tắt nội dung cuộc họp:
-${summaryPrompt || 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, theo trình tự thời gian. Bao gồm chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'}
-
-✅ FORMAT KHUYẾN KHÍCH:
-   • Sử dụng gạch đầu dòng (-, •, *) hoặc danh sách đánh số (1. 2. 3.) để tổ chức nội dung rõ ràng
-   • Nhóm các ý theo chủ đề/người nói
-   • Có thể dùng tiêu đề ngắn gọn (vd: **Quyết định chính:**, **Action items:**) để phân chia rõ ràng
-   • Ưu tiên tính dễ đọc và dễ quét thông tin
-
-${isChunk ? 'Giữ summary ở mức ~100-200 từ (đây là chunk, sẽ merge sau).' : 'Giữ summary ở mức ~300-500 từ.'}
-
-PHẦN 2: PHIÊN ÂM CHI TIẾT (SEGMENTS)
-1.  Nghe toàn bộ file âm thanh.
-2.  ${durationMinutes >= 45? 'Phiên âm CHÍNH XÁC từng câu nói (verbatim), giữ nguyên nội dung gốc.' : 'Tóm tắt các nội dung chính lượt nói của người nói.'}
-3.  Gán nhãn người nói nhất quán (Speaker 1, Speaker 2...). Nhận diện tên nếu họ tự giới thiệu.
-4.  Gắn Timestamp chính xác tại thời điểm BẮT ĐẦU lượt nói:
-    📍 FORMAT TIMESTAMP:
-       • Nếu audio < 60 phút: dùng [mm:ss] - Ví dụ: "5:30", "23:45"
-       • Nếu audio >= 60 phút: dùng [h:mm:ss] - Ví dụ: "1:05:30", "2:18:00"
-    
-    🚨 VALIDATION TIMESTAMP (CỰC KỲ QUAN TRỌNG):
-       • File audio này dài ${durationMinutes} phút (${Math.floor(audioDuration/60)}:${String(Math.floor(audioDuration%60)).padStart(2,'0')})
-       • Timestamp PHẢI nằm trong khoảng từ 0:00 đến ${Math.floor(audioDuration/60)}:${String(Math.floor(audioDuration%60)).padStart(2,'0')}
-       • TUYỆT ĐỐI KHÔNG tạo timestamp vượt quá độ dài audio
-       • Kiểm tra kỹ từng timestamp trước khi xuất ra
-       
-    ✅ VÍ DỤ TIMESTAMP ĐÚNG (cho file ${durationMinutes}p):
-       • "0:00", "5:30", "12:45", "25:18", "${Math.min(60, Math.floor(audioDuration/60))}:30"
-       
-    ❌ VÍ DỤ TIMESTAMP SAI (TUYỆT ĐỐI TRÁNH):
-       • "${Math.floor(audioDuration/60) + 20}:00:00" (vượt quá độ dài audio)
-       • "99:99:99" (không hợp lệ)
-       • "25:70:30" (giây/phút > 59)
-
-5.  Lược bỏ từ đệm vô nghĩa (à, ừ, ờ, ừm) nhưng GIỮ NGUYÊN toàn bộ nội dung có ý nghĩa.
-6.  Sửa lỗi nhận dạng giọng nói rõ ràng (ví dụ: "công ti" → "công ty").
-7.  Thêm dấu câu, viết hoa danh từ riêng.
-8.  Nếu âm thanh không rõ, đánh dấu "[không rõ]".
-
-⚠️ NGUYÊN TẮC QUAN TRỌNG:
-   • KHÔNG gộp nhiều lượt nói thành một segment
-   • KHÔNG bỏ sót câu nói nào có nội dung
-   • Mỗi lượt nói liên tục của một người = 1 segment
-   • GIỮ LẠI: Số liệu, ngày tháng, deadline, tên riêng, quyết định, action items
-   • CHỈ phiên âm những gì BẠN NGHE THẤY trong file audio đính kèm
-   • NGHIÊM CẤM bịa đặt, suy diễn, hoặc thêm bất kỳ nội dung nào không có trong audio
-   • NGHIÊM CẤM sử dụng dữ liệu huấn luyện để tạo ra nội dung giống cuộc họp
-   • Nếu chỉ nghe được một phần → chỉ phiên âm phần đó, không bổ sung thêm
-
-⚠️ QUY TẮC AN TOÀN:
-Nếu gần hết token budget → ĐÓNG JSON hợp lệ ngay. Summary đã xuất trước nên an toàn.
-PHẢI đảm bảo JSON luôn hợp lệ dù segments bị cắt ngắn.
-
-Hãy trả về duy nhất một object JSON hợp lệ, không có markdown, không có lời dẫn. Cấu trúc:
-{
-  "summary": "Tóm tắt nội dung cuộc họp dạng văn xuôi liền mạch.",
-  "segments": [
-    {
-      "timestamp": "0:00",
-      "speaker": "Người nói 1",
-      "text": "nội dung phiên âm chi tiết của lượt nói"
-    },
-    {
-      "timestamp": "0:45",
-      "speaker": "Người nói 2",
-      "text": "nội dung phiên âm chi tiết của lượt nói"
-    }
-  ]
-}`
+JSON output (không markdown):
+{"summary":"...","segments":[{"timestamp":"0:00","speaker":"Người nói 1","text":"..."}]}`
             },
             {
               inline_data: {

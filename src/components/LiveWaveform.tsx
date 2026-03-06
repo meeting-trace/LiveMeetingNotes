@@ -17,20 +17,28 @@ export const LiveWaveform: React.FC<Props> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
   const animationIdRef = useRef<number | null>(null);
   const waveformDataRef = useRef<number[]>([]); // Store waveform amplitude history
   const waveformTimesRef = useRef<number[]>([]); // ms from recording start for each sample
-  const lastUpdateTimeRef = useRef<number>(0); // Track last update for throttling
   const recordingRealStartRef = useRef<number>(0); // performance.now() when first sample captured
   const droppedSamplesRef = useRef<number>(0); // Samples shifted off the front (for long recordings)
+  const zoomRef = useRef(1);
+  const scrollPositionRef = useRef(0);
   const [zoom, setZoom] = useState(1); // 1 = 10 minutes visible
   const [scrollPosition, setScrollPosition] = useState(0);
 
+  // Keep refs in sync with state
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+  useEffect(() => {
+    scrollPositionRef.current = scrollPosition;
+  }, [scrollPosition]);
+
   // Constants for performance calculation
   const MAX_DURATION = 10 * 60; // 10 minutes
-  const PIXELS_PER_SECOND = 50;
-  const MAX_SAMPLES = MAX_DURATION * PIXELS_PER_SECOND; // 30,000 samples max
+  const SAMPLE_RATE = 1; // 1 sample/giây — khớp với browser throttle khi tab ẩn
+  const MAX_SAMPLES = MAX_DURATION * SAMPLE_RATE; // 600 samples max
 
   useEffect(() => {
     if (!audioStream || !isRecording || !canvasRef.current) {
@@ -56,92 +64,105 @@ export const LiveWaveform: React.FC<Props> = ({
     const dataArray = new Uint8Array(bufferLength);
 
     audioContextRef.current = audioContext;
-    analyserRef.current = analyser;
 
-    // Set canvas size
     canvas.width = canvas.offsetWidth;
     canvas.height = canvas.offsetHeight;
 
-    // const pixelsPerSecond = PIXELS_PER_SECOND;
     const maxWidth = MAX_SAMPLES;
 
-    // Pre-calculate amplification factor based on audio source (avoid recalculating every frame)
-    let amplificationFactor = 5; // Default for 'both'
-    if (audioSourceType === "system") {
-      amplificationFactor = 10; // 10x for system audio (louder visualization)
-    } else if (audioSourceType === "microphone") {
-      amplificationFactor = 3; // 3x for microphone (smaller visualization)
-    }
+    let amplificationFactor = 5;
+    if (audioSourceType === "system") amplificationFactor = 10;
+    else if (audioSourceType === "microphone") amplificationFactor = 3;
 
-    // Draw waveform with throttling for better performance
-    const draw = () => {
-      if (!analyser || !dataArray || !canvasContext) return;
-
-      animationIdRef.current = requestAnimationFrame(draw);
-
-      // Throttle updates to ~20fps (every 50ms) instead of 60fps to reduce CPU usage
-      const now = performance.now();
-      if (now - lastUpdateTimeRef.current < 50) {
-        return; // Skip this frame
-      }
-      lastUpdateTimeRef.current = now;
-
+    // === SAMPLING LOOP: 1 sample/giây — khớp với browser throttle khi tab ẩn ===
+    const sampleInterval = setInterval(() => {
+      if (!analyser) return;
       analyser.getByteTimeDomainData(dataArray);
 
-      // Calculate average amplitude for this frame
       let sum = 0;
       for (let i = 0; i < bufferLength; i++) {
-        const normalized = (dataArray[i] - 128) / 128; // -1 to 1
+        const normalized = (dataArray[i] - 128) / 128;
         sum += Math.abs(normalized);
       }
-      const avgAmplitude = sum / bufferLength;
+      const amplitude = (sum / bufferLength) * amplificationFactor;
 
-      // Track real start time on first sample
       if (waveformDataRef.current.length === 0) {
-        recordingRealStartRef.current = now;
+        recordingRealStartRef.current = performance.now();
       }
-      const sampleTimeMs = now - recordingRealStartRef.current;
-      waveformDataRef.current.push(avgAmplitude * amplificationFactor);
-      waveformTimesRef.current.push(sampleTimeMs);
+      const sampleTimeMs = performance.now() - recordingRealStartRef.current;
 
-      // Limit history to maxWidth (prevents memory leak for long recordings)
+      waveformDataRef.current.push(amplitude);
+      waveformTimesRef.current.push(sampleTimeMs);
       if (waveformDataRef.current.length > maxWidth) {
         waveformDataRef.current.shift();
         waveformTimesRef.current.shift();
         droppedSamplesRef.current += 1;
       }
+    }, 1000);
 
-      // Clear canvas
+    // === RENDER LOOP: rAF — chỉ vẽ khi tab active ===
+    const render = () => {
+      animationIdRef.current = requestAnimationFrame(render);
+
       canvasContext.fillStyle = "rgb(255, 255, 255)";
       canvasContext.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Calculate visible range based on zoom and scroll
-      const visibleWidth = canvas.width / zoom;
-      const totalDataPoints = waveformDataRef.current.length;
-      const startIndex = Math.floor(
-        (totalDataPoints - visibleWidth) * scrollPosition,
-      );
-      const endIndex = Math.min(startIndex + visibleWidth, totalDataPoints);
+      const totalDurationMs =
+        waveformTimesRef.current.length > 0
+          ? waveformTimesRef.current[waveformTimesRef.current.length - 1]
+          : 0;
 
-      // Auto-scroll to end if at the end
-      if (scrollPosition > 0.95 || totalDataPoints < visibleWidth) {
-        setScrollPosition(1);
+      // visibleDurationMs theo zoom: zoom=1 → 10 phút, zoom=2 → 5 phút, v.v.
+      const BASE_VISIBLE_MS = 10 * 60 * 1000; // 10 phút
+      const currentZoom = zoomRef.current;
+      const currentScroll = scrollPositionRef.current;
+      const visibleDurationMs = BASE_VISIBLE_MS / currentZoom;
+
+      // scrollPosition [0,1] → startTimeMs trong khoảng [0, totalDurationMs - visibleDurationMs]
+      const scrollableDurationMs = Math.max(
+        0,
+        totalDurationMs - visibleDurationMs,
+      );
+
+      let startTimeMs: number;
+      if (currentScroll > 0.95 || totalDurationMs <= visibleDurationMs) {
+        // Ghim latest sample vào mép phải (startTimeMs có thể âm khi data ít)
+        startTimeMs = totalDurationMs - visibleDurationMs;
+        if (scrollPositionRef.current !== 1) {
+          scrollPositionRef.current = 1;
+          setScrollPosition(1);
+        }
+      } else {
+        startTimeMs = scrollableDurationMs * currentScroll;
       }
+      const endTimeMs = startTimeMs + visibleDurationMs;
+
+      // Tìm startIndex/endIndex theo timestamp
+      const times = waveformTimesRef.current;
+      let startIndex = 0;
+      let endIndex = times.length;
+      for (let i = 0; i < times.length; i++) {
+        if (times[i] < startTimeMs) startIndex = i;
+        if (times[i] <= endTimeMs) endIndex = i + 1;
+      }
+
+      const timeToX = (ms: number) =>
+        ((ms - startTimeMs) / visibleDurationMs) * canvas.width;
 
       // Draw waveform bars
       canvasContext.fillStyle = "#e71212";
-      const barWidth = (canvas.width / visibleWidth) * zoom;
-
       for (let i = startIndex; i < endIndex; i++) {
         const amplitude = waveformDataRef.current[i];
-        const barHeight = amplitude * canvas.height * 0.9; // Use 90% of canvas height
-        const x = ((i - startIndex) / visibleWidth) * canvas.width;
+        const barHeight = amplitude * canvas.height * 0.9;
+        const tMs = times[i];
+        const nextMs = times[i + 1] ?? tMs + 1000;
+        const x = timeToX(tMs);
+        const barW = Math.max(timeToX(nextMs) - x, 1);
         const y = (canvas.height - barHeight) / 2;
-
-        canvasContext.fillRect(x, y, Math.max(barWidth, 1), barHeight);
+        canvasContext.fillRect(x, y, barW, barHeight);
       }
 
-      // Draw center line
+      // Center line
       canvasContext.strokeStyle = "rgba(0, 0, 0, 0.1)";
       canvasContext.lineWidth = 1;
       canvasContext.beginPath();
@@ -149,29 +170,22 @@ export const LiveWaveform: React.FC<Props> = ({
       canvasContext.lineTo(canvas.width, canvas.height / 2);
       canvasContext.stroke();
 
-      // Draw time markers using exact sample timestamps (binary search)
-      const totalMs =
-        waveformTimesRef.current.length > 0
-          ? waveformTimesRef.current[waveformTimesRef.current.length - 1]
-          : 0;
-      const totalSeconds = totalMs / 1000;
-      // const markerInterval = totalSeconds > 120 ? 60 : 30; // seconds
-      const markerInterval = 30; // seconds
+      // Time markers
+      const totalSeconds = totalDurationMs / 1000;
+      const markerInterval = 300; // 5 phút/label
 
-      canvasContext.fillStyle = "black";
       canvasContext.font = "10px monospace";
 
-      // Draw 0:00 label at the very first sample if visible
-      if (startIndex === 0 || startIndex <= 0) {
-        const x = ((0 - startIndex) / visibleWidth) * canvas.width;
-        if (x >= 0 && x <= canvas.width) {
-          canvasContext.fillText("0:00", x + 2, 12);
-          canvasContext.strokeStyle = "rgba(0, 0, 0, 0.12)";
-          canvasContext.beginPath();
-          canvasContext.moveTo(x, 0);
-          canvasContext.lineTo(x, canvas.height);
-          canvasContext.stroke();
-        }
+      // 0:00 label
+      const x0 = timeToX(0);
+      if (x0 >= 0 && x0 <= canvas.width) {
+        canvasContext.fillStyle = "black";
+        canvasContext.fillText("0:00", x0 + 2, 12);
+        canvasContext.strokeStyle = "rgba(0, 0, 0, 0.12)";
+        canvasContext.beginPath();
+        canvasContext.moveTo(x0, 0);
+        canvasContext.lineTo(x0, canvas.height);
+        canvasContext.stroke();
       }
 
       for (
@@ -179,38 +193,23 @@ export const LiveWaveform: React.FC<Props> = ({
         sec <= totalSeconds;
         sec += markerInterval
       ) {
-        const targetMs = sec * 1000;
-        // Binary search for the sample closest to targetMs
-        let lo = 0,
-          hi = waveformTimesRef.current.length - 1,
-          best = -1;
-        while (lo <= hi) {
-          const mid = (lo + hi) >> 1;
-          if (waveformTimesRef.current[mid] <= targetMs) {
-            best = mid;
-            lo = mid + 1;
-          } else {
-            hi = mid - 1;
-          }
-        }
-        if (best < 0) continue;
-        const dataIndex = best; // index in current waveformDataRef array
-        if (dataIndex >= startIndex && dataIndex <= endIndex) {
-          const x = ((dataIndex - startIndex) / visibleWidth) * canvas.width;
-          canvasContext.fillText(formatTime(sec), x + 2, 12);
-          canvasContext.strokeStyle = "rgba(0, 0, 0, 0.12)";
-          canvasContext.beginPath();
-          canvasContext.moveTo(x, 0);
-          canvasContext.lineTo(x, canvas.height);
-          canvasContext.stroke();
-        }
+        const xM = timeToX(sec * 1000);
+        if (xM < 0 || xM > canvas.width) continue;
+        canvasContext.fillStyle = "black";
+        canvasContext.fillText(formatTime(sec), xM + 2, 12);
+        canvasContext.strokeStyle = "rgba(0, 0, 0, 0.12)";
+        canvasContext.beginPath();
+        canvasContext.moveTo(xM, 0);
+        canvasContext.lineTo(xM, canvas.height);
+        canvasContext.stroke();
       }
     };
 
-    draw();
+    render();
 
     // Cleanup
     return () => {
+      clearInterval(sampleInterval);
       if (animationIdRef.current) {
         cancelAnimationFrame(animationIdRef.current);
       }
@@ -218,7 +217,7 @@ export const LiveWaveform: React.FC<Props> = ({
         audioContextRef.current.close();
       }
     };
-  }, [audioStream, isRecording, zoom, scrollPosition]);
+  }, [audioStream, isRecording]);
 
   // Reset waveform data when recording stops
   useEffect(() => {
@@ -232,8 +231,12 @@ export const LiveWaveform: React.FC<Props> = ({
   }, [isRecording]);
 
   const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
     const secs = Math.floor(seconds % 60);
+    if (hrs > 0) {
+      return `${hrs}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    }
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
