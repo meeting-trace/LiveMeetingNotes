@@ -133,6 +133,13 @@ export const RecordingControls: React.FC<Props> = ({
   );
   const pendingProjectDataRef = useRef<any>(null); // Holds the loaded project data awaiting audio selection
 
+  // ⚡ Live ref: always holds the latest `transcriptions` prop.
+  // processSaveRecording is called from handleStopRecording which captures a stale
+  // closure over `transcriptions`. Using this ref ensures the forced-committed
+  // segment (from forceCommit on stop) is included when writing output files.
+  const transcriptionsRef = useRef<TranscriptionResult[]>(transcriptions);
+  transcriptionsRef.current = transcriptions;
+
   // Notify parent about fileManager instance on mount
   useEffect(() => {
     if (onFileManagerReady) {
@@ -708,10 +715,10 @@ export const RecordingControls: React.FC<Props> = ({
       );
 
       // Save transcription data if available
-      if (transcriptions && transcriptions.length > 0) {
+      if (transcriptionsRef.current && transcriptionsRef.current.length > 0) {
         const transcriptionData = {
-          transcriptions: transcriptions.filter((t) => t.isFinal),
-          totalCount: transcriptions.filter((t) => t.isFinal).length,
+          transcriptions: transcriptionsRef.current.filter((t) => t.isFinal),
+          totalCount: transcriptionsRef.current.filter((t) => t.isFinal).length,
           summary: geminiSummary || "", // Include summary
           savedAt: new Date().toISOString(),
         };
@@ -723,7 +730,9 @@ export const RecordingControls: React.FC<Props> = ({
         );
 
         // Save raw transcripts for AI refinement
-        const finalTranscriptions = transcriptions.filter((t) => t.isFinal);
+        const finalTranscriptions = transcriptionsRef.current.filter(
+          (t) => t.isFinal,
+        );
         const rawTranscriptsData = {
           rawTranscripts: finalTranscriptions.map((t) => ({
             text: t.text,
@@ -745,7 +754,7 @@ export const RecordingControls: React.FC<Props> = ({
 
       // Export Word document to same folder
       const finalTranscriptions =
-        transcriptions?.filter((t) => t.isFinal) || [];
+        transcriptionsRef.current?.filter((t) => t.isFinal) || [];
       const wordBlob = await WordExporter.createWordBlob(
         meetingInfo,
         notes,
@@ -793,10 +802,10 @@ export const RecordingControls: React.FC<Props> = ({
       );
 
       // Save transcription data if available
-      if (transcriptions && transcriptions.length > 0) {
+      if (transcriptionsRef.current && transcriptionsRef.current.length > 0) {
         const transcriptionData = {
-          transcriptions: transcriptions.filter((t) => t.isFinal),
-          totalCount: transcriptions.filter((t) => t.isFinal).length,
+          transcriptions: transcriptionsRef.current.filter((t) => t.isFinal),
+          totalCount: transcriptionsRef.current.filter((t) => t.isFinal).length,
           summary: geminiSummary || "", // Include summary
           savedAt: new Date().toISOString(),
         };
@@ -807,7 +816,7 @@ export const RecordingControls: React.FC<Props> = ({
 
         // Save raw transcripts for AI refinement
         const rawTranscriptsData = {
-          rawTranscripts: transcriptions
+          rawTranscripts: transcriptionsRef.current
             .filter((t) => t.isFinal)
             .map((t) => ({
               text: t.text,
@@ -816,7 +825,7 @@ export const RecordingControls: React.FC<Props> = ({
               confidence: t.confidence,
               isFinal: t.isFinal,
             })),
-          totalCount: transcriptions.filter((t) => t.isFinal).length,
+          totalCount: transcriptionsRef.current.filter((t) => t.isFinal).length,
           savedAt: new Date().toISOString(),
         };
         await downloader.downloadMetadataFile(
@@ -827,7 +836,7 @@ export const RecordingControls: React.FC<Props> = ({
 
       // Export Word document
       const finalTranscriptions =
-        transcriptions?.filter((t) => t.isFinal) || [];
+        transcriptionsRef.current?.filter((t) => t.isFinal) || [];
       await WordExporter.exportToWord(
         meetingInfo,
         notes,
