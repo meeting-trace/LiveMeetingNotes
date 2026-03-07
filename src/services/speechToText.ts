@@ -483,8 +483,9 @@ export class SpeechToTextService {
     this.isTranscribing = false;
     this.transcriptionStartTime = 0; // Reset start time
 
-    // ✨ Force commit any pending interim buffer
-    // this.smartManager.forceCommit();
+    // ⚡ Force-commit bất kỳ interim buffer đang chờ NGAY TRƯỜC khi null hóa callback.
+    // Điều này đảm bảo nội dung tạm có mặt trong state trước khi lưu dự án.
+    this.smartManager.forceCommit();
 
     // Stop Web Speech API
     if (this.recognition) {

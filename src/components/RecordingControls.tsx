@@ -599,6 +599,11 @@ export const RecordingControls: React.FC<Props> = ({
         });
       }
 
+      // ⏱ Chờ React flush state update từ force-commit (segment tạm được commit khi dừng).
+      // Nếu bỏ qua bước này, processSaveRecording có thể đọc `transcriptions` chưa có segment mới,
+      // sau đó React render lại với segment mới làm bật cờ hasUnsavedChanges.
+      await new Promise<void>((resolve) => setTimeout(resolve, 500));
+
       // Note: audioStream is already stopped by recorder.stopRecording()
       setAudioStream(null);
 

@@ -424,6 +424,35 @@ export class SmartTranscriptManager {
     }
   }
 
+  /**
+   * ⚡ Force-commit bất kỳ interim text đang tồn đợng thành segment chính thức.
+   * Gọi ngay khi người dùng nhấn Dừng để đảm bảo không có nội dung bị rơi sau khi lưu.
+   */
+  public forceCommit(): void {
+    // Hủy silence timer trước để nó không fire sau khi đã dừng
+    this.clearSilenceTimer();
+
+    if (this.interimText) {
+      console.log('⚡ FORCE COMMIT: Committing pending interim buffer on stop:', {
+        text: this.interimText.substring(0, 80) + (this.interimText.length > 80 ? '...' : ''),
+        words: this.interimText.split(/\s+/).length,
+      });
+      const audioTimeMs = this.accumulationStartAudioTimeMs || (Date.now() - this.transcriptionStartTime);
+      const timestamp = this.accumulationStartTime || new Date().toISOString();
+      this.finalLongest = this.interimText;
+      this.commitFinal(audioTimeMs, timestamp, 0.8, 'Person1', true);
+
+      // Reset accumulated state
+      this.interimText = '';
+      this.finalLongest = '';
+      this.accumulationStartTime = '';
+      this.accumulationStartAudioTimeMs = 0;
+    }
+
+    // Clear draft segment from UI
+    this.clearInterim();
+  }
+
   // ================== UI EMIT ==================
 
   private emitInterim(text: string, audioTimeMs: number, ts: string, conf: number, speaker: string) {
