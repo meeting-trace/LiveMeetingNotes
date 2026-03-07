@@ -5,7 +5,7 @@ import {
   useImperativeHandle,
   forwardRef,
 } from "react";
-import { Button, Space, Slider, Select, Spin } from "antd";
+import { Button, Space, Slider, Select, Spin, Alert } from "antd";
 import {
   PlayCircleOutlined,
   PauseCircleOutlined,
@@ -31,6 +31,52 @@ export interface AudioPlayerRef {
   getDuration: () => number;
 }
 
+/** Files larger than this threshold skip AudioContext.decodeAudioData() to avoid OOM.
+ *  WebAudio decode of a 5-hour 48kHz stereo recording requires ~7 GB RAM.
+ *  Instead, WaveSurfer receives pre-computed flat peaks + HTML5 Audio duration.
+ */
+const LARGE_FILE_THRESHOLD_BYTES = 80 * 1024 * 1024; // 80 MB
+
+/** Resolve the duration of an <audio> element, handling WebM Infinity quirk.
+ *  WebM files recorded by MediaRecorder often omit the Duration header →
+ *  audio.duration === Infinity. The workaround: seek to a huge timestamp so
+ *  the browser scans to the end and updates duration.
+ */
+function resolveAudioDuration(el: HTMLAudioElement): Promise<number> {
+  return new Promise((resolve) => {
+    const bail = setTimeout(() => resolve(0), 8000);
+
+    const finish = (dur: number) => {
+      clearTimeout(bail);
+      resolve(isFinite(dur) && dur > 0 ? dur : 0);
+    };
+
+    const onTimeUpdate = () => {
+      if (isFinite(el.duration) && el.duration > 0) {
+        el.removeEventListener("timeupdate", onTimeUpdate);
+        finish(el.duration);
+      }
+    };
+
+    const onMeta = () => {
+      if (isFinite(el.duration) && el.duration > 0) {
+        finish(el.duration);
+      } else {
+        // Infinity duration (streaming WebM) — seek trick
+        el.addEventListener("timeupdate", onTimeUpdate);
+        el.currentTime = 1e9;
+      }
+    };
+
+    if (el.readyState >= 1 /* HAVE_METADATA */) {
+      onMeta();
+    } else {
+      el.addEventListener("loadedmetadata", onMeta, { once: true });
+      el.addEventListener("error", () => finish(0), { once: true });
+    }
+  });
+}
+
 export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
   (
     { audioBlob, transcriptionConfig, onWaveformReady, onWaveformError },
@@ -51,6 +97,7 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
     const [loadingPhase, setLoadingPhase] = useState<"reading" | "decoding">(
       "reading",
     );
+    const [isLargeFileMode, setIsLargeFileMode] = useState(false);
 
     // Expose seekTo method to parent
     useImperativeHandle(ref, () => ({
@@ -99,6 +146,22 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
       }
 
       try {
+        const isLargeFile = audioBlob.size > LARGE_FILE_THRESHOLD_BYTES;
+        setIsLargeFileMode(isLargeFile);
+
+        // For large files, create an HTML Audio element as the WaveSurfer media backend.
+        // This avoids AudioContext.decodeAudioData() which would require gigabytes of RAM
+        // for long recordings (e.g. 5-hour recording → ~7 GB decoded PCM).
+        let largeBlobUrl: string | null = null;
+        let largeAudioEl: HTMLAudioElement | null = null;
+        let largeDurationResolved = false; // guard for async resolveAudioDuration
+        if (isLargeFile) {
+          largeBlobUrl = URL.createObjectURL(audioBlob);
+          largeAudioEl = new Audio();
+          largeAudioEl.src = largeBlobUrl;
+          largeAudioEl.preload = "metadata";
+        }
+
         // Create WaveSurfer instance
         const wavesurfer = WaveSurfer.create({
           container: waveformRef.current,
@@ -113,6 +176,7 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
           interact: true, // Enable click to seek
           dragToSeek: false, // Click only, no drag to seek
           hideScrollbar: false,
+          ...(isLargeFile && largeAudioEl ? { media: largeAudioEl } : {}),
         });
 
         // Show loading indicator before starting to load
@@ -120,8 +184,27 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
         setLoadingProgress(0);
         setLoadingPhase("reading");
 
-        // Load audio with error handling - use loadBlob to avoid fetch() issues with File objects
-        wavesurfer.loadBlob(audioBlob);
+        if (isLargeFile && largeBlobUrl && largeAudioEl) {
+          // ── Large-file path: skip decodeAudioData, use flat placeholder peaks ──
+          // WaveSurfer v7: when load(url, channelData, duration) is called with
+          // channelData provided, it skips the fetch+decode step entirely and
+          // renders the supplied peaks directly.
+          const capturedUrl = largeBlobUrl;
+          const capturedEl = largeAudioEl;
+          resolveAudioDuration(capturedEl).then((audioDuration) => {
+            if (largeDurationResolved) return; // blob changed / component unmounted
+            const numPeaks = 3000;
+            const flatPeaks = new Array<number>(numPeaks).fill(0.08);
+            wavesurfer.load(
+              capturedUrl,
+              [flatPeaks],
+              audioDuration > 0 ? audioDuration : undefined,
+            );
+          });
+        } else {
+          // ── Normal path: loadBlob → decodeAudioData → real peaks ──
+          wavesurfer.loadBlob(audioBlob);
+        }
 
         // Event listeners
         wavesurfer.on("loading", (percent: number) => {
@@ -409,6 +492,11 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
         // Cleanup function
         return () => {
           setIsLoadingWaveform(false);
+          setIsLargeFileMode(false);
+          largeDurationResolved = true; // prevent pending resolveAudioDuration from calling load()
+          if (largeBlobUrl) {
+            URL.revokeObjectURL(largeBlobUrl);
+          }
           try {
             waveformContainer.removeEventListener("wheel", handleWheel);
             waveformContainer.removeEventListener(
@@ -436,6 +524,7 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
       } catch (error) {
         console.error("❌ Failed to initialize WaveSurfer:", error);
         setDuration(0);
+        setIsLoadingWaveform(false);
         const msg = (error as any)?.message || String(error);
         onWaveformError?.(`Không thể khởi tạo audio player: ${msg}`);
         return () => {};
@@ -583,6 +672,22 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
 
     return (
       <div className="audio-player">
+        {/* Large-file mode banner */}
+        {isLargeFileMode && !isLoadingWaveform && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 8, fontSize: 12 }}
+            message={
+              <span>
+                <strong>Chế độ file lớn:</strong> Waveform hiển thị dạng đơn
+                giản (bỏ qua giải mã PCM) để tránh lỗi bộ nhớ. Phát lại và tua
+                hoạt động bình thường.
+              </span>
+            }
+          />
+        )}
+
         {/* Waveform Container */}
         <div className="waveform-container" style={{ position: "relative" }}>
           <div
