@@ -81,6 +81,21 @@ export const App: React.FC = () => {
   const [backupAge, setBackupAge] = useState<number | null>(null);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const audioPlayerRef = useRef<AudioPlayerRef>(null);
+
+  // ⚡ Live refs: always hold the LATEST state values so that handleSaveComplete
+  // (which is passed as a prop and can become stale due to closure) always
+  // snapshots the correct data even when called from an older render's closure.
+  const transcriptionsRef = useRef<TranscriptionResult[]>([]);
+  const notesRef = useRef<string>("");
+  const speakersMapRef = useRef<Map<number, string>>(new Map());
+  const meetingInfoRef = useRef<MeetingInfo>({
+    title: "",
+    date: new Date().toISOString().split("T")[0],
+    time: new Date().toTimeString().slice(0, 5),
+    location: "",
+    host: "",
+    attendees: "",
+  });
   const onWaveformReadyRef = useRef<(() => void) | null>(null);
   const onWaveformErrorRef = useRef<((error: string) => void) | null>(null);
   // Safety timeout: clears the waveform-wait callbacks if WaveSurfer never fires ready/error
@@ -110,6 +125,13 @@ export const App: React.FC = () => {
   const [updateConfig, setUpdateConfig] = useState(() =>
     UpdateManagerService.loadConfig(),
   );
+
+  // Keep live refs in sync with state on every render (no overhead, just plain assignment).
+  // Must be placed after all relevant state declarations.
+  transcriptionsRef.current = transcriptions;
+  notesRef.current = notes;
+  speakersMapRef.current = speakersMap;
+  meetingInfoRef.current = meetingInfo;
 
   /**
    * Get valid meeting start time for Gemini transcription
@@ -2207,10 +2229,13 @@ export const App: React.FC = () => {
   const handleSaveComplete = () => {
     setIsSaved(true);
     setHasUnsavedChanges(false);
-    setSavedNotesSnapshot(notes); // Save snapshot to detect future changes
-    setSavedSpeakersSnapshot(new Map(speakersMap)); // Save speakers snapshot
-    setSavedTranscriptionsSnapshot([...transcriptions]); // Save transcriptions snapshot
-    setSavedMeetingInfoSnapshot({ ...meetingInfo }); // Save meetingInfo snapshot
+    // Use live refs instead of potentially-stale closure values.
+    // This is critical when handleSaveComplete is called from an older render's
+    // closure (e.g. after forceCommit fires setTranscriptions asynchronously).
+    setSavedNotesSnapshot(notesRef.current);
+    setSavedSpeakersSnapshot(new Map(speakersMapRef.current));
+    setSavedTranscriptionsSnapshot([...transcriptionsRef.current]);
+    setSavedMeetingInfoSnapshot({ ...meetingInfoRef.current });
     // Clear auto-backup after successful save
     clearBackup();
   };
