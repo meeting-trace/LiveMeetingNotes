@@ -36,9 +36,9 @@ export const LiveWaveform: React.FC<Props> = ({
   }, [scrollPosition]);
 
   // Constants for performance calculation
-  const MAX_DURATION = 10 * 60; // 10 minutes
+  const MAX_DURATION = 4 * 60 * 60; // 4 hours — đủ cho mọi cuộc họp dài
   const SAMPLE_RATE = 1; // 1 sample/giây — khớp với browser throttle khi tab ẩn
-  const MAX_SAMPLES = MAX_DURATION * SAMPLE_RATE; // 600 samples max
+  const MAX_SAMPLES = MAX_DURATION * SAMPLE_RATE; // 14400 samples max
 
   useEffect(() => {
     if (!audioStream || !isRecording || !canvasRef.current) {
@@ -64,6 +64,17 @@ export const LiveWaveform: React.FC<Props> = ({
     const dataArray = new Uint8Array(bufferLength);
 
     audioContextRef.current = audioContext;
+
+    // Resume AudioContext khi tab active lại (browser suspend AudioContext khi tab ẩn)
+    const handleVisibilityChange = () => {
+      if (
+        document.visibilityState === "visible" &&
+        audioContext.state === "suspended"
+      ) {
+        audioContext.resume();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     canvas.width = canvas.offsetWidth;
     canvas.height = canvas.offsetHeight;
@@ -209,6 +220,7 @@ export const LiveWaveform: React.FC<Props> = ({
 
     // Cleanup
     return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       clearInterval(sampleInterval);
       if (animationIdRef.current) {
         cancelAnimationFrame(animationIdRef.current);
