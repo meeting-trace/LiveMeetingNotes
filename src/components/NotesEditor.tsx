@@ -1051,7 +1051,14 @@ export const NotesEditor: React.FC<Props> = ({
                   }
                 }}
                 value={line.content} // ✅ Read from NoteLine object
-                onChange={(e) => handleLineChange(index, e.target.value)}
+                onChange={(e) => {
+                  let newValue = e.target.value;
+                  // Auto-capitalize first character when user starts typing in an empty field
+                  if (line.content.length === 0 && newValue.length === 1) {
+                    newValue = newValue.toUpperCase();
+                  }
+                  handleLineChange(index, newValue);
+                }}
                 onKeyDown={(e) => handleKeyDown(index, e)}
                 onMouseDown={(e) => {
                   // If Ctrl or Shift is pressed, prevent focus and let parent handle selection
