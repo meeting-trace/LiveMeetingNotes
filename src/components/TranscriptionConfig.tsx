@@ -1,10 +1,27 @@
-import React, { useState, useEffect } from 'react';
-import { Modal, Form, Input, InputNumber, Select, Button, Space, App, Collapse, Spin, Switch } from 'antd';
-import { SettingOutlined, SaveOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
-import type { SpeechToTextConfig, GeminiModel } from '../types/types';
-import { SpeechToTextService } from '../services/speechToText';
-import { AIRefinementService } from '../services/aiRefinement';
-import { UpdateManagerService } from '../services/updateManager';
+import React, { useState, useEffect } from "react";
+import {
+  Modal,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  Button,
+  Space,
+  App,
+  Collapse,
+  Spin,
+  Switch,
+} from "antd";
+import {
+  SettingOutlined,
+  SaveOutlined,
+  DeleteOutlined,
+  ReloadOutlined,
+} from "@ant-design/icons";
+import type { SpeechToTextConfig, GeminiModel } from "../types/types";
+import { SpeechToTextService } from "../services/speechToText";
+import { AIRefinementService } from "../services/aiRefinement";
+import { UpdateManagerService } from "../services/updateManager";
 
 interface Props {
   visible: boolean;
@@ -13,7 +30,10 @@ interface Props {
   currentConfig: SpeechToTextConfig | null;
   // Update config props
   updateConfig?: { autoUpdate: boolean; checkInterval: number };
-  onUpdateConfigChange?: (config: { autoUpdate: boolean; checkInterval: number }) => void;
+  onUpdateConfigChange?: (config: {
+    autoUpdate: boolean;
+    checkInterval: number;
+  }) => void;
 }
 
 export const TranscriptionConfig: React.FC<Props> = ({
@@ -22,7 +42,7 @@ export const TranscriptionConfig: React.FC<Props> = ({
   onSave,
   currentConfig,
   updateConfig,
-  onUpdateConfigChange
+  onUpdateConfigChange,
 }) => {
   const { message } = App.useApp();
   const [form] = Form.useForm();
@@ -30,20 +50,20 @@ export const TranscriptionConfig: React.FC<Props> = ({
   const [availableModels, setAvailableModels] = useState<GeminiModel[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [localUpdateConfig, setLocalUpdateConfig] = useState(
-    updateConfig || UpdateManagerService.loadConfig()
+    updateConfig || UpdateManagerService.loadConfig(),
   );
 
   // Load saved config or set defaults
   useEffect(() => {
     if (visible) {
       const savedConfig = currentConfig || SpeechToTextService.loadConfig();
-      
+
       // Default values (recommended settings)
       const defaultValues = {
-        apiKey: '',
-        geminiApiKey: '',
-        geminiModel: 'models/gemini-2.5-flash', // Default model
-        languageCode: 'vi-VN',
+        apiKey: "",
+        geminiApiKey: "",
+        geminiModel: "models/gemini-2.5-flash", // Default model
+        languageCode: "vi-VN",
         enableSpeakerDiarization: false,
         enableAutomaticPunctuation: true,
         maxAlternatives: 1,
@@ -53,15 +73,18 @@ export const TranscriptionConfig: React.FC<Props> = ({
         segmentMaxLength: 150,
         timestampDelay: 8,
         maxAudioDurationMinutes: 30,
-        maxFileSizeMB: 20,
+        maxFileSizeMB: 150,
         requestDelaySeconds: 5,
-        summaryPrompt: 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'
+        summaryPrompt:
+          "Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có).",
       };
-      
+
       // Merge saved config with defaults (ensures new fields have default values)
-      const mergedConfig = savedConfig ? { ...defaultValues, ...savedConfig } : defaultValues;
+      const mergedConfig = savedConfig
+        ? { ...defaultValues, ...savedConfig }
+        : defaultValues;
       form.setFieldsValue(mergedConfig);
-      
+
       // Auto-load models if API key exists
       if (mergedConfig.geminiApiKey) {
         handleLoadModels(mergedConfig.geminiApiKey);
@@ -75,14 +98,22 @@ export const TranscriptionConfig: React.FC<Props> = ({
       return; // Invalid API key
     }
 
+    // Snapshot limit values before loading — must never be reset by API key changes
+    const limitSnapshot = {
+      maxAudioDurationMinutes: form.getFieldValue("maxAudioDurationMinutes"),
+      maxFileSizeMB: form.getFieldValue("maxFileSizeMB"),
+      requestDelaySeconds: form.getFieldValue("requestDelaySeconds"),
+      summaryPrompt: form.getFieldValue("summaryPrompt"),
+    };
+
     setIsLoadingModels(true);
     try {
       const response = await AIRefinementService.listGeminiModels(apiKey);
-      
+
       // Filter models that support generateContent
       const supportedModels = response.models
-        .filter((model: any) => 
-          model.supportedGenerationMethods?.includes('generateContent')
+        .filter((model: any) =>
+          model.supportedGenerationMethods?.includes("generateContent"),
         )
         .map((model: any) => ({
           name: model.name,
@@ -90,30 +121,43 @@ export const TranscriptionConfig: React.FC<Props> = ({
           description: model.description,
           inputTokenLimit: model.inputTokenLimit,
           outputTokenLimit: model.outputTokenLimit,
-          supportedGenerationMethods: model.supportedGenerationMethods
+          supportedGenerationMethods: model.supportedGenerationMethods,
         })) as GeminiModel[];
 
       setAvailableModels(supportedModels);
-      
+
       if (supportedModels.length > 0) {
-        message.success(`✅ Tìm thấy ${supportedModels.length} Gemini models khả dụng`);
-        
+        message.success(
+          `✅ Tìm thấy ${supportedModels.length} Gemini models khả dụng`,
+        );
+
         // Auto-select first model if none selected
-        const currentModel = form.getFieldValue('geminiModel');
+        const currentModel = form.getFieldValue("geminiModel");
         if (!currentModel) {
           // Prefer gemini-2.5-flash if available
-          const preferredModel = supportedModels.find(m => m.name.includes('gemini-2.5-flash')) || supportedModels[0];
-          form.setFieldValue('geminiModel', preferredModel.name);
+          const preferredModel =
+            supportedModels.find((m) => m.name.includes("gemini-2.5-flash")) ||
+            supportedModels[0];
+          form.setFieldValue("geminiModel", preferredModel.name);
         }
       } else {
-        message.warning('⚠️ Không tìm thấy Gemini model nào hỗ trợ generateContent');
+        message.warning(
+          "⚠️ Không tìm thấy Gemini model nào hỗ trợ generateContent",
+        );
       }
     } catch (error: any) {
-      console.error('Failed to load models:', error);
+      console.error("Failed to load models:", error);
       message.error(`❌ Không thể tải danh sách models: ${error.message}`);
       setAvailableModels([]);
     } finally {
       setIsLoadingModels(false);
+      // Restore limit values — API key changes must never reset these settings
+      const restoredLimits = Object.fromEntries(
+        Object.entries(limitSnapshot).filter(([, v]) => v !== undefined),
+      );
+      if (Object.keys(restoredLimits).length > 0) {
+        form.setFieldsValue(restoredLimits);
+      }
     }
   };
 
@@ -134,9 +178,9 @@ export const TranscriptionConfig: React.FC<Props> = ({
       setIsSaving(true);
 
       const config: SpeechToTextConfig = {
-        apiKey: values.apiKey?.trim() || '',
-        geminiApiKey: values.geminiApiKey?.trim() || '',
-        geminiModel: values.geminiModel || 'models/gemini-2.5-flash',
+        apiKey: values.apiKey?.trim() || "",
+        geminiApiKey: values.geminiApiKey?.trim() || "",
+        geminiModel: values.geminiModel || "models/gemini-2.5-flash",
         languageCode: values.languageCode,
         enableSpeakerDiarization: values.enableSpeakerDiarization,
         enableAutomaticPunctuation: values.enableAutomaticPunctuation,
@@ -146,12 +190,14 @@ export const TranscriptionConfig: React.FC<Props> = ({
         segmentTimeout: values.segmentTimeout || 2500,
         segmentMaxLength: values.segmentMaxLength || 150,
         timestampDelay: values.timestampDelay || 8,
-        
+
         // Gemini API Limits
         maxAudioDurationMinutes: values.maxAudioDurationMinutes || 30,
         maxFileSizeMB: values.maxFileSizeMB || 150,
         requestDelaySeconds: values.requestDelaySeconds || 5,
-        summaryPrompt: values.summaryPrompt || 'Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có).'
+        summaryPrompt:
+          values.summaryPrompt ||
+          "Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có).",
       };
 
       // Validate: Speaker diarization requires API Key
@@ -161,17 +207,16 @@ export const TranscriptionConfig: React.FC<Props> = ({
       //   return;
       // }
 
-
       // Save to localStorage
       SpeechToTextService.saveConfig(config);
 
       // Notify parent
       onSave(config);
 
-      message.success('✅ Cấu hình đã được lưu thành công');
+      message.success("✅ Cấu hình đã được lưu thành công");
       onClose();
     } catch (error) {
-      console.error('Validation failed:', error);
+      console.error("Validation failed:", error);
     } finally {
       setIsSaving(false);
     }
@@ -179,16 +224,16 @@ export const TranscriptionConfig: React.FC<Props> = ({
 
   const handleClearConfig = () => {
     Modal.confirm({
-      title: 'Xóa cấu hình?',
-      content: 'Bạn có chắc chắn muốn xóa cấu hình?',
-      okText: 'Xóa',
-      okType: 'danger',
-      cancelText: 'Hủy',
+      title: "Xóa cấu hình?",
+      content: "Bạn có chắc chắn muốn xóa cấu hình?",
+      okText: "Xóa",
+      okType: "danger",
+      cancelText: "Hủy",
       onOk: () => {
         SpeechToTextService.clearConfig();
         form.resetFields();
-        message.info('🗑️ Đã xóa cấu hình');
-      }
+        message.info("🗑️ Đã xóa cấu hình");
+      },
     });
   };
 
@@ -204,7 +249,12 @@ export const TranscriptionConfig: React.FC<Props> = ({
       onCancel={onClose}
       width={700}
       footer={[
-        <Button key="clear" danger icon={<DeleteOutlined />} onClick={handleClearConfig}>
+        <Button
+          key="clear"
+          danger
+          icon={<DeleteOutlined />}
+          onClick={handleClearConfig}
+        >
           Xóa cấu hình
         </Button>,
         <Button key="cancel" onClick={onClose}>
@@ -218,28 +268,32 @@ export const TranscriptionConfig: React.FC<Props> = ({
           onClick={handleSave}
         >
           Lưu cấu hình
-        </Button>
+        </Button>,
       ]}
     >
-      <Form
-        form={form}
-        layout="vertical"
-        autoComplete="off"
-      >
+      <Form form={form} layout="vertical" autoComplete="off">
         {/* Gemini API Key */}
         <Form.Item
           label="Gemini API Key"
           name="geminiApiKey"
-          rules={[
-            { min: 20, message: 'API Key phải có ít nhất 20 ký tự' }
-          ]}
+          rules={[{ min: 20, message: "API Key phải có ít nhất 20 ký tự" }]}
           extra={
             <Space direction="vertical" size="small" style={{ marginTop: 8 }}>
-              <div style={{ fontSize: '12px', color: '#4f46e5' }}>
-                🤖 <strong>Cho tính năng *Chuẩn hóa bằng AI* và *Chuyển đổi giọng nói bằng Gemini AI*:</strong>
+              <div style={{ fontSize: "12px", color: "#4f46e5" }}>
+                🤖{" "}
+                <strong>
+                  Cho tính năng *Chuẩn hóa bằng AI* và *Chuyển đổi giọng nói
+                  bằng Gemini AI*:
+                </strong>
               </div>
-              <div style={{ fontSize: '12px', color: '#10b981', fontWeight: 'bold' }}>
-                ✨ MIỄN PHÍ: Lấy tại{' '}
+              <div
+                style={{
+                  fontSize: "12px",
+                  color: "#10b981",
+                  fontWeight: "bold",
+                }}
+              >
+                ✨ MIỄN PHÍ: Lấy tại{" "}
                 <a
                   href="https://aistudio.google.com/app/apikey"
                   target="_blank"
@@ -248,19 +302,27 @@ export const TranscriptionConfig: React.FC<Props> = ({
                   Google AI Studio
                 </a>
               </div>
-              <div style={{ fontSize: '12px', color: '#475569' }}>
-              </div>
-              <div style={{ 
-                fontSize: '11px', 
-                color: '#d97706',
-                background: '#fffbeb',
-                border: '1px solid #fcd34d',
-                padding: '8px 10px',
-                borderRadius: '6px',
-                marginTop: '4px'
-              }}>
+              <div style={{ fontSize: "12px", color: "#475569" }}></div>
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "#d97706",
+                  background: "#fffbeb",
+                  border: "1px solid #fcd34d",
+                  padding: "8px 10px",
+                  borderRadius: "6px",
+                  marginTop: "4px",
+                }}
+              >
                 {/* ⚠️ <strong>Hạn mức miễn phí:</strong> 250,000 tokens/ngày • 15 requests/phút<br /> */}
-                📊 Monitor usage: <a href="https://ai.dev/rate-limit" target="_blank" rel="noopener noreferrer">ai.dev/rate-limit</a>
+                📊 Monitor usage:{" "}
+                <a
+                  href="https://ai.dev/rate-limit"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  ai.dev/rate-limit
+                </a>
               </div>
             </Space>
           }
@@ -277,17 +339,16 @@ export const TranscriptionConfig: React.FC<Props> = ({
           <Form.Item
             label="Gemini Model (lưu ý: một số mô hình Gemini phải trả phí mới dùng được)"
             name="geminiModel"
-            rules={[{ required: true, message: 'Vui lòng chọn model' }]}
+            rules={[{ required: true, message: "Vui lòng chọn model" }]}
             extra={
               <Space size="small" style={{ marginTop: 8 }}>
-                <div style={{ fontSize: '12px', color: '#475569' }}>
-                </div>
+                <div style={{ fontSize: "12px", color: "#475569" }}></div>
                 <Button
                   size="small"
                   icon={<ReloadOutlined />}
                   loading={isLoadingModels}
                   onClick={() => {
-                    const apiKey = form.getFieldValue('geminiApiKey');
+                    const apiKey = form.getFieldValue("geminiApiKey");
                     handleLoadModels(apiKey);
                   }}
                 >
@@ -299,37 +360,58 @@ export const TranscriptionConfig: React.FC<Props> = ({
             <Select
               placeholder="Chọn Gemini model..."
               loading={isLoadingModels}
-              notFoundContent={isLoadingModels ? <Spin size="small" /> : 'Không có model khả dụng'}
+              notFoundContent={
+                isLoadingModels ? (
+                  <Spin size="small" />
+                ) : (
+                  "Không có model khả dụng"
+                )
+              }
               showSearch
               optionFilterProp="children"
               optionLabelProp="label"
               listHeight={400}
-              dropdownStyle={{ maxHeight: '500px' }}
+              dropdownStyle={{ maxHeight: "500px" }}
             >
-              {availableModels.map(model => (
-                <Select.Option 
-                  key={model.name} 
+              {availableModels.map((model) => (
+                <Select.Option
+                  key={model.name}
                   value={model.name}
                   label={model.displayName}
-                  style={{ height: 'auto', padding: '8px 12px' }}
+                  style={{ height: "auto", padding: "8px 12px" }}
                 >
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <div style={{ fontWeight: 'bold', fontSize: '13px' }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "4px",
+                    }}
+                  >
+                    <div style={{ fontWeight: "bold", fontSize: "13px" }}>
                       {model.displayName}
                     </div>
                     {model.description && (
-                      <div style={{ 
-                        fontSize: '11px', 
-                        color: '#475569', 
-                        lineHeight: '1.4',
-                        whiteSpace: 'normal',
-                        wordBreak: 'break-word'
-                      }}>
+                      <div
+                        style={{
+                          fontSize: "11px",
+                          color: "#475569",
+                          lineHeight: "1.4",
+                          whiteSpace: "normal",
+                          wordBreak: "break-word",
+                        }}
+                      >
                         {model.description}
                       </div>
                     )}
-                    <div style={{ fontSize: '10px', color: '#4f46e5', marginTop: '2px' }}>
-                      📥 Input: {model.inputTokenLimit.toLocaleString()} | 📤 Output: {model.outputTokenLimit.toLocaleString()} tokens
+                    <div
+                      style={{
+                        fontSize: "10px",
+                        color: "#4f46e5",
+                        marginTop: "2px",
+                      }}
+                    >
+                      📥 Input: {model.inputTokenLimit.toLocaleString()} | 📤
+                      Output: {model.outputTokenLimit.toLocaleString()} tokens
                     </div>
                   </div>
                 </Select.Option>
@@ -341,7 +423,7 @@ export const TranscriptionConfig: React.FC<Props> = ({
         <Form.Item
           label="Ngôn ngữ"
           name="languageCode"
-          rules={[{ required: true, message: 'Vui lòng chọn ngôn ngữ' }]}
+          rules={[{ required: true, message: "Vui lòng chọn ngôn ngữ" }]}
           extra="Ngôn ngữ sử dụng cho nhận dạng giọng nói"
         >
           <Select>
@@ -350,8 +432,12 @@ export const TranscriptionConfig: React.FC<Props> = ({
             <Select.Option value="en-GB">🇬🇧 English (UK)</Select.Option>
             <Select.Option value="ja-JP">🇯🇵 日本語 (Japanese)</Select.Option>
             <Select.Option value="ko-KR">🇰🇷 한국어 (Korean)</Select.Option>
-            <Select.Option value="zh-CN">🇨🇳 中文 (Chinese Simplified)</Select.Option>
-            <Select.Option value="zh-TW">🇹🇼 中文 (Chinese Traditional)</Select.Option>
+            <Select.Option value="zh-CN">
+              🇨🇳 中文 (Chinese Simplified)
+            </Select.Option>
+            <Select.Option value="zh-TW">
+              🇹🇼 中文 (Chinese Traditional)
+            </Select.Option>
             <Select.Option value="fr-FR">🇫🇷 Français (French)</Select.Option>
             <Select.Option value="de-DE">🇩🇪 Deutsch (German)</Select.Option>
             <Select.Option value="es-ES">🇪🇸 Español (Spanish)</Select.Option>
@@ -360,12 +446,13 @@ export const TranscriptionConfig: React.FC<Props> = ({
 
         <Form.Item
           noStyle
-          shouldUpdate={(prevValues, currentValues) => 
-            prevValues.enableSpeakerDiarization !== currentValues.enableSpeakerDiarization
+          shouldUpdate={(prevValues, currentValues) =>
+            prevValues.enableSpeakerDiarization !==
+            currentValues.enableSpeakerDiarization
           }
         >
-          {({ getFieldValue }) => 
-            getFieldValue('enableSpeakerDiarization') ? (
+          {({ getFieldValue }) =>
+            getFieldValue("enableSpeakerDiarization") ? (
               <>
                 <Form.Item
                   label="Số người nói tối thiểu"
@@ -374,7 +461,9 @@ export const TranscriptionConfig: React.FC<Props> = ({
                   extra="Số lượng người nói dự kiến tối thiểu (2-6)"
                 >
                   <Select placeholder="Chọn số người tối thiểu">
-                    <Select.Option value={2}>2 người (khuyến nghị)</Select.Option>
+                    <Select.Option value={2}>
+                      2 người (khuyến nghị)
+                    </Select.Option>
                     <Select.Option value={3}>3 người</Select.Option>
                     <Select.Option value={4}>4 người</Select.Option>
                     <Select.Option value={5}>5 người</Select.Option>
@@ -393,7 +482,9 @@ export const TranscriptionConfig: React.FC<Props> = ({
                     <Select.Option value={3}>3 người</Select.Option>
                     <Select.Option value={4}>4 người</Select.Option>
                     <Select.Option value={5}>5 người</Select.Option>
-                    <Select.Option value={6}>6 người (khuyến nghị)</Select.Option>
+                    <Select.Option value={6}>
+                      6 người (khuyến nghị)
+                    </Select.Option>
                   </Select>
                 </Form.Item>
               </>
@@ -401,14 +492,16 @@ export const TranscriptionConfig: React.FC<Props> = ({
           }
         </Form.Item>
 
-        <Collapse 
+        <Collapse
           ghost
-          items={[{
-            key: 'advanced',
-            label: '⚙️ Cài đặt nâng cao',
-            children: (
-              <>
-                {/* <Form.Item
+          items={[
+            {
+              key: "advanced",
+              label: "⚙️ Cài đặt nâng cao",
+              forceRender: true,
+              children: (
+                <>
+                  {/* <Form.Item
                   label="Số phiên bản nhận diện"
                   name="maxAlternatives"
                   initialValue={1}
@@ -423,7 +516,7 @@ export const TranscriptionConfig: React.FC<Props> = ({
                   </Select>
                 </Form.Item> */}
 
-                {/* <Form.Item
+                  {/* <Form.Item
                   label="Thời gian chờ kết thúc đoạn (ms)"
                   name="segmentTimeout"
                   initialValue={2000}
@@ -440,120 +533,149 @@ export const TranscriptionConfig: React.FC<Props> = ({
                   </Select>
                 </Form.Item> */}
 
-                <Form.Item
-                  label="Độ trễ timestamp khi gõ notes (giây)"
-                  name="timestampDelay"
-                  initialValue={8}
-                  extra="Khi gõ notes thủ công, timestamp sẽ lùi lại X giây để bù thời gian phản ứng (0-60 giây)"
-                >
-                  <Select placeholder="Chọn độ trễ">
-                    <Select.Option value={0}>0s (không trễ)</Select.Option>
-                    <Select.Option value={3}>3s</Select.Option>
-                    <Select.Option value={5}>5s</Select.Option>
-                    <Select.Option value={8}>8s (khuyến nghị)</Select.Option>
-                    <Select.Option value={10}>10s</Select.Option>
-                    <Select.Option value={15}>15s</Select.Option>
-                    <Select.Option value={20}>20s</Select.Option>
-                  </Select>
-                </Form.Item>
-                <div style={{ 
-                  marginTop: 24, 
-                  padding: '14px 16px', 
-                  background: '#eeecfd',
-                  border: '1px solid rgba(80,70,228,.22)',
-                  borderRadius: 10
-                }}>
-                  <div style={{ marginBottom: 12, fontWeight: 600, color: '#5046e4', fontSize: '14px' }}>
-                    🎯 Giới hạn Gemini API
+                  <Form.Item
+                    label="Độ trễ timestamp khi gõ notes (giây)"
+                    name="timestampDelay"
+                    initialValue={8}
+                    extra="Khi gõ notes thủ công, timestamp sẽ lùi lại X giây để bù thời gian phản ứng (0-60 giây)"
+                  >
+                    <Select placeholder="Chọn độ trễ">
+                      <Select.Option value={0}>0s (không trễ)</Select.Option>
+                      <Select.Option value={3}>3s</Select.Option>
+                      <Select.Option value={5}>5s</Select.Option>
+                      <Select.Option value={8}>8s (khuyến nghị)</Select.Option>
+                      <Select.Option value={10}>10s</Select.Option>
+                      <Select.Option value={15}>15s</Select.Option>
+                      <Select.Option value={20}>20s</Select.Option>
+                    </Select>
+                  </Form.Item>
+                  <div
+                    style={{
+                      marginTop: 24,
+                      padding: "14px 16px",
+                      background: "#eeecfd",
+                      border: "1px solid rgba(80,70,228,.22)",
+                      borderRadius: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        marginBottom: 12,
+                        fontWeight: 600,
+                        color: "#5046e4",
+                        fontSize: "14px",
+                      }}
+                    >
+                      🎯 Giới hạn Gemini API
+                    </div>
+
+                    <Form.Item
+                      label="Thời lượng audio tối đa (phút)"
+                      name="maxAudioDurationMinutes"
+                      initialValue={30}
+                      extra="Thời lượng tối đa của file audio để xử lý (mặc định: 30 phút)"
+                      rules={[
+                        { required: true, message: "Vui lòng nhập thời lượng" },
+                        {
+                          type: "number",
+                          min: 1,
+                          max: 999,
+                          message: "Vui lòng nhập từ 1-999 phút",
+                        },
+                      ]}
+                    >
+                      <InputNumber
+                        placeholder="Nhập thời lượng (phút)"
+                        min={1}
+                        max={999}
+                        style={{ width: "100%" }}
+                        addonAfter="phút"
+                      />
+                    </Form.Item>
+
+                    <Form.Item
+                      label="Kích thước file tối đa (MB)"
+                      name="maxFileSizeMB"
+                      initialValue={150}
+                      extra="Kích thước tối đa của mỗi file gửi lên Gemini API"
+                      rules={[
+                        { required: true, message: "Vui lòng nhập kích thước" },
+                        {
+                          type: "number",
+                          min: 1,
+                          max: 2000,
+                          message: "Vui lòng nhập từ 1-2000 MB",
+                        },
+                      ]}
+                    >
+                      <InputNumber
+                        placeholder="Nhập kích thước (MB)"
+                        min={1}
+                        max={2000}
+                        style={{ width: "100%" }}
+                        addonAfter="MB"
+                      />
+                    </Form.Item>
+
+                    <Form.Item
+                      label="Delay giữa các request (giây)"
+                      name="requestDelaySeconds"
+                      initialValue={5}
+                      extra="Thời gian chờ giữa 2 lần gửi request để tuân thủ rate limit (mặc định: 5s)"
+                      rules={[
+                        { required: true, message: "Vui lòng nhập delay" },
+                        {
+                          type: "number",
+                          min: 1,
+                          max: 60,
+                          message: "Vui lòng nhập từ 1-60 giây",
+                        },
+                      ]}
+                    >
+                      <InputNumber
+                        placeholder="Nhập delay (giây)"
+                        min={1}
+                        max={60}
+                        style={{ width: "100%" }}
+                        addonAfter="giây"
+                      />
+                    </Form.Item>
+
+                    <Form.Item
+                      label="Prompt tóm tắt"
+                      name="summaryPrompt"
+                      initialValue="Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có)."
+                      extra="Prompt tuỳ chỉnh để yêu cầu Gemini tóm tắt nội dung cuộc họp theo ý bạn"
+                    >
+                      <Input.TextArea
+                        placeholder="Nhập prompt tuỳ chỉnh cho tóm tắt..."
+                        rows={4}
+                        showCount
+                        maxLength={1000}
+                      />
+                    </Form.Item>
+
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        color: "#d97706",
+                        background: "#fffbeb",
+                        border: "1px solid #fcd34d",
+                        padding: "8px 10px",
+                        borderRadius: "6px",
+                        marginTop: "8px",
+                      }}
+                    >
+                      ⚠️ <strong>Lưu ý:</strong> Giới hạn này áp dụng cho tính
+                      năng "Chuyển đổi giọng nói bằng Gemini AI"
+                      <br />
+                      📊 Free tier: 15 requests/phút, 1500 requests/ngày
+                    </div>
                   </div>
-
-                  <Form.Item
-                    label="Thời lượng audio tối đa (phút)"
-                    name="maxAudioDurationMinutes"
-                    initialValue={30}
-                    extra="Thời lượng tối đa của file audio để xử lý (mặc định: 30 phút)"
-                    rules={[
-                      { required: true, message: 'Vui lòng nhập thời lượng' },
-                      { type: 'number', min: 1, max: 999, message: 'Vui lòng nhập từ 1-999 phút' }
-                    ]}
-                  >
-                    <InputNumber
-                      placeholder="Nhập thời lượng (phút)"
-                      min={1}
-                      max={999}
-                      style={{ width: '100%' }}
-                      addonAfter="phút"
-                    />
-                  </Form.Item>
-
-                  <Form.Item
-                    label="Kích thước file tối đa (MB)"
-                    name="maxFileSizeMB"
-                    initialValue={150}
-                    extra="Kích thước tối đa của mỗi file gửi lên Gemini API"
-                    rules={[
-                      { required: true, message: 'Vui lòng nhập kích thước' },
-                      { type: 'number', min: 1, max: 2000, message: 'Vui lòng nhập từ 1-2000 MB' }
-                    ]}
-                  >
-                    <InputNumber
-                      placeholder="Nhập kích thước (MB)"
-                      min={1}
-                      max={2000}
-                      style={{ width: '100%' }}
-                      addonAfter="MB"
-                    />
-                  </Form.Item>
-
-                  <Form.Item
-                    label="Delay giữa các request (giây)"
-                    name="requestDelaySeconds"
-                    initialValue={5}
-                    extra="Thời gian chờ giữa 2 lần gửi request để tuân thủ rate limit (mặc định: 5s)"
-                    rules={[
-                      { required: true, message: 'Vui lòng nhập delay' },
-                      { type: 'number', min: 1, max: 60, message: 'Vui lòng nhập từ 1-60 giây' }
-                    ]}
-                  >
-                    <InputNumber
-                      placeholder="Nhập delay (giây)"
-                      min={1}
-                      max={60}
-                      style={{ width: '100%' }}
-                      addonAfter="giây"
-                    />
-                  </Form.Item>
-
-                  <Form.Item
-                    label="Prompt tóm tắt"
-                    name="summaryPrompt"
-                    initialValue="Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có)."
-                    extra="Prompt tuỳ chỉnh để yêu cầu Gemini tóm tắt nội dung cuộc họp theo ý bạn"
-                  >
-                    <Input.TextArea
-                      placeholder="Nhập prompt tuỳ chỉnh cho tóm tắt..."
-                      rows={4}
-                      showCount
-                      maxLength={1000}
-                    />
-                  </Form.Item>
-
-                  <div style={{ 
-                    fontSize: '11px', 
-                    color: '#d97706',
-                    background: '#fffbeb',
-                    border: '1px solid #fcd34d',
-                    padding: '8px 10px',
-                    borderRadius: '6px',
-                    marginTop: '8px'
-                  }}>
-                    ⚠️ <strong>Lưu ý:</strong> Giới hạn này áp dụng cho tính năng "Chuyển đổi giọng nói bằng Gemini AI"<br />
-                    📊 Free tier: 15 requests/phút, 1500 requests/ngày
-                  </div>
-                </div>
-              </>
-            )
-          }]}
+                </>
+              ),
+            },
+          ]}
         />
 
         {/* <div
@@ -581,18 +703,20 @@ export const TranscriptionConfig: React.FC<Props> = ({
         <div
           style={{
             marginTop: 24,
-            padding: '14px 16px',
-            backgroundColor: '#ecfdf5',
-            border: '1px solid #6ee7b7',
+            padding: "14px 16px",
+            backgroundColor: "#ecfdf5",
+            border: "1px solid #6ee7b7",
             borderRadius: 10,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center'
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
           }}
         >
           <div>
-            <strong style={{ color: '#10b981', fontSize: '14px' }}>🔄 Tự động cập nhật</strong>
-            <div style={{ fontSize: '12px', color: '#475569', marginTop: 2 }}>
+            <strong style={{ color: "#10b981", fontSize: "14px" }}>
+              🔄 Tự động cập nhật
+            </strong>
+            <div style={{ fontSize: "12px", color: "#475569", marginTop: 2 }}>
               Kiểm tra khi mở ứng dụng
             </div>
           </div>
@@ -604,9 +728,9 @@ export const TranscriptionConfig: React.FC<Props> = ({
               onUpdateConfigChange?.(newConfig);
               UpdateManagerService.saveConfig(newConfig);
               message.success(
-                checked 
-                  ? '✅ Đã bật tự động cập nhật' 
-                  : '⚠️ Đã tắt tự động cập nhật'
+                checked
+                  ? "✅ Đã bật tự động cập nhật"
+                  : "⚠️ Đã tắt tự động cập nhật",
               );
             }}
           />
