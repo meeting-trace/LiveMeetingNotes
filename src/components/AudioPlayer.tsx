@@ -23,7 +23,7 @@ interface Props {
   transcriptionConfig?: any;
   onWaveformReady?: () => void; // fired when WaveSurfer finishes decoding + drawing
   onWaveformError?: (error: string) => void; // fired on decode/OOM errors
-  waveColor?: string;     // color of unplayed waveform (right of cursor)
+  waveColor?: string; // color of unplayed waveform (right of cursor)
   progressColor?: string; // color of played waveform (left of cursor)
 }
 
@@ -143,8 +143,12 @@ function generateRealisticPeaks(numPeaks: number, seed: number): number[] {
 
 export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
   (
-    { audioBlob, transcriptionConfig, onWaveformReady, onWaveformError,
-      waveColor = "#87c3fc",     // Ant Design blue-3 — light/unplayed
+    {
+      audioBlob,
+      transcriptionConfig,
+      onWaveformReady,
+      onWaveformError,
+      waveColor = "#87c3fc", // Ant Design blue-3 — light/unplayed
       progressColor = "#1677ff", // Ant Design blue-6 — vivid/played
     },
     ref,
