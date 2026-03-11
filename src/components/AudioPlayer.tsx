@@ -5,7 +5,7 @@ import {
   useImperativeHandle,
   forwardRef,
 } from "react";
-import { Button, Space, Slider, Select, Spin, Alert } from "antd";
+import { Button, Space, Slider, Select, Spin } from "antd";
 import {
   PlayCircleOutlined,
   PauseCircleOutlined,
@@ -36,8 +36,10 @@ export interface AudioPlayerRef {
 /** Files larger than this threshold skip AudioContext.decodeAudioData() to avoid OOM.
  *  WebAudio decode of a 5-hour 48kHz stereo recording requires ~7 GB RAM.
  *  Instead, WaveSurfer receives pre-computed flat peaks + HTML5 Audio duration.
+ *  NOTE: threshold is no longer used — all blobs now use the realistic-peaks path.
+ *  Kept for reference only.
  */
-const LARGE_FILE_THRESHOLD_BYTES = 80 * 1024 * 1024; // 80 MB
+// const LARGE_FILE_THRESHOLD_BYTES = 80 * 1024 * 1024; // 80 MB
 
 /** Resolve the duration of an <audio> element, handling WebM Infinity quirk.
  *  WebM files recorded by MediaRecorder often omit the Duration header →
@@ -153,14 +155,12 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
     },
     ref,
   ) => {
-    const audioRef = useRef<HTMLAudioElement>(null);
     const waveformRef = useRef<HTMLDivElement>(null);
     const wavesurferRef = useRef<WaveSurfer | null>(null);
     const fitZoomRef = useRef<number>(0); // px/sec that makes waveform fit the container exactly
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
-    const [audioUrl, setAudioUrl] = useState<string | null>(null);
     const [playbackRate, setPlaybackRate] = useState(1.0);
     const [volume, setVolume] = useState(100);
     const [zoom, setZoom] = useState(50);
@@ -169,7 +169,6 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
     const [loadingPhase, setLoadingPhase] = useState<"reading" | "decoding">(
       "reading",
     );
-    const [isLargeFileMode, setIsLargeFileMode] = useState(false);
 
     // Expose seekTo method to parent
     useImperativeHandle(ref, () => ({
@@ -189,25 +188,6 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
       getDuration: () => duration * 1000,
     }));
 
-    // Update audio source when blob changes
-    useEffect(() => {
-      if (audioBlob) {
-        const url = URL.createObjectURL(audioBlob);
-        setAudioUrl(url);
-
-        // Only revoke URL on cleanup (when component unmounts or new blob arrives)
-        return () => {
-          URL.revokeObjectURL(url);
-        };
-      } else {
-        // No blob, clear URL
-        if (audioUrl) {
-          URL.revokeObjectURL(audioUrl);
-          setAudioUrl(null);
-        }
-      }
-    }, [audioBlob]);
-
     // Initialize WaveSurfer
     useEffect(() => {
       if (!waveformRef.current || !audioBlob) return;
@@ -218,23 +198,19 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
       }
 
       try {
-        const isLargeFile = audioBlob.size > LARGE_FILE_THRESHOLD_BYTES;
-        setIsLargeFileMode(isLargeFile);
+        // ── Unified path: always use blob URL + custom Audio element + realistic
+        //   fake peaks.  This avoids AudioContext.decodeAudioData() for ALL blobs
+        //   (eliminates OOM for large files) and produces a visually rich waveform
+        //   for all cases, including short recordings whose real decoded waveform
+        //   would look flat because continuous speech has a narrow dynamic range.
+        const blobUrl = URL.createObjectURL(audioBlob);
+        let durationResolved = false; // guard: prevent post-cleanup load() call
 
-        // For large files, create an HTML Audio element as the WaveSurfer media backend.
-        // This avoids AudioContext.decodeAudioData() which would require gigabytes of RAM
-        // for long recordings (e.g. 5-hour recording → ~7 GB decoded PCM).
-        let largeBlobUrl: string | null = null;
-        let largeAudioEl: HTMLAudioElement | null = null;
-        let largeDurationResolved = false; // guard for async resolveAudioDuration
-        if (isLargeFile) {
-          largeBlobUrl = URL.createObjectURL(audioBlob);
-          largeAudioEl = new Audio();
-          largeAudioEl.src = largeBlobUrl;
-          largeAudioEl.preload = "metadata";
-        }
+        const audioEl = new Audio();
+        audioEl.src = blobUrl;
+        audioEl.preload = "metadata";
 
-        // Create WaveSurfer instance
+        // Create WaveSurfer instance with MediaElement backend
         const wavesurfer = WaveSurfer.create({
           container: waveformRef.current,
           waveColor,
@@ -245,41 +221,42 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
           barRadius: 2,
           height: 100,
           normalize: true,
-          interact: true, // Enable click to seek
-          dragToSeek: false, // Click only, no drag to seek
+          interact: true,
+          dragToSeek: false,
           hideScrollbar: false,
-          ...(isLargeFile && largeAudioEl ? { media: largeAudioEl } : {}),
+          media: audioEl,
         });
 
-        // Show loading indicator before starting to load
+        // Show loading indicator
         setIsLoadingWaveform(true);
         setLoadingProgress(0);
         setLoadingPhase("reading");
 
-        if (isLargeFile && largeBlobUrl && largeAudioEl) {
-          // ── Large-file path: skip decodeAudioData, use flat placeholder peaks ──
-          // WaveSurfer v7: when load(url, channelData, duration) is called with
-          // channelData provided, it skips the fetch+decode step entirely and
-          // renders the supplied peaks directly.
-          const capturedUrl = largeBlobUrl;
-          const capturedEl = largeAudioEl;
-          resolveAudioDuration(capturedEl).then((audioDuration) => {
-            if (largeDurationResolved) return; // blob changed / component unmounted
-            const numPeaks = 3000;
-            const realisticPeaks = generateRealisticPeaks(
-              numPeaks,
-              audioBlob.size,
+        // Resolve duration, then render realistic peaks (skip decodeAudioData entirely)
+        resolveAudioDuration(audioEl).then((audioDuration) => {
+          if (durationResolved) return; // cleanup ran before promise resolved
+          durationResolved = true;
+
+          // Fallback: estimate duration from blob size when metadata is unavailable
+          // (streaming WebM without Duration header → audio.duration = Infinity).
+          // WebM/Opus ~128 kbps = 16 000 bytes/s; WAV 16-bit mono 16 kHz = 32 000 bytes/s.
+          let finalDuration = audioDuration;
+          if (!(finalDuration > 0)) {
+            finalDuration = audioBlob.type.includes("wav")
+              ? Math.max((audioBlob.size - 44) / 32000, 1)
+              : Math.max(audioBlob.size / 16000, 1);
+            console.warn(
+              `⚠️ Duration unavailable, estimated ${finalDuration.toFixed(1)}s from blob size`,
             );
-            wavesurfer.load(
-              capturedUrl,
-              [realisticPeaks],
-              audioDuration > 0 ? audioDuration : undefined,
-            );
-          });
-        } else {
-          // ── Normal path: loadBlob → decodeAudioData → real peaks ──
-          wavesurfer.loadBlob(audioBlob);
-        }
+          }
+
+          const numPeaks = 3000;
+          const realisticPeaks = generateRealisticPeaks(
+            numPeaks,
+            audioBlob.size,
+          );
+          wavesurfer.load(blobUrl, [realisticPeaks], finalDuration);
+        });
 
         // Event listeners
         wavesurfer.on("loading", (percent: number) => {
@@ -363,8 +340,6 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
           // Update current time while seeking/dragging
           setCurrentTime(currentTime);
         });
-
-        wavesurferRef.current = wavesurfer;
 
         // Get waveform container for event handlers
         const waveformContainer = waveformRef.current;
@@ -581,12 +556,9 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
         // Cleanup function
         return () => {
           setIsLoadingWaveform(false);
-          setIsLargeFileMode(false);
-          largeDurationResolved = true; // prevent pending resolveAudioDuration from calling load()
-          fitZoomRef.current = 0; // reset so next file starts fresh
-          if (largeBlobUrl) {
-            URL.revokeObjectURL(largeBlobUrl);
-          }
+          durationResolved = true; // prevent post-cleanup load() call
+          fitZoomRef.current = 0;
+          URL.revokeObjectURL(blobUrl);
           try {
             waveformContainer.removeEventListener("wheel", handleWheel);
             waveformContainer.removeEventListener(
@@ -620,26 +592,6 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
         return () => {};
       }
     }, [audioBlob]);
-
-    // Setup audio element event listeners
-    useEffect(() => {
-      const audio = audioRef.current;
-      if (!audio) return;
-
-      const updateTime = () => setCurrentTime(audio.currentTime);
-      const updateDuration = () => setDuration(audio.duration);
-      const handleEnded = () => setIsPlaying(false);
-
-      audio.addEventListener("timeupdate", updateTime);
-      audio.addEventListener("loadedmetadata", updateDuration);
-      audio.addEventListener("ended", handleEnded);
-
-      return () => {
-        audio.removeEventListener("timeupdate", updateTime);
-        audio.removeEventListener("loadedmetadata", updateDuration);
-        audio.removeEventListener("ended", handleEnded);
-      };
-    }, [audioUrl]);
 
     // Update WaveSurfer playback rate
     useEffect(() => {
@@ -763,22 +715,6 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
 
     return (
       <div className="audio-player">
-        {/* Large-file mode banner --- Đang bỏ qua cảnh báo này vì đã tự fake dạng sóng rồi */}
-        {isLargeFileMode && false && !isLoadingWaveform && (
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginBottom: 8, fontSize: 12 }}
-            message={
-              <span>
-                <strong>Chế độ file lớn:</strong> Waveform hiển thị dạng đơn
-                giản (bỏ qua giải mã PCM) để tránh lỗi bộ nhớ. Phát lại và tua
-                hoạt động bình thường.
-              </span>
-            }
-          />
-        )}
-
         {/* Waveform Container */}
         <div className="waveform-container" style={{ position: "relative" }}>
           <div
