@@ -77,6 +77,68 @@ function resolveAudioDuration(el: HTMLAudioElement): Promise<number> {
   });
 }
 
+/**
+ * Generate visually realistic waveform peaks for large files where full
+ * AudioContext decode is skipped to avoid OOM.
+ *
+ * Simulates a typical meeting recording:
+ *   • Speech/silence zones (cosine-interpolated transitions)
+ *   • Within-speech amplitude variation (phoneme-level flutter)
+ *   • Seeded from blob size so the same file always renders identically
+ */
+function generateRealisticPeaks(numPeaks: number, seed: number): number[] {
+  // Seeded 32-bit LCG PRNG — fast and deterministic
+  let s = seed >>> 0 || 123456789;
+  const rand = () => {
+    s = (Math.imul(s, 1664525) + 1013904223) | 0;
+    return (s >>> 0) / 4294967296;
+  };
+
+  // ── Step 1: Speech/silence envelope ──────────────────────────────
+  // 48 zones across the recording; ~65% speech, ~35% silence
+  const NUM_ZONES = 48;
+  const zoneAmplitude = Array.from(
+    { length: NUM_ZONES },
+    () =>
+      rand() > 0.35
+        ? rand() * 0.55 + 0.35 // speech  : 0.35–0.90
+        : rand() * 0.08 + 0.02, // silence : 0.02–0.10
+  );
+
+  // ── Step 2: Per-peak value via cosine-interpolated envelope ──────
+  const raw = new Array<number>(numPeaks);
+  for (let i = 0; i < numPeaks; i++) {
+    const t = (i / numPeaks) * (NUM_ZONES - 1);
+    const z0 = Math.floor(t);
+    const z1 = Math.min(z0 + 1, NUM_ZONES - 1);
+    const frac = t - z0;
+    // Cosine interpolation → smooth speech↔silence transitions
+    const interp =
+      zoneAmplitude[z0] +
+      (zoneAmplitude[z1] - zoneAmplitude[z0]) *
+        (1 - Math.cos(frac * Math.PI)) *
+        0.5;
+    // High-frequency flutter (phoneme / word boundaries)
+    const flutter = rand() * 0.35 + 0.65; // 0.65–1.00 multiplier
+    raw[i] = Math.max(0.02, Math.min(0.95, interp * flutter));
+  }
+
+  // ── Step 3: Light smoothing pass (window = ±4) ───────────────────
+  const W = 4;
+  const smoothed = new Array<number>(numPeaks);
+  for (let i = 0; i < numPeaks; i++) {
+    let sum = 0,
+      cnt = 0;
+    for (let j = Math.max(0, i - W); j <= Math.min(numPeaks - 1, i + W); j++) {
+      sum += raw[j];
+      cnt++;
+    }
+    smoothed[i] = sum / cnt;
+  }
+
+  return smoothed;
+}
+
 export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
   (
     { audioBlob, transcriptionConfig, onWaveformReady, onWaveformError },
@@ -85,6 +147,7 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
     const audioRef = useRef<HTMLAudioElement>(null);
     const waveformRef = useRef<HTMLDivElement>(null);
     const wavesurferRef = useRef<WaveSurfer | null>(null);
+    const fitZoomRef = useRef<number>(0); // px/sec that makes waveform fit the container exactly
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
@@ -194,10 +257,13 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
           resolveAudioDuration(capturedEl).then((audioDuration) => {
             if (largeDurationResolved) return; // blob changed / component unmounted
             const numPeaks = 3000;
-            const flatPeaks = new Array<number>(numPeaks).fill(0.08);
+            const realisticPeaks = generateRealisticPeaks(
+              numPeaks,
+              audioBlob.size,
+            );
             wavesurfer.load(
               capturedUrl,
-              [flatPeaks],
+              [realisticPeaks],
               audioDuration > 0 ? audioDuration : undefined,
             );
           });
@@ -220,10 +286,19 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
         wavesurfer.on("ready", () => {
           setIsLoadingWaveform(false);
           setLoadingProgress(100);
-          setDuration(wavesurfer.getDuration());
+          const dur = wavesurfer.getDuration();
+          setDuration(dur);
+          // Calculate the natural "fit to container" zoom level so handleWheel
+          // can use it as the lower bound and prevent over-zooming-out.
+          const containerW = waveformRef.current?.offsetWidth ?? 0;
+          if (dur > 0 && containerW > 0) {
+            fitZoomRef.current = containerW / dur;
+          }
           console.log(
             "✅ WaveSurfer ready, duration:",
-            wavesurfer.getDuration(),
+            dur,
+            "fitZoom:",
+            fitZoomRef.current.toFixed(4),
           );
           onWaveformReady?.();
         });
@@ -465,20 +540,21 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
           e.preventDefault();
           e.stopPropagation();
 
-          // Determine zoom direction based on wheel delta
-          const delta = e.deltaY;
-          const zoomStep = 5;
+          // Multiplicative zoom: each scroll step scales by 25%.
+          // This feels natural at every zoom level (both tiny px/sec and large).
+          const ZOOM_FACTOR = 1.25;
+          // Lower bound = the px/sec that fills the container exactly (no scrollbar).
+          // Falls back to 1 before the first "ready" event fires.
+          const minZoom = fitZoomRef.current > 0 ? fitZoomRef.current : 1;
 
           setZoom((prevZoom) => {
-            let newZoom;
-            if (delta < 0) {
-              // Scroll up = Zoom in
-              newZoom = Math.min(prevZoom + zoomStep, 200);
+            if (e.deltaY < 0) {
+              // Scroll up → zoom in
+              return Math.min(prevZoom * ZOOM_FACTOR, 1000);
             } else {
-              // Scroll down = Zoom out
-              newZoom = Math.max(prevZoom - zoomStep, 10);
+              // Scroll down → zoom out, but never below natural fit
+              return Math.max(prevZoom / ZOOM_FACTOR, minZoom);
             }
-            return newZoom;
           });
         };
 
@@ -494,6 +570,7 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
           setIsLoadingWaveform(false);
           setIsLargeFileMode(false);
           largeDurationResolved = true; // prevent pending resolveAudioDuration from calling load()
+          fitZoomRef.current = 0; // reset so next file starts fresh
           if (largeBlobUrl) {
             URL.revokeObjectURL(largeBlobUrl);
           }
@@ -640,11 +717,12 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
     };
 
     const handleZoomIn = () => {
-      setZoom((prev) => Math.min(prev + 10, 200));
+      setZoom((prev) => Math.min(prev * 1.25, 1000));
     };
 
     const handleZoomOut = () => {
-      setZoom((prev) => Math.max(prev - 10, 10));
+      const minZoom = fitZoomRef.current > 0 ? fitZoomRef.current : 1;
+      setZoom((prev) => Math.max(prev / 1.25, minZoom));
     };
 
     const formatTime = (seconds: number): string => {
