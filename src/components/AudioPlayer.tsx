@@ -23,6 +23,8 @@ interface Props {
   transcriptionConfig?: any;
   onWaveformReady?: () => void; // fired when WaveSurfer finishes decoding + drawing
   onWaveformError?: (error: string) => void; // fired on decode/OOM errors
+  waveColor?: string;     // color of unplayed waveform (right of cursor)
+  progressColor?: string; // color of played waveform (left of cursor)
 }
 
 export interface AudioPlayerRef {
@@ -141,7 +143,10 @@ function generateRealisticPeaks(numPeaks: number, seed: number): number[] {
 
 export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
   (
-    { audioBlob, transcriptionConfig, onWaveformReady, onWaveformError },
+    { audioBlob, transcriptionConfig, onWaveformReady, onWaveformError,
+      waveColor = "#87c3fc",     // Ant Design blue-3 — light/unplayed
+      progressColor = "#1677ff", // Ant Design blue-6 — vivid/played
+    },
     ref,
   ) => {
     const audioRef = useRef<HTMLAudioElement>(null);
@@ -228,8 +233,8 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
         // Create WaveSurfer instance
         const wavesurfer = WaveSurfer.create({
           container: waveformRef.current,
-          waveColor: "#4a9eff",
-          progressColor: "#1890ff",
+          waveColor,
+          progressColor,
           cursorColor: "#ff4d4f",
           barWidth: 2,
           barGap: 1,
@@ -293,6 +298,10 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
           const containerW = waveformRef.current?.offsetWidth ?? 0;
           if (dur > 0 && containerW > 0) {
             fitZoomRef.current = containerW / dur;
+            // Sync zoom state to match the actual auto-fit zoom WaveSurfer is
+            // displaying. Without this, state=50 while reality=fitZoom, causing
+            // scroll-out to traverse a huge range before reaching full view.
+            setZoom(fitZoomRef.current);
           }
           console.log(
             "✅ WaveSurfer ready, duration:",
