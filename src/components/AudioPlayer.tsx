@@ -763,8 +763,8 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
 
     return (
       <div className="audio-player">
-        {/* Large-file mode banner */}
-        {isLargeFileMode && !isLoadingWaveform && (
+        {/* Large-file mode banner --- Đang bỏ qua cảnh báo này vì đã tự fake dạng sóng rồi */}
+        {isLargeFileMode && false && !isLoadingWaveform && (
           <Alert
             type="info"
             showIcon
