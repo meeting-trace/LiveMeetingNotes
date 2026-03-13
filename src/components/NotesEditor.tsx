@@ -929,7 +929,7 @@ export const NotesEditor: React.FC<Props> = ({
                   timeMs !== undefined && handleDatetimeDoubleClick(e, index)
                 }
                 style={{
-                  width: isLiveMode ? "150px" : "90px",
+                  width: isLiveMode ? "160px" : "90px",
                   backgroundColor: isSelected
                     ? "rgba(79, 70, 229, 0.12)"
                     : "#f0f4fa",
@@ -986,7 +986,7 @@ export const NotesEditor: React.FC<Props> = ({
               {/* Speaker Name TextArea */}
               <div
                 style={{
-                  width: "150px",
+                  width: "160px",
                   backgroundColor: isSelected
                     ? "rgba(79, 70, 229, 0.12)"
                     : "#f0f4fa",
