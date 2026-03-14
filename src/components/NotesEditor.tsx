@@ -95,10 +95,6 @@ export const NotesEditor: React.FC<Props> = ({
   const textRefs = useRef<Map<number, TextAreaRef>>(new Map());
   const syncDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ResizeObserver refs to sync heights between speaker and content textareas (bidirectional)
-  const contentObserversRef = useRef<Map<number, ResizeObserver>>(new Map());
-  const speakerObserversRef = useRef<Map<number, ResizeObserver>>(new Map());
-
   // ✅ NEW CLEAN STATE: Single source of truth - array of NoteLine objects
   const [lines, setLines] = useState<NoteLine[]>(() =>
     legacyFormatToLines(notes, timestampMap, initialSpeakers || new Map()),
@@ -867,6 +863,12 @@ export const NotesEditor: React.FC<Props> = ({
   // ✅ Render section (REFACTORED with NoteLine[])
   return (
     <div className="notes-editor-container">
+      <style>{`
+        .notes-editor-container .sync-textarea,
+        .notes-editor-container .sync-textarea > textarea {
+          min-height: 100% !important;
+        }
+      `}</style>
       <div className="editor-header">
         <h3>📝 Ghi chép thủ công</h3>
         <div className="editor-controls">
@@ -994,35 +996,21 @@ export const NotesEditor: React.FC<Props> = ({
                   padding: "0",
                   flexShrink: 0,
                   display: "flex",
-                  alignItems: "flex-start",
+                  alignItems: "stretch",
+                  cursor: "text",
+                }}
+                onClick={() => {
+                  const el = speakerRefs.current.get(index)?.resizableTextArea?.textArea;
+                  if (el) el.focus();
                 }}
               >
                 <TextArea
+                  className="sync-textarea"
                   ref={(el) => {
                     if (el) {
                       speakerRefs.current.set(index, el);
-                      // Sync content textarea minHeight when speaker textarea grows
-                      const speakerTextarea = el.resizableTextArea?.textArea;
-                      if (speakerTextarea) {
-                        speakerObserversRef.current.get(index)?.disconnect();
-                        const observer = new ResizeObserver(() => {
-                          const h = speakerTextarea.offsetHeight;
-                          if (h > 0) {
-                            const textRef = textRefs.current.get(index);
-                            const contentTextarea =
-                              textRef?.resizableTextArea?.textArea;
-                            if (contentTextarea) {
-                              contentTextarea.style.minHeight = `${h}px`;
-                            }
-                          }
-                        });
-                        observer.observe(speakerTextarea);
-                        speakerObserversRef.current.set(index, observer);
-                      }
                     } else {
                       speakerRefs.current.delete(index);
-                      speakerObserversRef.current.get(index)?.disconnect();
-                      speakerObserversRef.current.delete(index);
                     }
                   }}
                   value={line.speaker || ""} // ✅ Read from NoteLine object
@@ -1044,31 +1032,12 @@ export const NotesEditor: React.FC<Props> = ({
 
               {/* Text Input */}
               <TextArea
+                className="sync-textarea"
                 ref={(el) => {
                   if (el) {
                     textRefs.current.set(index, el);
-                    // Directly sync speaker textarea minHeight via DOM to avoid autoSize override
-                    const textarea = el.resizableTextArea?.textArea;
-                    if (textarea) {
-                      contentObserversRef.current.get(index)?.disconnect();
-                      const observer = new ResizeObserver(() => {
-                        const h = textarea.offsetHeight;
-                        if (h > 0) {
-                          const speakerRef = speakerRefs.current.get(index);
-                          const speakerTextarea =
-                            speakerRef?.resizableTextArea?.textArea;
-                          if (speakerTextarea) {
-                            speakerTextarea.style.minHeight = `${h}px`;
-                          }
-                        }
-                      });
-                      observer.observe(textarea);
-                      contentObserversRef.current.set(index, observer);
-                    }
                   } else {
                     textRefs.current.delete(index);
-                    contentObserversRef.current.get(index)?.disconnect();
-                    contentObserversRef.current.delete(index);
                   }
                 }}
                 value={line.content} // ✅ Read from NoteLine object
