@@ -86,8 +86,10 @@ function resolveAudioDuration(el: HTMLAudioElement): Promise<number> {
  * AudioContext decode is skipped to avoid OOM.
  *
  * Simulates a typical meeting recording:
- *   • Speech/silence zones (cosine-interpolated transitions)
- *   • Within-speech amplitude variation (phoneme-level flutter)
+ *   • Speech zones  : amplitude 0.30–0.90 with per-peak phoneme flutter
+ *   • Silence zones : amplitude 0.005–0.025 (near-flat, barely visible)
+ *   • Sharp speech↔silence edges (flutter suppressed in silence, narrow
+ *     smoothing window so silence doesn't bleed into adjacent speech)
  *   • Seeded from blob size so the same file always renders identically
  */
 function generateRealisticPeaks(numPeaks: number, seed: number): number[] {
@@ -98,16 +100,18 @@ function generateRealisticPeaks(numPeaks: number, seed: number): number[] {
     return (s >>> 0) / 4294967296;
   };
 
-  // ── Step 1: Speech/silence envelope ──────────────────────────────
-  // 48 zones across the recording; ~65% speech, ~35% silence
-  const NUM_ZONES = 48;
-  const zoneAmplitude = Array.from(
-    { length: NUM_ZONES },
-    () =>
-      rand() > 0.35
-        ? rand() * 0.55 + 0.35 // speech  : 0.35–0.90
-        : rand() * 0.08 + 0.02, // silence : 0.02–0.10
-  );
+  // ── Step 1: Speech/silence zone envelope ─────────────────────────
+  // 64 zones (finer granularity) — ~65% speech, ~35% silence
+  const NUM_ZONES = 64;
+  const zones = Array.from({ length: NUM_ZONES }, () => {
+    const isSpeech = rand() > 0.35;
+    return {
+      amplitude: isSpeech
+        ? rand() * 0.60 + 0.30  // speech  : 0.30–0.90  (clearly visible)
+        : rand() * 0.02 + 0.005, // silence : 0.005–0.025 (near-flat)
+      isSpeech,
+    };
+  });
 
   // ── Step 2: Per-peak value via cosine-interpolated envelope ──────
   const raw = new Array<number>(numPeaks);
@@ -116,19 +120,29 @@ function generateRealisticPeaks(numPeaks: number, seed: number): number[] {
     const z0 = Math.floor(t);
     const z1 = Math.min(z0 + 1, NUM_ZONES - 1);
     const frac = t - z0;
-    // Cosine interpolation → smooth speech↔silence transitions
+    // Cosine interpolation → smooth speech↔speech transitions,
+    // still reasonably sharp at speech↔silence edges
     const interp =
-      zoneAmplitude[z0] +
-      (zoneAmplitude[z1] - zoneAmplitude[z0]) *
+      zones[z0].amplitude +
+      (zones[z1].amplitude - zones[z0].amplitude) *
         (1 - Math.cos(frac * Math.PI)) *
         0.5;
-    // High-frequency flutter (phoneme / word boundaries)
-    const flutter = rand() * 0.35 + 0.65; // 0.65–1.00 multiplier
-    raw[i] = Math.max(0.02, Math.min(0.95, interp * flutter));
+    // Flutter (phoneme / word boundaries) ONLY applied in speech zones.
+    // Applying flutter to silence would push near-zero values to 0.025×1.0
+    // which is fine, but more importantly it must NOT apply across the
+    // speech side of a blended transition into silence.
+    const inSpeech = zones[z0].isSpeech || zones[z1].isSpeech;
+    const flutter = inSpeech
+      ? rand() * 0.35 + 0.65  // speech  : 0.65–1.00 multiplier
+      : 1.0;                   // silence : no boost
+    // Floor 0.005 so silence bars are barely visible (not completely invisible)
+    raw[i] = Math.max(0.005, Math.min(0.95, interp * flutter));
   }
 
-  // ── Step 3: Light smoothing pass (window = ±4) ───────────────────
-  const W = 4;
+  // ── Step 3: Light smoothing pass (window = ±2, down from ±4) ─────
+  // Narrower window preserves the sharp speech↔silence edges and prevents
+  // high-amplitude speech peaks from bleeding into adjacent silence zones.
+  const W = 2;
   const smoothed = new Array<number>(numPeaks);
   for (let i = 0; i < numPeaks; i++) {
     let sum = 0,
@@ -205,9 +219,14 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
         //   would look flat because continuous speech has a narrow dynamic range.
         const blobUrl = URL.createObjectURL(audioBlob);
         let durationResolved = false; // guard: prevent post-cleanup load() call
+        let resolvedDuration = 0; // closure: captures finalDuration for ready event fallback
 
+        // Create audioEl WITHOUT src first.
+        // If src is set before WaveSurfer.create(), the constructor captures
+        // getSrc() = blobUrl as initialUrl and auto-calls load(blobUrl) WITHOUT
+        // peaks — triggering a full AudioContext.decodeAudioData() that OOMs on
+        // large files and emits an error event AFTER ready, resetting duration to 0.
         const audioEl = new Audio();
-        audioEl.src = blobUrl;
         audioEl.preload = "metadata";
 
         // Create WaveSurfer instance with MediaElement backend
@@ -226,6 +245,10 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
           hideScrollbar: false,
           media: audioEl,
         });
+
+        // Set src AFTER WaveSurfer.create() so the constructor captured
+        // initialUrl = '' and will NOT auto-load without peaks.
+        audioEl.src = blobUrl;
 
         // Show loading indicator
         setIsLoadingWaveform(true);
@@ -255,6 +278,11 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
             numPeaks,
             audioBlob.size,
           );
+          // Reset currentTime to 0 in case the seek trick (currentTime = 1e9)
+          // was used by resolveAudioDuration to work around Infinity duration.
+          audioEl.currentTime = 0;
+          // Save finalDuration in closure for ready-event fallback
+          resolvedDuration = finalDuration;
           wavesurfer.load(blobUrl, [realisticPeaks], finalDuration);
         });
 
@@ -272,7 +300,17 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
         wavesurfer.on("ready", () => {
           setIsLoadingWaveform(false);
           setLoadingProgress(100);
-          const dur = wavesurfer.getDuration();
+          // wavesurfer.getDuration() reads audioEl.duration, but wavesurfer.load()
+          // internally calls audioEl.load() which resets duration to NaN/0 on
+          // large files before the browser can reload metadata. Fall back to the
+          // duration we resolved before calling load().
+          const wsDur = wavesurfer.getDuration();
+          const dur = wsDur > 0 ? wsDur : resolvedDuration;
+          if (!(wsDur > 0) && resolvedDuration > 0) {
+            console.warn(
+              `⚠️ WaveSurfer.getDuration()=0, using pre-resolved ${resolvedDuration.toFixed(1)}s`,
+            );
+          }
           setDuration(dur);
           // Calculate the natural "fit to container" zoom level so handleWheel
           // can use it as the lower bound and prevent over-zooming-out.
@@ -287,17 +325,27 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
           console.log(
             "✅ WaveSurfer ready, duration:",
             dur,
-            "fitZoom:",
-            fitZoomRef.current.toFixed(4),
+            "(wsDur:",
+            wsDur,
+            "resolvedDuration:",
+            resolvedDuration,
+            ")",
           );
           onWaveformReady?.();
         });
 
         // Add error handler
         wavesurfer.on("error", (error) => {
+          // Ignore AbortError: fired when wavesurfer.load() cancels a previous
+          // in-flight load (e.g. if the user switches audio or our own load()
+          // call pre-empts WaveSurfer's internal auto-load). Resetting duration
+          // here would incorrectly overwrite the value set in the ready handler.
+          if ((error as any)?.name === "AbortError") return;
+
           setIsLoadingWaveform(false);
           console.error("❌ WaveSurfer error:", error);
-          setDuration(0);
+          // Only reset duration if we haven't successfully set it yet
+          if (resolvedDuration === 0) setDuration(0);
           const msg = (error as any)?.message || String(error);
           // Detect Out-of-Memory: browser throws DOMException or generic Error
           const isOOM =
