@@ -8,7 +8,7 @@ interface Props {
   transcriptions: TranscriptionResult[];
   isTranscribing: boolean;
   isOnline: boolean;
-  onSeekAudio?: (timeMs: number) => void;
+  onSeekAudio?: (timeMs: number, shouldPlay?: boolean) => void;
   onEditTranscription?: (id: string, newText: string, newSpeaker: string, newStartTime?: string, newAudioTimeMs?: number) => void;
   onAIRefine?: () => void;
   canRefineWithAI?: boolean;
@@ -207,9 +207,9 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
     return 0;
   };
 
-  const handleSeekToTime = useCallback((timeMs: number) => {
+  const handleSeekToTime = useCallback((timeMs: number, shouldPlay?: boolean) => {
     if (onSeekAudio) {
-      onSeekAudio(timeMs);
+      onSeekAudio(timeMs, shouldPlay);
     }
   }, [onSeekAudio]);
 

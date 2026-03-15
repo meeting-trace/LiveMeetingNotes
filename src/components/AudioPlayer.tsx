@@ -187,9 +187,12 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
     // Expose seekTo method to parent
     useImperativeHandle(ref, () => ({
       seekTo: (timeMs: number) => {
-        if (wavesurferRef.current && duration > 0) {
+        if (wavesurferRef.current) {
           const timeSeconds = timeMs / 1000;
-          wavesurferRef.current.seekTo(timeSeconds / duration);
+          // Use setTime() directly instead of seekTo(ratio) to avoid the
+          // getDuration() → Infinity issue on short WebM recordings where
+          // media.duration may not yet be resolved.
+          wavesurferRef.current.setTime(timeSeconds);
           // console.log(`🎵 Seeked to ${timeSeconds.toFixed(2)}s`);
         }
       },
