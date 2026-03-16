@@ -1482,7 +1482,7 @@ export const App: React.FC = () => {
                 <br />
                 2️⃣ Chờ hệ thống tải danh sách models
                 <br />
-                3️⃣ Chọn model từ dropdown (khuyên dùng: Gemini 2.5 Flash)
+                3️⃣ Chọn model từ dropdown (khuyên dùng: Gemini Flash Latest)
                 <br />
                 4️⃣ Lưu và thử lại
               </div>
@@ -3164,7 +3164,7 @@ export const App: React.FC = () => {
                 <li>Click "Create API Key"</li>
                 <li>Copy API key và paste vào Settings → Gemini API Key</li>
                 <li>Hệ thống sẽ tự động tải danh sách models</li>
-                <li>Chọn model (khuyên dùng: Gemini 2.5 Flash)</li>
+                <li>Chọn model (khuyên dùng: Gemini Flash Latest)</li>
               </ol>
             </div>
           </div>
@@ -3190,7 +3190,7 @@ export const App: React.FC = () => {
                 <li>Mở Settings</li>
                 <li>Nhập Gemini API Key (nếu chưa có)</li>
                 <li>Đợi hệ thống tải danh sách models</li>
-                <li>Chọn model từ dropdown (khuyên dùng: Gemini 2.5 Flash)</li>
+                <li>Chọn model từ dropdown (khuyên dùng: Gemini Flash Latest)</li>
                 <li>Lưu và thử lại</li>
               </ol>
             </div>

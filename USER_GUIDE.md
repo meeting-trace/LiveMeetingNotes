@@ -254,7 +254,7 @@ Sử dụng **Google Gemini AI** để chuẩn hóa và làm sạch kết quả 
 5. Hệ thống tự động tải danh sách models
 
 **Chọn Gemini Model:**
-- **Gemini 2.5 Flash** (Khuyên dùng): Nhanh, chất lượng tốt
+- **Gemini Flash Latest** (Khuyên dùng): Nhanh, chất lượng tốt
 - **Gemini 2.5 Pro**: Chất lượng cao hơn, chậm hơn
 - **Gemini 2.0 Flash**: Cân bằng giữa tốc độ và chất lượng
 

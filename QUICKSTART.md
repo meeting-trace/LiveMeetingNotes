@@ -54,7 +54,7 @@ Mở browser tại: **http://localhost:5173/**
 4. **Cấu hình AI Refinement (Optional)** - Nếu muốn dùng AI chuẩn hóa văn bản:
    - Lấy API Key miễn phí: https://aistudio.google.com/app/apikey
    - Paste vào **Settings → Gemini API Key**
-   - Chọn Model (khuyên dùng: **Gemini 2.5 Flash**)
+   - Chọn Model (khuyên dùng: **Gemini Flash Latest**)
    - ⚠️ **Lưu ý:** Không dùng với thông tin nhạy cảm
 
 #### B. Recording:

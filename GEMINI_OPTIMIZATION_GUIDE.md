@@ -106,7 +106,7 @@ estimatedTokens = Math.ceil(totalChars / 3) + 1000
 1. Truy cập: https://aistudio.google.com/app/apikey
 2. Tạo API Key mới (miễn phí)
 3. Paste vào Settings → Gemini API Key
-4. Chọn model (khuyến nghị: **Gemini 2.5 Flash**)
+4. Chọn model (khuyến nghị: **Gemini Flash Latest**)
 
 ### **Bước 2: Ghi âm và chuyển đổi**
 - Ghi âm như bình thường

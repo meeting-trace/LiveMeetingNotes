@@ -1,5 +1,7 @@
 import type { TranscriptionResult } from '../types/types';
 import type { FileManagerService } from './fileManager';
+import { splitWebmIntoChunks, isLikelyWebm, splitWavIntoChunks, isLikelyWav } from './webmSplitter';
+import { chunkStorage } from './chunkStorage';
 
 export interface RawTranscriptData {
   text: string;
@@ -632,7 +634,7 @@ export class AIRefinementService {
         'Vui lòng chọn Gemini Model trong Settings.\n\n' +
         'Bước 1: Mở Settings → Nhập Gemini API Key\n' +
         'Bước 2: Chờ hệ thống tải danh sách models\n' +
-        'Bước 3: Chọn model từ dropdown (ví dụ: Gemini 2.5 Flash)\n' +
+        'Bước 3: Chọn model từ dropdown (ví dụ: Gemini Flash Latest)\n' +
         'Bước 4: Lưu và thử lại'
       );
     }
@@ -787,7 +789,7 @@ export class AIRefinementService {
             `Model "${modelName}" không tồn tại hoặc không khả dụng.\n\n` +
             'Giải pháp:\n' +
             '1. Mở Settings → Click nút "Tải lại" bên cạnh Gemini Model\n' +
-            '2. Chọn model khác từ danh sách (khuyên dùng: Gemini 2.5 Flash)\n' +
+            '2. Chọn model khác từ danh sách (khuyên dùng: Gemini Flash Latest)\n' +
             '3. Lưu và thử lại\n\n' +
             `Chi tiết lỗi: ${errorMsg}`
           );
@@ -1749,34 +1751,69 @@ JSON output (không markdown):
   /**
    * Get audio duration in seconds from Blob
    */
+  /**
+   * Get audio duration WITHOUT calling decodeAudioData (which OOMs large files).
+   *
+   * Uses the HTML5 <audio> element's loadedmetadata event instead.
+   * For streaming WebM files whose `duration` is Infinity, falls back to seeking
+   * to a large timestamp so the browser scans to the end and reports real duration.
+   *
+   * If the element cannot determine duration within 10 s, falls back to a rough
+   * byte-based estimate to avoid blocking the caller indefinitely.
+   */
   private static async getAudioDuration(audioBlob: Blob): Promise<number> {
     return new Promise((resolve) => {
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const reader = new FileReader();
+      const url   = URL.createObjectURL(audioBlob);
+      const audio = new Audio();
+      audio.preload = 'metadata';
 
-      reader.onload = async (e) => {
-        try {
-          const arrayBuffer = e.target?.result as ArrayBuffer;
-          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-          const duration = audioBuffer.duration; // in seconds
-          await audioContext.close(); // Clean up
-          resolve(duration);
-        } catch (error) {
-          // Fallback: estimate from file size (very rough)
-          console.warn('Cannot decode audio for duration, estimating from size');
-          const estimatedDuration = audioBlob.size / (16000 * 2); // Assume 16kHz mono 16-bit
-          resolve(estimatedDuration);
+      let settled = false;
+      const settle = (dur: number) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(bail);
+        URL.revokeObjectURL(url);
+        resolve(dur > 0 && isFinite(dur) ? dur : estimateFromSize(audioBlob));
+      };
+
+      // Bail-out after 10 seconds — don't block transcription forever
+      const bail = setTimeout(() => {
+        console.warn('[getAudioDuration] Timeout — estimating from file size');
+        settle(estimateFromSize(audioBlob));
+      }, 10_000);
+
+      const onTimeUpdate = () => {
+        if (isFinite(audio.duration) && audio.duration > 0) {
+          audio.removeEventListener('timeupdate', onTimeUpdate);
+          settle(audio.duration);
         }
       };
 
-      reader.onerror = () => {
-        // Fallback
-        const estimatedDuration = audioBlob.size / (16000 * 2);
-        resolve(estimatedDuration);
-      };
-      
-      reader.readAsArrayBuffer(audioBlob);
+      audio.addEventListener('loadedmetadata', () => {
+        if (isFinite(audio.duration) && audio.duration > 0) {
+          settle(audio.duration);
+        } else {
+          // Infinity duration: streaming WebM without Duration header.
+          // Seek trick: jump to end so the browser scans the whole file.
+          audio.addEventListener('timeupdate', onTimeUpdate);
+          audio.currentTime = 1e9;
+        }
+      }, { once: true });
+
+      audio.addEventListener('error', () => {
+        console.warn('[getAudioDuration] Audio element error — estimating from size');
+        settle(estimateFromSize(audioBlob));
+      }, { once: true });
+
+      audio.src = url;
     });
+
+    function estimateFromSize(blob: Blob): number {
+      // WebM/Opus  ≈ 16 000 bytes/s (128 kbps)
+      // WAV 16-bit mono 16 kHz = 32 000 bytes/s
+      const isWav = blob.type.includes('wav');
+      return blob.size / (isWav ? 32_000 : 16_000);
+    }
   }
 
   /**
@@ -2324,6 +2361,294 @@ JSON output (không markdown):
     });
   }
 
+  // ============================================================
+  // MEMORY-SAFE BINARY CHUNKED PROCESSING (IndexedDB-backed)
+  // ============================================================
+
+  /**
+   * Shared IDB processing loop used by both WebM (EBML) and WAV binary-split paths.
+   *
+   * Precondition: chunks have already been stored in `chunkStorage` under `sessionId`.
+   * Each stored chunk Blob may be WebM or WAV — `convertToWav()` handles both.
+   *
+   * Memory profile per chunk:
+   *   read from IDB → decode small chunk (~50–200 MB PCM peak) → send WAV to Gemini
+   *   → delete from IDB immediately → GC
+   */
+  private static async processChunksFromIDB(
+    sessionId: string,
+    chunkBoundaries: Array<{ startMs: number; endMs: number }>,
+    apiKey: string,
+    modelName: string,
+    onProgress: ((p: number, msg?: string) => void) | undefined,
+    progressBase: number,    // progress value at start of loop  (e.g. 15)
+    progressRange: number,   // progress points allocated to loop (e.g. 80)
+    maxFileSizeMB: number,
+    requestDelaySeconds: number,
+    maxDurationMinutes: number,
+    meetingStartTime: Date | undefined,
+    summaryPrompt: string | undefined,
+    fileManager: FileManagerService | undefined,
+    languageCode: string | undefined,
+    logPrefix: string
+  ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
+    const chunkCount = chunkBoundaries.length;
+    const allResults: TranscriptionResult[] = [];
+    const allSummaries: string[] = [];
+    let hasTruncation = false;
+    const truncationWarnings: string[] = [];
+
+    for (let i = 0; i < chunkCount; i++) {
+      const boundary = chunkBoundaries[i];
+      const chunkProgressBase = progressBase + Math.round((i / chunkCount) * progressRange);
+      const chunkDurationMin = Math.round((boundary.endMs - boundary.startMs) / 60000);
+
+      if (onProgress) {
+        onProgress(
+          chunkProgressBase,
+          `📦 Phần ${i + 1}/${chunkCount}: ${(boundary.startMs / 60000).toFixed(0)}–${(boundary.endMs / 60000).toFixed(0)} phút (~${chunkDurationMin} phút)`
+        );
+      }
+
+      let chunkRecord: import('./chunkStorage').StoredChunk | null = null;
+      try {
+        // Read chunk from IDB
+        chunkRecord = await chunkStorage.getChunk(sessionId, i);
+        if (!chunkRecord) {
+          throw new Error(`Chunk ${i} not found in IndexedDB`);
+        }
+
+        const chunkSizeMB = (chunkRecord.blob.size / 1024 / 1024).toFixed(1);
+        console.log(`[${logPrefix}] Processing chunk ${i + 1}/${chunkCount}: ${chunkSizeMB} MB`);
+
+        // Convert small chunk → WAV (safe: small decode footprint)
+        if (onProgress) {
+          onProgress(chunkProgressBase + 1, `🔄 Phần ${i + 1}/${chunkCount}: Đang chuyển đổi sang WAV...`);
+        }
+        const wavBlob = await this.convertToWav(chunkRecord.blob, 16000);
+
+        // Send WAV to Gemini
+        const parsed = await this.transcribeAudioWithGemini(
+          apiKey,
+          wavBlob,
+          modelName,
+          (subProgress, subMsg) => {
+            if (onProgress) {
+              const mapped = chunkProgressBase + Math.round((subProgress / 100) * (progressRange / chunkCount));
+              onProgress(mapped, `📦 ${i + 1}/${chunkCount}: ${subMsg ?? subProgress.toFixed(0) + '%'}`);
+            }
+          },
+          true, // skipSizeCheck
+          maxFileSizeMB,
+          meetingStartTime,
+          summaryPrompt,
+          fileManager,
+          { index: i + 1, total: chunkCount },
+          languageCode,
+          maxDurationMinutes
+        );
+
+        // Adjust timestamps and collect results
+        const adjustedResults = this.adjustTimestamps(parsed.results, boundary.startMs);
+        allResults.push(...adjustedResults);
+        console.log(`[${logPrefix}] Chunk ${i + 1}: ${adjustedResults.length} segments`);
+
+        if (parsed.summary) {
+          allSummaries.push(`Phần ${i + 1}/${chunkCount}: ${parsed.summary}`);
+        }
+        if (parsed.isTruncated) {
+          hasTruncation = true;
+          if (parsed.truncationWarning) truncationWarnings.push(parsed.truncationWarning);
+        }
+
+        if (onProgress) {
+          onProgress(
+            chunkProgressBase + Math.round(progressRange / chunkCount),
+            `✅ Phần ${i + 1}/${chunkCount}: ${adjustedResults.length} đoạn hội thoại`
+          );
+        }
+
+      } catch (chunkErr: any) {
+        if (chunkErr.message?.includes('RECITATION_ERROR') || chunkErr.message?.includes('SAFETY_ERROR')) {
+          console.warn(`[${logPrefix}] Chunk ${i + 1} skipped: ${chunkErr.message}`);
+          truncationWarnings.push(`Phần ${i + 1}/${chunkCount} bị bỏ qua: ${chunkErr.message}`);
+          if (onProgress) onProgress(chunkProgressBase + Math.round(progressRange / chunkCount), `⚠️ Phần ${i + 1} bị bỏ qua`);
+        } else if (chunkErr.message?.includes('429') || chunkErr.message?.includes('quota')) {
+          await chunkStorage.deleteSession(sessionId).catch(() => {});
+          throw new Error(
+            `Vượt hạn mức API tại phần ${i + 1}/${chunkCount}.\n` +
+            `✅ Đã xử lý: ${i} phần\n❌ Lỗi: ${chunkErr.message}\n\n` +
+            `💡 Đợi 24 giờ hoặc nâng cấp Paid tier.`
+          );
+        } else {
+          await chunkStorage.deleteSession(sessionId).catch(() => {});
+          throw chunkErr;
+        }
+      } finally {
+        // Delete from IDB immediately to free browser quota
+        if (chunkRecord) {
+          await chunkStorage.deleteChunk(sessionId, i).catch(() => {});
+        }
+      }
+
+      // Rate-limit delay (skip after last chunk)
+      if (i < chunkCount - 1) {
+        if (onProgress) onProgress(
+          chunkProgressBase + Math.round(progressRange / chunkCount),
+          `⏳ Đợi ${requestDelaySeconds}s (tránh vượt hạn mức API)...`
+        );
+        await new Promise(r => setTimeout(r, requestDelaySeconds * 1000));
+      }
+    }
+
+    // Final IDB cleanup (safety net for any leftover records)
+    await chunkStorage.deleteSession(sessionId).catch(() => {});
+
+    allResults.sort((a, b) => (a.audioTimeMs ?? 0) - (b.audioTimeMs ?? 0));
+
+    console.log(`[${logPrefix}] Complete: ${allResults.length} segments from ${chunkCount} chunks`);
+    if (onProgress) onProgress(progressBase + progressRange, `✅ Hoàn thành: ${allResults.length} đoạn từ ${chunkCount} phần`);
+
+    // Synthesize summary
+    let combinedSummary: string | undefined;
+    if (allSummaries.length > 0) {
+      combinedSummary = allSummaries.length === 1
+        ? allSummaries[0].replace(/^Phần 1\/1:\s*/, '')
+        : allSummaries.join('\n\n');
+    }
+
+    return {
+      results           : allResults,
+      summary           : combinedSummary,
+      isTruncated       : hasTruncation || truncationWarnings.length > 0,
+      truncationWarning : truncationWarnings.length > 0 ? truncationWarnings.join('\n') : undefined,
+    };
+  }
+
+  /**
+   * Memory-safe path for large WebM files: EBML binary scan → IDB → chunked decode.
+   * Avoids decoding the entire file into PCM (which OOMs for 180-min recordings).
+   */
+  private static async transcribeEntireAudioWithGeminiChunked(
+    apiKey: string,
+    audioBlob: Blob,
+    modelName: string,
+    onProgress?: (progress: number, message?: string) => void,
+    maxFileSizeMB: number = 20,
+    requestDelaySeconds: number = 5,
+    maxDurationMinutes: number = 30,
+    meetingStartTime?: Date,
+    summaryPrompt?: string,
+    fileManager?: FileManagerService,
+    languageCode?: string
+  ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
+
+    const sessionId = `wmc_${Date.now()}_${audioBlob.size}`;
+    const maxChunkMs = maxDurationMinutes * 60 * 1000;
+    const audioSizeMB = audioBlob.size / (1024 * 1024);
+
+    console.log(`[ChunkedGemini] EBML-based chunked transcription: ${audioSizeMB.toFixed(1)} MB`);
+
+    // ── Phase 1: EBML split (no decode) ─────────────────────────────────────
+    if (onProgress) onProgress(2, '📦 Đang phân tích cấu trúc WebM (không decode)...');
+    chunkStorage.cleanupStale().catch(() => {});
+
+    let webmChunks: import('./webmSplitter').WebmChunk[];
+    try {
+      webmChunks = await splitWebmIntoChunks(audioBlob, maxChunkMs, (p, msg) => {
+        if (onProgress) onProgress(2 + Math.round(p * 0.13), msg);
+      });
+    } catch (splitErr: any) {
+      console.error('[ChunkedGemini] EBML split failed:', splitErr);
+      throw splitErr;
+    }
+
+    if (webmChunks.length === 1 && webmChunks[0].blob === audioBlob) {
+      throw new Error('EBML_NO_CLUSTERS');
+    }
+
+    console.log(`[ChunkedGemini] Split into ${webmChunks.length} WebM chunks`);
+
+    // ── Phase 2: Store all chunks in IndexedDB ───────────────────────────────
+    if (onProgress) onProgress(15, `💾 Đang lưu ${webmChunks.length} chunk vào IndexedDB...`);
+    await chunkStorage.storeChunks(sessionId, webmChunks.map(c => ({
+      startMs: c.startMs, endMs: c.endMs, blob: c.blob,
+    })));
+
+    const chunkBoundaries = webmChunks.map(c => ({ startMs: c.startMs, endMs: c.endMs }));
+    (webmChunks as any) = null; // release from JS heap (now in IDB)
+
+    // ── Phase 3: Process each chunk from IDB ─────────────────────────────────
+    return this.processChunksFromIDB(
+      sessionId, chunkBoundaries,
+      apiKey, modelName, onProgress,
+      15, 81, // progressBase=15, progressRange=81 → reaches 96
+      maxFileSizeMB, requestDelaySeconds, maxDurationMinutes,
+      meetingStartTime, summaryPrompt, fileManager, languageCode,
+      'ChunkedGemini'
+    );
+  }
+
+  /**
+   * Memory-safe path for large WAV files: binary header parse → direct PCM slice
+   * → IDB → chunked decode.  No AudioContext.decodeAudioData() on the full file.
+   */
+  private static async transcribeEntireAudioWithGeminiChunkedWav(
+    apiKey: string,
+    audioBlob: Blob,
+    modelName: string,
+    onProgress?: (progress: number, message?: string) => void,
+    maxFileSizeMB: number = 20,
+    requestDelaySeconds: number = 5,
+    maxDurationMinutes: number = 30,
+    meetingStartTime?: Date,
+    summaryPrompt?: string,
+    fileManager?: FileManagerService,
+    languageCode?: string
+  ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
+
+    const sessionId = `wmcwav_${Date.now()}_${audioBlob.size}`;
+    const maxChunkMs = maxDurationMinutes * 60 * 1000;
+    const audioSizeMB = audioBlob.size / (1024 * 1024);
+
+    console.log(`[ChunkedGeminiWav] WAV binary-split chunked transcription: ${audioSizeMB.toFixed(1)} MB`);
+
+    // ── Phase 1: WAV binary split (no decode) ────────────────────────────────
+    if (onProgress) onProgress(2, '📦 Đang phân tích cấu trúc WAV (không decode)...');
+    chunkStorage.cleanupStale().catch(() => {});
+
+    let wavChunks: import('./webmSplitter').WebmChunk[];
+    try {
+      wavChunks = await splitWavIntoChunks(audioBlob, maxChunkMs, (p, msg) => {
+        if (onProgress) onProgress(2 + Math.round(p * 0.13), msg);
+      });
+    } catch (splitErr: any) {
+      console.error('[ChunkedGeminiWav] WAV split failed:', splitErr);
+      throw splitErr;
+    }
+
+    console.log(`[ChunkedGeminiWav] Split into ${wavChunks.length} WAV chunks`);
+
+    // ── Phase 2: Store all chunks in IndexedDB ───────────────────────────────
+    if (onProgress) onProgress(15, `💾 Đang lưu ${wavChunks.length} chunk WAV vào IndexedDB...`);
+    await chunkStorage.storeChunks(sessionId, wavChunks.map(c => ({
+      startMs: c.startMs, endMs: c.endMs, blob: c.blob,
+    })));
+
+    const chunkBoundaries = wavChunks.map(c => ({ startMs: c.startMs, endMs: c.endMs }));
+    (wavChunks as any) = null; // release from JS heap
+
+    // ── Phase 3: Process each chunk from IDB ─────────────────────────────────
+    return this.processChunksFromIDB(
+      sessionId, chunkBoundaries,
+      apiKey, modelName, onProgress,
+      15, 81,
+      maxFileSizeMB, requestDelaySeconds, maxDurationMinutes,
+      meetingStartTime, summaryPrompt, fileManager, languageCode,
+      'ChunkedGeminiWav'
+    );
+  }
+
   /**
    * Process entire audio file by automatically splitting into chunks
    * Respects Gemini API limits: 15 req/min, 1500 req/day, configurable MB per file and duration
@@ -2351,6 +2676,65 @@ JSON output (không markdown):
   ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
     const maxSizeMB = maxFileSizeMB;
 
+    // ============================================================
+    // FAST PATH: EBML-based chunking for large WebM files (avoids OOM)
+    // ============================================================
+    // For WebM files, calling convertToWav() on the ENTIRE blob requires
+    // AudioContext.decodeAudioData() which allocates ~830 MB – 2.5 GB of PCM
+    // memory for a 180-minute file, causing an Out-of-Memory crash.
+    //
+    // Solution: use the EBML binary splitter to cut the WebM file into smaller
+    // chunks WITHOUT decoding, store them in IndexedDB, then decode each chunk
+    // individually (small memory footprint) before sending to Gemini.
+    //
+    // Threshold: activate for files larger than 50 MB (a 180-min WebM is ~180 MB).
+    const SAFE_CHUNK_THRESHOLD_MB = 50;
+    const audioSizeMBForCheck = audioBlob.size / (1024 * 1024);
+
+    if (audioSizeMBForCheck > SAFE_CHUNK_THRESHOLD_MB && await isLikelyWebm(audioBlob)) {
+      console.log(`[transcribeEntireAudio] Large WebM (${audioSizeMBForCheck.toFixed(1)} MB) → EBML IDB chunked path`);
+      try {
+        return await this.transcribeEntireAudioWithGeminiChunked(
+          apiKey, audioBlob, modelName, onProgress,
+          maxFileSizeMB, requestDelaySeconds, maxDurationMinutes,
+          meetingStartTime, summaryPrompt, fileManager, languageCode
+        );
+      } catch (chunkedErr: any) {
+        if (chunkedErr.message === 'EBML_NO_CLUSTERS') {
+          console.warn('[transcribeEntireAudio] No EBML clusters — falling back to legacy path');
+          // fall through
+        } else {
+          throw chunkedErr;
+        }
+      }
+    }
+
+    // ============================================================
+    // FAST PATH: WAV binary-split for large WAV files (avoids OOM)
+    // ============================================================
+    // WAV is uncompressed PCM — decoding a 180-min stereo 44.1 kHz WAV
+    // in one shot produces ~1.8 GB of PCM, causing OOM on most devices.
+    //
+    // Solution: read the 44-byte WAV header to get sample rate / channels /
+    // bits-per-sample, then slice into chunks by byte offset (no decode needed).
+    // Each chunk is a valid standalone WAV file.
+    if (audioSizeMBForCheck > SAFE_CHUNK_THRESHOLD_MB && await isLikelyWav(audioBlob)) {
+      console.log(`[transcribeEntireAudio] Large WAV (${audioSizeMBForCheck.toFixed(1)} MB) → WAV binary IDB chunked path`);
+      try {
+        return await this.transcribeEntireAudioWithGeminiChunkedWav(
+          apiKey, audioBlob, modelName, onProgress,
+          maxFileSizeMB, requestDelaySeconds, maxDurationMinutes,
+          meetingStartTime, summaryPrompt, fileManager, languageCode
+        );
+      } catch (wavErr: any) {
+        console.warn('[transcribeEntireAudio] WAV binary split failed — falling back to legacy path:', wavErr.message);
+        // fall through to legacy
+      }
+    }
+
+    // ============================================================
+    // LEGACY PATH: convert entire file to WAV then chunk
+    // ============================================================
     // ============================================================
     // BƯỚC 1: CHUYỂN ĐỔI TOÀN BỘ SANG WAV (nếu cần) - TRƯỚC KHI CHIA CHUNKS
     // ============================================================

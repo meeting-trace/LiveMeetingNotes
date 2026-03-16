@@ -71,7 +71,7 @@ export interface FileSystemSupport {
 // Gemini Model metadata from API
 export interface GeminiModel {
   name: string; // e.g., "models/gemini-2.5-flash"
-  displayName: string; // e.g., "Gemini 2.5 Flash"
+  displayName: string; // e.g., "Gemini Flash Latest"
   description?: string;
   inputTokenLimit: number;
   outputTokenLimit: number;
