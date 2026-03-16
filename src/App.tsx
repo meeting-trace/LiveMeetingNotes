@@ -1549,7 +1549,6 @@ export const App: React.FC = () => {
                     minh
                   </strong>
                   <br />
-                  <br />
                   <strong style={{ color: "#1890ff" }}>
                     ✨ Hệ thống sẽ tự động:
                   </strong>
@@ -1562,7 +1561,6 @@ export const App: React.FC = () => {
                   <br />
                   • 📝 Tổng hợp tóm tắt hoàn chỉnh
                   <br />
-                  <br />
                   <strong style={{ color: "#0050b3" }}>
                     ⏱️ Thời gian dự kiến:
                   </strong>
@@ -1572,7 +1570,6 @@ export const App: React.FC = () => {
                   • Có delay 5s giữa các phần (tuân thủ rate limit)
                   <br />
                   • Bạn có thể theo dõi tiến trình trực tiếp
-                  <br />
                   <br />
                 </div>
               </div>
@@ -1660,9 +1657,6 @@ export const App: React.FC = () => {
               {isLongAudio
                 ? `Khoảng ${Math.ceil(durationMinutes / 15)}-${Math.ceil(durationMinutes / 10)} phút (tự động chia nhỏ)`
                 : "Tùy thuộc vào độ dài audio (khoảng 1-3 phút cho file 10-20 phút)"}
-              <br />
-              <strong>💰 Chi phí:</strong> Gemini API miễn phí cho mục đích cá
-              nhân (250K tokens/ngày)
               {isLongAudio && (
                 <>
                   <br />

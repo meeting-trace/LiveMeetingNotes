@@ -2509,13 +2509,30 @@ JSON output (không markdown):
     console.log(`[${logPrefix}] Complete: ${allResults.length} segments from ${chunkCount} chunks`);
     if (onProgress) onProgress(progressBase + progressRange, `✅ Hoàn thành: ${allResults.length} đoạn từ ${chunkCount} phần`);
 
-    // Synthesize summary
+    // ── Tổng hợp tóm tắt (Bước cuối) ───────────────────────────────────────────
     let combinedSummary: string | undefined;
-    if (allSummaries.length > 0) {
-      combinedSummary = allSummaries.length === 1
-        ? allSummaries[0].replace(/^Phần 1\/1:\s*/, '')
-        : allSummaries.join('\n\n');
+    if (allSummaries.length === 0) {
+      combinedSummary = undefined;
+    } else if (allSummaries.length === 1) {
+      combinedSummary = allSummaries[0].replace(/^Phần \d+\/\d+:\s*/, '');
+    } else {
+      // Nhiều phần → gọi Gemini để tổng hợp thành 1 bản liền mạch
+      if (onProgress) onProgress(progressBase + progressRange + 2, `📝 Đang tổng hợp ${allSummaries.length} phần tóm tắt...`);
+      try {
+        combinedSummary = await this.mergeSummariesWithGemini(
+          apiKey, modelName, allSummaries, summaryPrompt, languageCode
+        );
+        if (onProgress) onProgress(progressBase + progressRange + 4, `✅ Đã tổng hợp tóm tắt hoàn chỉnh`);
+      } catch (mergeErr: any) {
+        console.warn(`⚠️ [${logPrefix}] Gemini merge failed, manual concat:`, mergeErr.message);
+        combinedSummary = allSummaries
+          .map((s, idx) => `📄 Tóm tắt đoạn ${idx + 1}:\n${s.replace(/^Phần \d+\/\d+:\s*/, '')}`)
+          .join('\n\n---\n\n');
+        if (onProgress) onProgress(progressBase + progressRange + 4, `⚠️ Ghép tóm tắt thủ công (${allSummaries.length} phần)`);
+      }
     }
+
+    if (onProgress) onProgress(100, `🎉 Hoàn thành! ${allResults.length} segments`);
 
     return {
       results           : allResults,
