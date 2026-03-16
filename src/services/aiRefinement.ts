@@ -18,6 +18,19 @@ export interface RefinedSegment {
 }
 
 /**
+ * Callback invoked after automatic retries are exhausted on a transient
+ * Gemini API error (503 / network failure). The callback should ask the
+ * user whether they want to keep retrying and optionally supply a new API key.
+ */
+export type GeminiRetryCallback = (ctx: {
+  chunkIndex: number;   // 1-based chunk number that failed
+  chunkTotal: number;   // total chunks in session
+  attempt: number;      // number of auto-retry attempts already made
+  error: string;        // last error message
+  currentApiKey: string;
+}) => Promise<{ retry: boolean; newApiKey?: string }>;
+
+/**
  * AI Refinement Service for Gemini AI
  * Refines raw speech-to-text transcripts with AI
  */
@@ -1200,7 +1213,8 @@ ${hasRawData ? `=== THAM KHẢO (đối chiếu sửa lỗi) ===\n${rawDataJson}
     fileManager?: FileManagerService, // Optional: for saving debug logs to project folder
     chunkInfo?: { index: number; total: number }, // Optional: chunk info for progress tracking (1-indexed)
     languageCode?: string, // Optional: language code from Web Speech API config (e.g., 'vi-VN', 'en-US', 'ja-JP')
-    maxDurationMinutes: number = 60 // Maximum audio duration in minutes for auto-split (from config)
+    maxDurationMinutes: number = 60, // Maximum audio duration in minutes for auto-split (from config)
+    onRetryNeeded?: GeminiRetryCallback
   ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
     if (!apiKey || apiKey.trim().length === 0) {
       throw new Error('Gemini API Key is required');
@@ -1263,7 +1277,8 @@ ${hasRawData ? `=== THAM KHẢO (đối chiếu sửa lỗi) ===\n${rawDataJson}
           meetingStartTime,
           summaryPrompt,
           fileManager,
-          languageCode // Pass language code through
+          languageCode, // Pass language code through
+          onRetryNeeded
         );
         
         return result;
@@ -2365,6 +2380,89 @@ JSON output (không markdown):
   // MEMORY-SAFE BINARY CHUNKED PROCESSING (IndexedDB-backed)
   // ============================================================
 
+  /** Returns true for transient server/network errors that are worth retrying. */
+  private static isTransientGeminiError(err: any): boolean {
+    const msg = (err?.message ?? String(err)).toLowerCase();
+    return (
+      msg.includes('503') ||
+      msg.includes('500') ||
+      msg.includes('502') ||
+      msg.includes('504') ||
+      msg.includes('high demand') ||
+      msg.includes('overloaded') ||
+      msg.includes('try again later') ||
+      msg.includes('service unavailable') ||
+      msg.includes('internal server error') ||
+      msg.includes('bad gateway') ||
+      msg.includes('gateway timeout') ||
+      msg.includes('failed to fetch') ||
+      msg.includes('networkerror') ||
+      msg.includes('network error') ||
+      msg.includes('load failed')   // Safari
+    );
+  }
+
+  /**
+   * Calls `fn(apiKey)` and automatically retries up to 3 times on transient
+   * Gemini server errors (503, 500, network failures) with linear back-off
+   * (5 s → 10 s → 15 s).  After exhausting auto retries, delegates to
+   * `onRetryNeeded` (if provided) so the user can decide whether to continue
+   * and optionally supply a replacement API key.
+   */
+  private static async callWithGeminiRetry<T>(
+    fn: (apiKey: string) => Promise<T>,
+    initialApiKey: string,
+    chunkIdx: number,
+    chunkTotal: number,
+    onProgress: ((p: number, msg?: string) => void) | undefined,
+    progressVal: number,
+    onRetryNeeded: GeminiRetryCallback | undefined,
+    logPrefix: string
+  ): Promise<{ result: T; finalApiKey: string }> {
+    const MAX_AUTO = 3;
+    const BASE_DELAY_MS = 5_000;
+    let currentKey = initialApiKey;
+    let attempt = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      try {
+        const result = await fn(currentKey);
+        return { result, finalApiKey: currentKey };
+      } catch (err: any) {
+        if (!AIRefinementService.isTransientGeminiError(err)) throw err;
+
+        attempt++;
+        if (attempt <= MAX_AUTO) {
+          const delayMs = BASE_DELAY_MS * attempt;
+          console.warn(`[${logPrefix}] Transient error (attempt ${attempt}/${MAX_AUTO}): ${err.message}`);
+          onProgress?.(progressVal,
+            `⚠️ Phần ${chunkIdx}/${chunkTotal}: Lỗi tạm thời, tự động thử lại lần ${attempt}/${MAX_AUTO} sau ${delayMs / 1000}s...`);
+          await new Promise(r => setTimeout(r, delayMs));
+          continue;
+        }
+
+        // Auto retries exhausted → ask user
+        if (onRetryNeeded) {
+          onProgress?.(progressVal,
+            `❌ Phần ${chunkIdx}/${chunkTotal}: Đã thử ${MAX_AUTO} lần tự động — đang hỏi người dùng...`);
+          const { retry, newApiKey } = await onRetryNeeded({
+            chunkIndex: chunkIdx,
+            chunkTotal,
+            attempt,
+            error: err.message,
+            currentApiKey: currentKey,
+          });
+          if (retry) {
+            if (newApiKey && newApiKey.trim()) currentKey = newApiKey.trim();
+            attempt = 0; // reset counter for user-approved round
+            continue;
+          }
+        }
+        throw err; // user gave up or no callback
+      }
+    }
+  }
+
   /**
    * Shared IDB processing loop used by both WebM (EBML) and WAV binary-split paths.
    *
@@ -2390,13 +2488,15 @@ JSON output (không markdown):
     summaryPrompt: string | undefined,
     fileManager: FileManagerService | undefined,
     languageCode: string | undefined,
-    logPrefix: string
+    logPrefix: string,
+    onRetryNeeded?: GeminiRetryCallback
   ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
     const chunkCount = chunkBoundaries.length;
     const allResults: TranscriptionResult[] = [];
     const allSummaries: string[] = [];
     let hasTruncation = false;
     const truncationWarnings: string[] = [];
+    let currentApiKey = apiKey; // may be updated by onRetryNeeded callback
 
     for (let i = 0; i < chunkCount; i++) {
       const boundary = chunkBoundaries[i];
@@ -2427,26 +2527,31 @@ JSON output (không markdown):
         }
         const wavBlob = await this.convertToWav(chunkRecord.blob, 16000);
 
-        // Send WAV to Gemini
-        const parsed = await this.transcribeAudioWithGemini(
-          apiKey,
-          wavBlob,
-          modelName,
-          (subProgress, subMsg) => {
-            if (onProgress) {
-              const mapped = chunkProgressBase + Math.round((subProgress / 100) * (progressRange / chunkCount));
-              onProgress(mapped, `📦 ${i + 1}/${chunkCount}: ${subMsg ?? subProgress.toFixed(0) + '%'}`);
-            }
-          },
-          true, // skipSizeCheck
-          maxFileSizeMB,
-          meetingStartTime,
-          summaryPrompt,
-          fileManager,
-          { index: i + 1, total: chunkCount },
-          languageCode,
-          maxDurationMinutes
+        // Send WAV to Gemini (with transient-error auto-retry + user prompt after)
+        const { result: parsed, finalApiKey: usedKey } = await AIRefinementService.callWithGeminiRetry(
+          (key) => this.transcribeAudioWithGemini(
+            key,
+            wavBlob,
+            modelName,
+            (subProgress, subMsg) => {
+              if (onProgress) {
+                const mapped = chunkProgressBase + Math.round((subProgress / 100) * (progressRange / chunkCount));
+                onProgress(mapped, `📦 ${i + 1}/${chunkCount}: ${subMsg ?? subProgress.toFixed(0) + '%'}`);
+              }
+            },
+            true, // skipSizeCheck
+            maxFileSizeMB,
+            meetingStartTime,
+            summaryPrompt,
+            fileManager,
+            { index: i + 1, total: chunkCount },
+            languageCode,
+            maxDurationMinutes
+          ),
+          currentApiKey,
+          i + 1, chunkCount, onProgress, chunkProgressBase + 1, onRetryNeeded, logPrefix
         );
+        currentApiKey = usedKey;
 
         // Adjust timestamps and collect results
         const adjustedResults = this.adjustTimestamps(parsed.results, boundary.startMs);
@@ -2520,7 +2625,7 @@ JSON output (không markdown):
       if (onProgress) onProgress(progressBase + progressRange + 2, `📝 Đang tổng hợp ${allSummaries.length} phần tóm tắt...`);
       try {
         combinedSummary = await this.mergeSummariesWithGemini(
-          apiKey, modelName, allSummaries, summaryPrompt, languageCode
+          currentApiKey, modelName, allSummaries, summaryPrompt, languageCode
         );
         if (onProgress) onProgress(progressBase + progressRange + 4, `✅ Đã tổng hợp tóm tắt hoàn chỉnh`);
       } catch (mergeErr: any) {
@@ -2557,7 +2662,8 @@ JSON output (không markdown):
     meetingStartTime?: Date,
     summaryPrompt?: string,
     fileManager?: FileManagerService,
-    languageCode?: string
+    languageCode?: string,
+    onRetryNeeded?: GeminiRetryCallback
   ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
 
     const sessionId = `wmc_${Date.now()}_${audioBlob.size}`;
@@ -2614,7 +2720,7 @@ JSON output (không markdown):
         15, 81, // progressBase=15, progressRange=81 → reaches 96
         maxFileSizeMB, requestDelaySeconds, maxDurationMinutes,
         meetingStartTime, summaryPrompt, fileManager, languageCode,
-        'ChunkedGemini'
+        'ChunkedGemini', onRetryNeeded
       );
     });
   }
@@ -2634,7 +2740,8 @@ JSON output (không markdown):
     meetingStartTime?: Date,
     summaryPrompt?: string,
     fileManager?: FileManagerService,
-    languageCode?: string
+    languageCode?: string,
+    onRetryNeeded?: GeminiRetryCallback
   ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
 
     const sessionId = `wmcwav_${Date.now()}_${audioBlob.size}`;
@@ -2682,7 +2789,7 @@ JSON output (không markdown):
         15, 81,
         maxFileSizeMB, requestDelaySeconds, maxDurationMinutes,
         meetingStartTime, summaryPrompt, fileManager, languageCode,
-        'ChunkedGeminiWav'
+        'ChunkedGeminiWav', onRetryNeeded
       );
     });
   }
@@ -2710,7 +2817,8 @@ JSON output (không markdown):
     meetingStartTime?: Date, // Meeting start time for accurate timestamp calculation
     summaryPrompt?: string, // OPTIONAL: user-provided prompt text for the summary field
     fileManager?: FileManagerService, // Optional: for saving debug logs to project folder
-    languageCode?: string // Optional: language code from Web Speech API config
+    languageCode?: string, // Optional: language code from Web Speech API config
+    onRetryNeeded?: GeminiRetryCallback
   ): Promise<{ results: TranscriptionResult[], summary?: string, isTruncated?: boolean, truncationWarning?: string }> {
     const maxSizeMB = maxFileSizeMB;
 
@@ -2735,7 +2843,7 @@ JSON output (không markdown):
         return await this.transcribeEntireAudioWithGeminiChunked(
           apiKey, audioBlob, modelName, onProgress,
           maxFileSizeMB, requestDelaySeconds, maxDurationMinutes,
-          meetingStartTime, summaryPrompt, fileManager, languageCode
+          meetingStartTime, summaryPrompt, fileManager, languageCode, onRetryNeeded
         );
       } catch (chunkedErr: any) {
         const msg = chunkedErr.message ?? '';
@@ -2765,7 +2873,7 @@ JSON output (không markdown):
         return await this.transcribeEntireAudioWithGeminiChunkedWav(
           apiKey, audioBlob, modelName, onProgress,
           maxFileSizeMB, requestDelaySeconds, maxDurationMinutes,
-          meetingStartTime, summaryPrompt, fileManager, languageCode
+          meetingStartTime, summaryPrompt, fileManager, languageCode, onRetryNeeded
         );
       } catch (wavErr: any) {
         const msg = wavErr.message ?? '';
@@ -2860,6 +2968,7 @@ JSON output (không markdown):
     const allSummaries: string[] = [];
     let hasTruncation = false;
     const truncationWarnings: string[] = [];
+    let currentLegacyApiKey = apiKey; // may be updated by onRetryNeeded callback
     
     // Get total duration once for progress estimation
     const totalAudioDurationSec = await this.getAudioDuration(wavBlob);
@@ -2890,28 +2999,33 @@ JSON output (không markdown):
         console.log(`  ✅ Extracted WAV chunk: ${chunkSizeMB.toFixed(2)}MB`);
         
         // Transcribe this chunk (skip size check - already validated and split)
-        const parsed = await this.transcribeAudioWithGemini(
-          apiKey,
-          chunkBlob, // Just-in-time extracted chunk
-          modelName,
-          (subProgress, subMessage) => {
-            if (onProgress) {
-              const totalProgress = chunkProgress + (subProgress / chunkBoundaries.length) * 0.8;
-              const progressMessage = subMessage 
-                ? `📦 ${i + 1}/${chunkBoundaries.length}: ${subMessage}`
-                : `📦 Phần ${i + 1}/${chunkBoundaries.length}: ${subProgress.toFixed(0)}%`;
-              onProgress(totalProgress, progressMessage);
-            }
-          },
-          true, // skipSizeCheck = true (chunks already validated)
-          maxSizeMB, // Pass maxFileSizeMB to child call
-          meetingStartTime, // Pass meeting start time for accurate timestamps
-          summaryPrompt, // Pass user-provided summary prompt through
-          fileManager, // Pass fileManager for debug logs
-          { index: i + 1, total: chunkBoundaries.length }, // Pass chunk info for context-aware prompting
-          languageCode, // Pass language code through
-          maxDurationMinutes // Pass through for consistency (not used due to skipSizeCheck=true)
+        const { result: parsed, finalApiKey: usedLegacyKey } = await AIRefinementService.callWithGeminiRetry(
+          (key) => this.transcribeAudioWithGemini(
+            key,
+            chunkBlob, // Just-in-time extracted chunk
+            modelName,
+            (subProgress, subMessage) => {
+              if (onProgress) {
+                const totalProgress = chunkProgress + (subProgress / chunkBoundaries.length) * 0.8;
+                const progressMessage = subMessage 
+                  ? `📦 ${i + 1}/${chunkBoundaries.length}: ${subMessage}`
+                  : `📦 Phần ${i + 1}/${chunkBoundaries.length}: ${subProgress.toFixed(0)}%`;
+                onProgress(totalProgress, progressMessage);
+              }
+            },
+            true, // skipSizeCheck = true (chunks already validated)
+            maxSizeMB, // Pass maxFileSizeMB to child call
+            meetingStartTime, // Pass meeting start time for accurate timestamps
+            summaryPrompt, // Pass user-provided summary prompt through
+            fileManager, // Pass fileManager for debug logs
+            { index: i + 1, total: chunkBoundaries.length }, // Pass chunk info for context-aware prompting
+            languageCode, // Pass language code through
+            maxDurationMinutes // Pass through for consistency (not used due to skipSizeCheck=true)
+          ),
+          currentLegacyApiKey,
+          i + 1, chunkBoundaries.length, onProgress, chunkProgress, onRetryNeeded, 'Legacy'
         );
+        currentLegacyApiKey = usedLegacyKey;
         
         // Adjust timestamps for this chunk
         const adjustedResults = this.adjustTimestamps(parsed.results, boundary.startTimeMs);
@@ -3040,7 +3154,7 @@ JSON output (không markdown):
       try {
         // Call Gemini to merge summaries into one cohesive summary
         combinedSummary = await this.mergeSummariesWithGemini(
-          apiKey,
+          currentLegacyApiKey,
           modelName,
           allSummaries,
           summaryPrompt,

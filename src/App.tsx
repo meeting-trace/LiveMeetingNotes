@@ -25,6 +25,7 @@ import {
 import {
   AIRefinementService,
   type RawTranscriptData,
+  type GeminiRetryCallback,
 } from "./services/aiRefinement";
 import { updateManager, UpdateManagerService } from "./services/updateManager";
 import { chunkStorage } from "./services/chunkStorage";
@@ -33,7 +34,7 @@ import type {
   SpeechToTextConfig,
   TranscriptionResult,
 } from "./types/types";
-import { message, App as AntdApp, Progress } from "antd";
+import { message, App as AntdApp, Progress, Input } from "antd";
 import { ExclamationCircleOutlined } from "@ant-design/icons";
 import "./styles/global.css";
 
@@ -871,6 +872,52 @@ export const App: React.FC = () => {
         meetingStartTime,
         config.summaryPrompt,
         fileManagerRef.current, // Pass fileManager for debug logs
+        undefined, // languageCode
+        // Retry callback giống handleTranscribeAudio
+        (ctx) =>
+          new Promise((resolve) => {
+            let newKey = ctx.currentApiKey;
+            modal.confirm({
+              title: "⚠️ Lỗi Gemini AI — Cần xử lý",
+              width: 520,
+              icon: null,
+              content: (
+                <div style={{ marginTop: 8 }}>
+                  <div
+                    style={{
+                      padding: "10px 14px",
+                      background: "#fff2f0",
+                      border: "1px solid #ffccc7",
+                      borderRadius: 6,
+                      marginBottom: 12,
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 14 }}>
+                      ❌ Lỗi tại phần {ctx.chunkIndex}/{ctx.chunkTotal}:
+                    </div>
+                    <div style={{ color: "#cf1322", fontSize: 13 }}>{ctx.error}</div>
+                  </div>
+                  <div style={{ marginBottom: 12, color: "#595959", fontSize: 13 }}>
+                    Đã tự động thử lại <strong>{ctx.attempt}</strong> lần, vẫn thất bại. Bạn có muốn tiếp tục thử không?
+                  </div>
+                  <div style={{ marginBottom: 6, fontSize: 13, fontWeight: 600 }}>
+                    API Key{" "}
+                    <span style={{ fontWeight: 400, color: "#8c8c8c" }}>(có thể đổi key khác nếu cần)</span>:
+                  </div>
+                  <Input
+                    defaultValue={ctx.currentApiKey}
+                    onChange={(e) => { newKey = e.target.value; }}
+                    placeholder="Nhập API key mới hoặc giữ nguyên key hiện tại"
+                    style={{ fontFamily: "monospace", fontSize: 12 }}
+                  />
+                </div>
+              ),
+              okText: "🔄 Thử lại",
+              cancelText: "🛑 Dừng lại",
+              onOk: () => resolve({ retry: true, newApiKey: newKey?.trim() || undefined }),
+              onCancel: () => resolve({ retry: false }),
+            });
+          }),
       );
 
       // Close progress notification on success
@@ -1747,6 +1794,95 @@ export const App: React.FC = () => {
               const maxDurationMinutes = config?.maxAudioDurationMinutes || 30;
               const meetingStartTime = getValidMeetingStartTime();
 
+              // Retry callback: hiển thị modal sau khi tự động thử 3 lần thất bại.
+              // Cho phép người dùng nhập API key mới nếu key cũ hết quota.
+              const onRetryNeeded: GeminiRetryCallback = (ctx) =>
+                new Promise((resolve) => {
+                  let newKey = ctx.currentApiKey;
+                  modal.confirm({
+                    title: "⚠️ Lỗi Gemini AI — Cần xử lý",
+                    width: 520,
+                    icon: null,
+                    content: (
+                      <div style={{ marginTop: 8 }}>
+                        <div
+                          style={{
+                            padding: "10px 14px",
+                            background: "#fff2f0",
+                            border: "1px solid #ffccc7",
+                            borderRadius: 6,
+                            marginBottom: 12,
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontWeight: 600,
+                              marginBottom: 4,
+                              fontSize: 14,
+                            }}
+                          >
+                            ❌ Lỗi tại phần {ctx.chunkIndex}/{ctx.chunkTotal}:
+                          </div>
+                          <div style={{ color: "#cf1322", fontSize: 13 }}>
+                            {ctx.error}
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            marginBottom: 12,
+                            color: "#595959",
+                            fontSize: 13,
+                          }}
+                        >
+                          Đã tự động thử lại{" "}
+                          <strong>{ctx.attempt}</strong> lần, vẫn thất bại. Bạn
+                          có muốn tiếp tục thử không?
+                        </div>
+                        <div
+                          style={{
+                            marginBottom: 6,
+                            fontSize: 13,
+                            fontWeight: 600,
+                          }}
+                        >
+                          API Key{" "}
+                          <span
+                            style={{ fontWeight: 400, color: "#8c8c8c" }}
+                          >
+                            (có thể đổi key khác nếu cần)
+                          </span>
+                          :
+                        </div>
+                        <Input
+                          defaultValue={ctx.currentApiKey}
+                          onChange={(e) => {
+                            newKey = e.target.value;
+                          }}
+                          placeholder="Nhập API key mới hoặc giữ nguyên key hiện tại"
+                          style={{ fontFamily: "monospace", fontSize: 12 }}
+                        />
+                        <div
+                          style={{
+                            marginTop: 6,
+                            fontSize: 12,
+                            color: "#8c8c8c",
+                          }}
+                        >
+                          💡 Để trống / giữ nguyên để dùng API key hiện tại.
+                        </div>
+                      </div>
+                    ),
+                    okText: "🔄 Thử lại",
+                    cancelText: "🛑 Dừng lại",
+                    onOk: () =>
+                      resolve({
+                        retry: true,
+                        newApiKey: newKey?.trim() || undefined,
+                      }),
+                    onCancel: () => resolve({ retry: false }),
+                  });
+                });
+
               const parsed =
                 await AIRefinementService.transcribeAudioWithGemini(
                   apiKey,
@@ -1827,6 +1963,7 @@ export const App: React.FC = () => {
                   undefined, // chunkInfo
                   config?.languageCode, // Pass language code for output language
                   maxDurationMinutes,
+                  onRetryNeeded,
                 );
 
               // Close progress notification on success
