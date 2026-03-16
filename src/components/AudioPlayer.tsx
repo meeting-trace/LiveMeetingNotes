@@ -17,6 +17,12 @@ import {
   LoadingOutlined,
 } from "@ant-design/icons";
 import WaveSurfer from "wavesurfer.js";
+import {
+  splitWebmIntoChunks,
+  isLikelyWebm,
+  splitWavIntoChunks,
+  isLikelyWav,
+} from "../services/webmSplitter";
 
 interface Props {
   audioBlob: Blob | null;
@@ -157,6 +163,110 @@ function generateRealisticPeaks(numPeaks: number, seed: number): number[] {
   return smoothed;
 }
 
+// ─── Real waveform peak extraction ────────────────────────────────────────────
+
+/** Extract the max-absolute-value amplitude per frame window across all channels. */
+function peaksFromAudioBuffer(buffer: AudioBuffer, numPeaks: number): number[] {
+  const samplesPerPeak = Math.max(1, Math.floor(buffer.length / numPeaks));
+  const peaks = new Array<number>(numPeaks).fill(0);
+  for (let p = 0; p < numPeaks; p++) {
+    const start = p * samplesPerPeak;
+    const end = Math.min(start + samplesPerPeak, buffer.length);
+    let maxAbs = 0;
+    for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+      const data = buffer.getChannelData(ch);
+      for (let s = start; s < end; s++) {
+        const abs = Math.abs(data[s]);
+        if (abs > maxAbs) maxAbs = abs;
+      }
+    }
+    peaks[p] = maxAbs;
+  }
+  return peaks;
+}
+
+/** Decode a single Blob to peaks, then immediately close the AudioContext. */
+async function decodeToPeaks(blob: Blob, numPeaks: number): Promise<number[]> {
+  const ab = await blob.arrayBuffer();
+  const ctx = new AudioContext();
+  try {
+    const buf = await ctx.decodeAudioData(ab);
+    return peaksFromAudioBuffer(buf, numPeaks);
+  } finally {
+    await ctx.close().catch(() => {});
+  }
+}
+
+const REAL_PEAKS_CHUNK_THRESHOLD_MB = 50;
+
+/**
+ * Memory-safe real peak extraction for any file size:
+ *  - ≤ 50 MB   : one-shot decode
+ *  - > 50 MB WebM : EBML-split → decode each chunk → free PCM
+ *  - > 50 MB WAV  : binary-slice → decode each chunk → free PCM
+ *  - Other format : throws (caller keeps simulated peaks)
+ * Pass an AbortSignal to cancel mid-extraction on component unmount.
+ */
+async function extractRealPeaksAsync(
+  blob: Blob,
+  numPeaks: number,
+  signal?: AbortSignal,
+): Promise<number[]> {
+  const checkAbort = () => {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+  };
+
+  const sizeMB = blob.size / (1024 * 1024);
+
+  // ── Small file: one-shot decode ─────────────────────────────────────────────
+  if (sizeMB <= REAL_PEAKS_CHUNK_THRESHOLD_MB) {
+    checkAbort();
+    return decodeToPeaks(blob, numPeaks);
+  }
+
+  const CHUNK_MAX_MS = 30 * 60 * 1000; // 30-minute chunks
+
+  // ── Large WebM: EBML-split → chunk decode ───────────────────────────────────
+  if (await isLikelyWebm(blob)) {
+    checkAbort();
+    const chunks = await splitWebmIntoChunks(blob, CHUNK_MAX_MS);
+    const totalMs = chunks[chunks.length - 1].endMs || 1;
+    const allPeaks = new Array<number>(numPeaks).fill(0);
+    for (const { startMs, endMs, blob: chunkBlob } of chunks) {
+      checkAbort();
+      const pStart = Math.round((startMs / totalMs) * numPeaks);
+      const pEnd = Math.min(Math.round((endMs / totalMs) * numPeaks), numPeaks);
+      const count = pEnd - pStart;
+      if (count <= 0) continue;
+      const cp = await decodeToPeaks(chunkBlob, count);
+      for (let j = 0; j < cp.length; j++) allPeaks[pStart + j] = cp[j];
+    }
+    return allPeaks;
+  }
+
+  // ── Large WAV: binary-slice → chunk decode ──────────────────────────────────
+  if (await isLikelyWav(blob)) {
+    checkAbort();
+    const chunks = await splitWavIntoChunks(blob, CHUNK_MAX_MS);
+    const totalMs = chunks[chunks.length - 1].endMs || 1;
+    const allPeaks = new Array<number>(numPeaks).fill(0);
+    for (const { startMs, endMs, blob: chunkBlob } of chunks) {
+      checkAbort();
+      const pStart = Math.round((startMs / totalMs) * numPeaks);
+      const pEnd = Math.min(Math.round((endMs / totalMs) * numPeaks), numPeaks);
+      const count = pEnd - pStart;
+      if (count <= 0) continue;
+      const cp = await decodeToPeaks(chunkBlob, count);
+      for (let j = 0; j < cp.length; j++) allPeaks[pStart + j] = cp[j];
+    }
+    return allPeaks;
+  }
+
+  throw new Error("Unsupported format for real peak extraction");
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+
 export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
   (
     {
@@ -172,7 +282,9 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
     const waveformRef = useRef<HTMLDivElement>(null);
     const wavesurferRef = useRef<WaveSurfer | null>(null);
     const fitZoomRef = useRef<number>(0); // px/sec that makes waveform fit the container exactly
+    const isPeaksUpdateRef = useRef(false); // true while reloading WaveSurfer with real peaks
     const [isPlaying, setIsPlaying] = useState(false);
+    const [isUpgradingPeaks, setIsUpgradingPeaks] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
     const [playbackRate, setPlaybackRate] = useState(1.0);
@@ -223,6 +335,17 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
         const blobUrl = URL.createObjectURL(audioBlob);
         let durationResolved = false; // guard: prevent post-cleanup load() call
         let resolvedDuration = 0; // closure: captures finalDuration for ready event fallback
+
+        // Start real peak extraction immediately in background.
+        // This runs in parallel with duration resolution so it overlaps the
+        // WaveSurfer "ready" wait time. AbortController lets us cancel if the
+        // component unmounts or audioBlob changes before extraction finishes.
+        const peaksAbort = new AbortController();
+        const realPeaksPromise = extractRealPeaksAsync(
+          audioBlob,
+          3000,
+          peaksAbort.signal,
+        ).catch(() => null); // never reject — failure keeps simulated peaks
 
         // Create audioEl WITHOUT src first.
         // If src is set before WaveSurfer.create(), the constructor captures
@@ -287,6 +410,29 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
           // Save finalDuration in closure for ready-event fallback
           resolvedDuration = finalDuration;
           wavesurfer.load(blobUrl, [realisticPeaks], finalDuration);
+          setIsUpgradingPeaks(true);
+
+          // ── Progressive peak upgrade ──────────────────────────────────────────
+          // After WaveSurfer renders with simulated peaks, await the real peaks
+          // (which were being extracted in parallel). If they arrive, seamlessly
+          // swap the waveform while preserving playback position.
+          realPeaksPromise.then((realPeaks) => {
+            if (!realPeaks || durationResolved || !wavesurferRef.current) {
+              setIsUpgradingPeaks(false);
+              return;
+            }
+            const savedTime = wavesurfer.getCurrentTime();
+            const wasPlaying = wavesurfer.isPlaying();
+            isPeaksUpdateRef.current = true;
+            wavesurfer.load(blobUrl, [realPeaks], resolvedDuration);
+            wavesurfer.once("ready", () => {
+              isPeaksUpdateRef.current = false;
+              setIsUpgradingPeaks(false);
+              wavesurfer.setTime(savedTime);
+              if (wasPlaying) wavesurfer.play().catch(() => {});
+              console.log("✅ Waveform upgraded to real peaks");
+            });
+          });
         });
 
         // Event listeners
@@ -334,7 +480,11 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
             resolvedDuration,
             ")",
           );
-          onWaveformReady?.();
+          // Only fire onWaveformReady on the initial load, not when WaveSurfer
+          // reloads for the real-peaks upgrade (isPeaksUpdateRef guards that).
+          if (!isPeaksUpdateRef.current) {
+            onWaveformReady?.();
+          }
         });
 
         // Add error handler
@@ -606,7 +756,9 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
 
         // Cleanup function
         return () => {
+          peaksAbort.abort(); // cancel in-flight real peak extraction
           setIsLoadingWaveform(false);
+          setIsUpgradingPeaks(false);
           durationResolved = true; // prevent post-cleanup load() call
           fitZoomRef.current = 0;
           URL.revokeObjectURL(blobUrl);
@@ -776,6 +928,33 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
               transition: "opacity 0.3s ease",
             }}
           />
+          {isUpgradingPeaks && !isLoadingWaveform && (
+            <div
+              title="Đang phân tích sóng âm thực từ file ghi âm..."
+              style={{
+                position: "absolute",
+                bottom: 6,
+                right: 8,
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                background: "rgba(0,0,0,0.45)",
+                borderRadius: 10,
+                padding: "2px 8px",
+                zIndex: 5,
+                pointerEvents: "none",
+              }}
+            >
+              <Spin
+                indicator={
+                  <LoadingOutlined style={{ fontSize: 11, color: "#87c3fc" }} spin />
+                }
+              />
+              <span style={{ color: "#87c3fc", fontSize: 11 }}>
+                Đang phân tích sóng âm...
+              </span>
+            </div>
+          )}
           {isLoadingWaveform && (
             <div
               style={{

@@ -226,6 +226,43 @@ class ChunkStorageService {
       console.warn('[ChunkStorage] Stale cleanup failed:', e);
     }
   }
+
+  /**
+   * Called at app startup to free orphan chunks from crashed/interrupted sessions.
+   * Uses the Web Locks API to skip cleanup if another tab is actively transcribing,
+   * preventing accidental deletion of in-progress session chunks.
+   */
+  async clearOrphanChunks(): Promise<void> {
+    if (!('locks' in navigator)) {
+      // Fallback for browsers without Web Locks: use a conservative 1-hour TTL
+      await this.cleanupStale(60 * 60 * 1000);
+      return;
+    }
+    try {
+      await (navigator as any).locks.request(
+        'meetingnote_chunksdb',
+        { mode: 'exclusive', ifAvailable: true },
+        async (lock: any) => {
+          if (lock === null) {
+            console.log('[ChunkStorage] Startup cleanup skipped: active transcription in another tab');
+            return;
+          }
+          await this.cleanupStale(0);
+        }
+      );
+    } catch (e) {
+      console.warn('[ChunkStorage] clearOrphanChunks failed:', e);
+    }
+  }
+
+  /**
+   * Wrap IDB write + processing with a shared lock so that concurrent startup
+   * cleanup in other tabs (clearOrphanChunks) cannot delete active session chunks.
+   */
+  async withActiveSession<T>(fn: () => Promise<T>): Promise<T> {
+    if (!('locks' in navigator)) return fn();
+    return (navigator as any).locks.request('meetingnote_chunksdb', { mode: 'shared' }, fn);
+  }
 }
 
 /** Singleton instance shared across the application */

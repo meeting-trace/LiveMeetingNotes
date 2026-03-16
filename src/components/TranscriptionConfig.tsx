@@ -73,7 +73,7 @@ export const TranscriptionConfig: React.FC<Props> = ({
         segmentMaxLength: 150,
         timestampDelay: 8,
         maxAudioDurationMinutes: 30,
-        maxFileSizeMB: 150,
+        maxFileSizeMB: 200,
         requestDelaySeconds: 5,
         summaryPrompt:
           "Tóm tắt cụ thể các nội dung chính của từng người phát biểu, được thảo luận trong cuộc họp, tổng hợp theo trình tự thời gian. Bao gồm nhưng không giới hạn các chủ đề chính, quyết định quan trọng, và kết luận (nếu có).",
@@ -193,7 +193,7 @@ export const TranscriptionConfig: React.FC<Props> = ({
 
         // Gemini API Limits
         maxAudioDurationMinutes: values.maxAudioDurationMinutes || 30,
-        maxFileSizeMB: values.maxFileSizeMB || 150,
+        maxFileSizeMB: values.maxFileSizeMB || 200,
         requestDelaySeconds: values.requestDelaySeconds || 5,
         summaryPrompt:
           values.summaryPrompt ||
@@ -596,7 +596,7 @@ export const TranscriptionConfig: React.FC<Props> = ({
                     <Form.Item
                       label="Kích thước file tối đa (MB)"
                       name="maxFileSizeMB"
-                      initialValue={150}
+                      initialValue={200}
                       extra="Kích thước tối đa của mỗi file gửi lên Gemini API"
                       rules={[
                         { required: true, message: "Vui lòng nhập kích thước" },

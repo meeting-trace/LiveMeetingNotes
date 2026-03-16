@@ -27,6 +27,7 @@ import {
   type RawTranscriptData,
 } from "./services/aiRefinement";
 import { updateManager, UpdateManagerService } from "./services/updateManager";
+import { chunkStorage } from "./services/chunkStorage";
 import type {
   MeetingInfo,
   SpeechToTextConfig,
@@ -180,6 +181,10 @@ export const App: React.FC = () => {
         "File System Access API not supported. Files will be downloaded instead.",
       );
     }
+    // Dọn dẹp toàn bộ chunk IDB cũ (orphan từ các phiên transcribe bị gián đoạn).
+    // Dùng clearOrphanChunks() thay vì cleanupStale(0) để an toàn khi mở nhiều tab:
+    // nếu tab khác đang giữ shared Web Lock (đang transcribe), cleanup sẽ tự bỏ qua.
+    chunkStorage.clearOrphanChunks().catch(() => {});
   }, []);
 
   // 🌐 Check browser and device for optimal experience
@@ -1081,7 +1086,7 @@ export const App: React.FC = () => {
         );
 
         try {
-          const maxFileSizeMB = config.maxFileSizeMB || 150;
+          const maxFileSizeMB = config.maxFileSizeMB || 200;
           const maxDurationMinutes = config.maxAudioDurationMinutes || 30;
           const meetingStartTime = getValidMeetingStartTime();
 
@@ -1407,14 +1412,14 @@ export const App: React.FC = () => {
         modelName = customEvent.detail.modelName;
         const config = speechToTextService.getConfig();
         maxDurationMinutes = config?.maxAudioDurationMinutes || 30;
-        maxFileSizeMB = config?.maxFileSizeMB || 150;
+        maxFileSizeMB = config?.maxFileSizeMB || 200;
       } else {
         // Fallback to getting from settings
         const config = speechToTextService.getConfig();
         apiKey = config?.geminiApiKey;
         modelName = config?.geminiModel;
         maxDurationMinutes = config?.maxAudioDurationMinutes || 30;
-        maxFileSizeMB = config?.maxFileSizeMB || 150;
+        maxFileSizeMB = config?.maxFileSizeMB || 200;
       }
 
       // Check if API key is provided
@@ -1744,7 +1749,7 @@ export const App: React.FC = () => {
 
             try {
               const config = speechToTextService.getConfig();
-              const maxFileSizeMB = config?.maxFileSizeMB || 150;
+              const maxFileSizeMB = config?.maxFileSizeMB || 200;
               const maxDurationMinutes = config?.maxAudioDurationMinutes || 30;
               const meetingStartTime = getValidMeetingStartTime();
 

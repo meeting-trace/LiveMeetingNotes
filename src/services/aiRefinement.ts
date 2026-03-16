@@ -1988,7 +1988,7 @@ JSON output (không markdown):
    */
   public static async calculateChunkBoundaries(
     audioBlob: Blob,
-    maxChunkSizeMB: number = 150,
+    maxChunkSizeMB: number = 200,
     maxDurationMinutes: number = 60
   ): Promise<{ startTimeMs: number; endTimeMs: number }[]> {
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -2549,44 +2549,57 @@ JSON output (không markdown):
 
     console.log(`[ChunkedGemini] EBML-based chunked transcription: ${audioSizeMB.toFixed(1)} MB`);
 
-    // ── Phase 1: EBML split (no decode) ─────────────────────────────────────
+    // Pre-transcription setup errors use the 'EBML_PRE_TRANSCRIPTION_FAILED' sentinel
+    // so the outer caller can fall back to the legacy path safely.
+    // Gemini API errors (Phase 3) are NOT sentinels and must always propagate.
     if (onProgress) onProgress(2, '📦 Đang phân tích cấu trúc WebM (không decode)...');
-    chunkStorage.cleanupStale().catch(() => {});
 
+    // ── Phase 1: EBML split (pure computation, no IDB) ───────────────────────
     let webmChunks: import('./webmSplitter').WebmChunk[];
     try {
       webmChunks = await splitWebmIntoChunks(audioBlob, maxChunkMs, (p, msg) => {
         if (onProgress) onProgress(2 + Math.round(p * 0.13), msg);
       });
-    } catch (splitErr: any) {
-      console.error('[ChunkedGemini] EBML split failed:', splitErr);
-      throw splitErr;
+
+      if (webmChunks.length === 1 && webmChunks[0].blob === audioBlob) {
+        throw new Error('EBML_NO_CLUSTERS');
+      }
+
+      console.log(`[ChunkedGemini] Split into ${webmChunks.length} WebM chunks`);
+    } catch (setupErr: any) {
+      // Re-throw as a well-known sentinel so the outer caller recognises this
+      // as a pre-transcription failure (safe to fall back to legacy).
+      if (setupErr.message === 'EBML_NO_CLUSTERS') throw setupErr; // passthrough
+      throw new Error(`EBML_PRE_TRANSCRIPTION_FAILED: ${setupErr.message}`);
     }
 
-    if (webmChunks.length === 1 && webmChunks[0].blob === audioBlob) {
-      throw new Error('EBML_NO_CLUSTERS');
-    }
+    // ── Phase 2+3: IDB storage + Gemini processing ───────────────────────────
+    // Hold a shared Web Lock for the entire IDB session so that startup cleanup
+    // in other tabs (clearOrphanChunks) cannot delete these chunks mid-flight.
+    return chunkStorage.withActiveSession(async () => {
+      let chunkBoundaries: Array<{ startMs: number; endMs: number }>;
+      try {
+        if (onProgress) onProgress(15, `💾 Đang lưu ${webmChunks.length} chunk vào IndexedDB...`);
+        await chunkStorage.storeChunks(sessionId, webmChunks.map(c => ({
+          startMs: c.startMs, endMs: c.endMs, blob: c.blob,
+        })));
 
-    console.log(`[ChunkedGemini] Split into ${webmChunks.length} WebM chunks`);
+        chunkBoundaries = webmChunks.map(c => ({ startMs: c.startMs, endMs: c.endMs }));
+        (webmChunks as any) = null; // release from JS heap (now in IDB)
+      } catch (storeErr: any) {
+        throw new Error(`EBML_PRE_TRANSCRIPTION_FAILED: ${storeErr.message}`);
+      }
 
-    // ── Phase 2: Store all chunks in IndexedDB ───────────────────────────────
-    if (onProgress) onProgress(15, `💾 Đang lưu ${webmChunks.length} chunk vào IndexedDB...`);
-    await chunkStorage.storeChunks(sessionId, webmChunks.map(c => ({
-      startMs: c.startMs, endMs: c.endMs, blob: c.blob,
-    })));
-
-    const chunkBoundaries = webmChunks.map(c => ({ startMs: c.startMs, endMs: c.endMs }));
-    (webmChunks as any) = null; // release from JS heap (now in IDB)
-
-    // ── Phase 3: Process each chunk from IDB ─────────────────────────────────
-    return this.processChunksFromIDB(
-      sessionId, chunkBoundaries,
-      apiKey, modelName, onProgress,
-      15, 81, // progressBase=15, progressRange=81 → reaches 96
-      maxFileSizeMB, requestDelaySeconds, maxDurationMinutes,
-      meetingStartTime, summaryPrompt, fileManager, languageCode,
-      'ChunkedGemini'
-    );
+      // Errors from this phase are transcription errors and must NOT fall back.
+      return this.processChunksFromIDB(
+        sessionId, chunkBoundaries,
+        apiKey, modelName, onProgress,
+        15, 81, // progressBase=15, progressRange=81 → reaches 96
+        maxFileSizeMB, requestDelaySeconds, maxDurationMinutes,
+        meetingStartTime, summaryPrompt, fileManager, languageCode,
+        'ChunkedGemini'
+      );
+    });
   }
 
   /**
@@ -2613,40 +2626,48 @@ JSON output (không markdown):
 
     console.log(`[ChunkedGeminiWav] WAV binary-split chunked transcription: ${audioSizeMB.toFixed(1)} MB`);
 
-    // ── Phase 1: WAV binary split (no decode) ────────────────────────────────
+    // Same sentinel strategy as the WebM path: WAV_PRE_TRANSCRIPTION_FAILED for
+    // setup failures (safe to fall back), direct throw for Gemini API errors.
     if (onProgress) onProgress(2, '📦 Đang phân tích cấu trúc WAV (không decode)...');
-    chunkStorage.cleanupStale().catch(() => {});
 
+    // ── Phase 1: WAV binary split (pure computation, no IDB) ────────────────
     let wavChunks: import('./webmSplitter').WebmChunk[];
     try {
       wavChunks = await splitWavIntoChunks(audioBlob, maxChunkMs, (p, msg) => {
         if (onProgress) onProgress(2 + Math.round(p * 0.13), msg);
       });
-    } catch (splitErr: any) {
-      console.error('[ChunkedGeminiWav] WAV split failed:', splitErr);
-      throw splitErr;
+
+      console.log(`[ChunkedGeminiWav] Split into ${wavChunks.length} WAV chunks`);
+    } catch (setupErr: any) {
+      throw new Error(`WAV_PRE_TRANSCRIPTION_FAILED: ${setupErr.message}`);
     }
 
-    console.log(`[ChunkedGeminiWav] Split into ${wavChunks.length} WAV chunks`);
+    // ── Phase 2+3: IDB storage + Gemini processing ───────────────────────────
+    // Hold a shared Web Lock for the entire IDB session so that startup cleanup
+    // in other tabs (clearOrphanChunks) cannot delete these chunks mid-flight.
+    return chunkStorage.withActiveSession(async () => {
+      let chunkBoundaries: Array<{ startMs: number; endMs: number }>;
+      try {
+        if (onProgress) onProgress(15, `💾 Đang lưu ${wavChunks.length} chunk WAV vào IndexedDB...`);
+        await chunkStorage.storeChunks(sessionId, wavChunks.map(c => ({
+          startMs: c.startMs, endMs: c.endMs, blob: c.blob,
+        })));
 
-    // ── Phase 2: Store all chunks in IndexedDB ───────────────────────────────
-    if (onProgress) onProgress(15, `💾 Đang lưu ${wavChunks.length} chunk WAV vào IndexedDB...`);
-    await chunkStorage.storeChunks(sessionId, wavChunks.map(c => ({
-      startMs: c.startMs, endMs: c.endMs, blob: c.blob,
-    })));
+        chunkBoundaries = wavChunks.map(c => ({ startMs: c.startMs, endMs: c.endMs }));
+        (wavChunks as any) = null; // release from JS heap
+      } catch (storeErr: any) {
+        throw new Error(`WAV_PRE_TRANSCRIPTION_FAILED: ${storeErr.message}`);
+      }
 
-    const chunkBoundaries = wavChunks.map(c => ({ startMs: c.startMs, endMs: c.endMs }));
-    (wavChunks as any) = null; // release from JS heap
-
-    // ── Phase 3: Process each chunk from IDB ─────────────────────────────────
-    return this.processChunksFromIDB(
-      sessionId, chunkBoundaries,
-      apiKey, modelName, onProgress,
-      15, 81,
-      maxFileSizeMB, requestDelaySeconds, maxDurationMinutes,
-      meetingStartTime, summaryPrompt, fileManager, languageCode,
-      'ChunkedGeminiWav'
-    );
+      return this.processChunksFromIDB(
+        sessionId, chunkBoundaries,
+        apiKey, modelName, onProgress,
+        15, 81,
+        maxFileSizeMB, requestDelaySeconds, maxDurationMinutes,
+        meetingStartTime, summaryPrompt, fileManager, languageCode,
+        'ChunkedGeminiWav'
+      );
+    });
   }
 
   /**
@@ -2700,8 +2721,11 @@ JSON output (không markdown):
           meetingStartTime, summaryPrompt, fileManager, languageCode
         );
       } catch (chunkedErr: any) {
-        if (chunkedErr.message === 'EBML_NO_CLUSTERS') {
-          console.warn('[transcribeEntireAudio] No EBML clusters — falling back to legacy path');
+        const msg = chunkedErr.message ?? '';
+        // Only fall back to legacy for pre-transcription setup failures.
+        // Gemini API / network errors (thrown from Phase 3) must propagate.
+        if (msg === 'EBML_NO_CLUSTERS' || msg.startsWith('EBML_PRE_TRANSCRIPTION_FAILED:')) {
+          console.warn(`[transcribeEntireAudio] WebM setup issue (${msg}) — falling back to legacy path`);
           // fall through
         } else {
           throw chunkedErr;
@@ -2727,20 +2751,23 @@ JSON output (không markdown):
           meetingStartTime, summaryPrompt, fileManager, languageCode
         );
       } catch (wavErr: any) {
-        console.warn('[transcribeEntireAudio] WAV binary split failed — falling back to legacy path:', wavErr.message);
-        // fall through to legacy
+        const msg = wavErr.message ?? '';
+        // Only fall back to legacy for pre-transcription setup failures.
+        // Gemini API / network errors (thrown from Phase 3) must propagate.
+        if (msg.startsWith('WAV_PRE_TRANSCRIPTION_FAILED:')) {
+          console.warn(`[transcribeEntireAudio] WAV setup issue (${msg}) — falling back to legacy path`);
+          // fall through to legacy
+        } else {
+          throw wavErr;
+        }
       }
     }
 
     // ============================================================
-    // LEGACY PATH: convert entire file to WAV then chunk
+    // LEGACY PATH (MP3/MP4/OGG, or format-specific fast paths failed):
+    // Convert entire file to WAV first, then chunk by AudioContext extraction.
+    // ⚠️ Only safe for files ≤ 50 MB or unsplittable compressed formats.
     // ============================================================
-    // ============================================================
-    // BƯỚC 1: CHUYỂN ĐỔI TOÀN BỘ SANG WAV (nếu cần) - TRƯỚC KHI CHIA CHUNKS
-    // ============================================================
-    // CRITICAL: Must convert ENTIRE file to WAV FIRST, then extract chunks from WAV
-    // Reason: MP3/compressed formats require full decode to access any segment
-    // Converting once is cheaper than decoding N times for N chunks
     if (onProgress) onProgress(3, '🔍 Đang kiểm tra định dạng audio...');
     
     let wavBlob = audioBlob;
