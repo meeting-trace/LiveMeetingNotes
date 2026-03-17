@@ -5,6 +5,7 @@ import {
   useImperativeHandle,
   forwardRef,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { Button, Space, Slider, Select, Spin } from "antd";
 import {
   PlayCircleOutlined,
@@ -282,6 +283,7 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
     const waveformRef = useRef<HTMLDivElement>(null);
     const wavesurferRef = useRef<WaveSurfer | null>(null);
     const fitZoomRef = useRef<number>(0); // px/sec that makes waveform fit the container exactly
+    const { t } = useTranslation();
     const isPeaksUpdateRef = useRef(false); // true while reloading WaveSurfer with real peaks
     const [isPlaying, setIsPlaying] = useState(false);
     const [isUpgradingPeaks, setIsUpgradingPeaks] = useState(false);
@@ -507,8 +509,8 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
             msg.toLowerCase().includes("unable to decode");
           onWaveformError?.(
             isOOM
-              ? "OOM: File ghi âm quá lớn, vượt quá bộ nhớ RAM của tab. Vui lòng tải lại trang và chọn 'Chỉ khôi phục ghi chú'."
-              : `Không thể tải waveform: ${msg}`,
+              ? t('audioPlayer.oomError')
+              : t('audioPlayer.loadWaveformError', { msg }),
           );
         });
 
@@ -595,7 +597,7 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
           // Menu items
           const menuItems = [
             {
-              label: `📝 Chèn ghi chú tại vị trí ${Math.floor(time / 60)}:${String(Math.floor(time % 60)).padStart(2, "0")}`,
+            label: t('audioPlayer.insertNote', { time: `${Math.floor(time / 60)}:${String(Math.floor(time % 60)).padStart(2, "0")}` }),
               action: () => {
                 window.dispatchEvent(
                   new CustomEvent("insert-note-at-time", {
@@ -625,7 +627,7 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
               },
             },
             {
-              label: "✨ Chuyển đổi giọng nói sang văn bản bằng Gemini AI",
+            label: t('audioPlayer.transcribeGemini'),
               action: () => {
                 // Get current config from settings
                 const config = (window as any).speechToTextConfig;
@@ -791,7 +793,9 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
         setDuration(0);
         setIsLoadingWaveform(false);
         const msg = (error as any)?.message || String(error);
-        onWaveformError?.(`Không thể khởi tạo audio player: ${msg}`);
+        onWaveformError?.(
+          t('audioPlayer.initPlayerError', { msg })
+        );
         return () => {};
       }
     }, [audioBlob]);
@@ -909,8 +913,7 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
       return (
         <div className="audio-player disabled">
           <div className="player-info">
-            📢 Không có tệp âm thanh. Hãy ghi âm một cuộc họp để sử dụng các
-            điều khiển phát lại.
+          {t('audioPlayer.noAudio')}
           </div>
         </div>
       );
@@ -930,7 +933,7 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
           />
           {isUpgradingPeaks && !isLoadingWaveform && (
             <div
-              title="Đang phân tích sóng âm thực từ file ghi âm..."
+              title={t('audioPlayer.analyzingRealWave')}
               style={{
                 position: "absolute",
                 bottom: 6,
@@ -951,7 +954,7 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
                 }
               />
               <span style={{ color: "#87c3fc", fontSize: 11 }}>
-                Đang phân tích sóng âm...
+                {t('audioPlayer.analyzingWave')}
               </span>
             </div>
           )}
@@ -984,9 +987,9 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, Props>(
               <div style={{ color: "#e0e0e0", fontSize: 13, fontWeight: 500 }}>
                 {loadingPhase === "reading"
                   ? loadingProgress > 0
-                    ? `Đang xử lý file âm thanh ... ${loadingProgress}%`
-                    : "Đang xử lý file âm thanh ..."
-                  : "Đang giải mã waveform..."}
+                    ? t('audioPlayer.processingAudioPercent', { percent: loadingProgress })
+                    : t('audioPlayer.processingAudio')
+                  : t('audioPlayer.decodingWaveform')}
               </div>
               {loadingPhase === "reading" &&
                 loadingProgress > 0 &&

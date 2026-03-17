@@ -1,6 +1,7 @@
 import React, { memo, useState, useCallback } from 'react';
 import { Tag, Space, Tooltip, Button, Input } from 'antd';
 import { ClockCircleOutlined, UserOutlined, CheckCircleOutlined, EditOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import type { TranscriptionResult } from '../types/types';
 
 interface Props {
@@ -31,6 +32,7 @@ const TranscriptionItemComponent: React.FC<Props> = ({
   getConfidenceLabel
 }) => {
   // Each item manages its own edit state - NO parent re-renders!
+  const { t } = useTranslation();
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState('');
   const [editSpeaker, setEditSpeaker] = useState('');
@@ -82,7 +84,7 @@ const TranscriptionItemComponent: React.FC<Props> = ({
         cursor: item.isFinal ? 'pointer' : 'default'
       }}
       onDoubleClick={handleDoubleClick}
-      title={item.isFinal ? "Double-click để chỉnh sửa" : ""}
+      title={item.isFinal ? t('transcriptionItem.doubleClickEdit') : ""}
     >
       {/* Header with metadata */}
       <div
@@ -97,7 +99,7 @@ const TranscriptionItemComponent: React.FC<Props> = ({
       >
         <Space size="small">
           {/* Time - Now showing for all transcriptions including Gemini AI */}
-          <Tooltip title="Thời gian">
+          <Tooltip title={t('transcriptionItem.timeTooltip')}>
             <Tag icon={<ClockCircleOutlined />} color="blue" style={{ fontSize: '11px' }}>
               {formatTime(item.startTime)}
             </Tag>
@@ -105,7 +107,7 @@ const TranscriptionItemComponent: React.FC<Props> = ({
 
           {/* Audio Time - Clickable (single click to seek, double click to seek+play) */}
           {item.audioTimeMs !== undefined && (
-            <Tooltip title="Click để nhảy đến vị trí này trong audio">
+            <Tooltip title={t('transcriptionItem.seekTooltip')}>
               <Tag 
                 color="cyan" 
                 style={{ 
@@ -129,7 +131,7 @@ const TranscriptionItemComponent: React.FC<Props> = ({
 
           {/* Speaker */}
           {item.speaker && (
-            <Tooltip title="Người nói">
+            <Tooltip title={t('transcriptionItem.speakerTooltip')}>
               <Tag icon={<UserOutlined />} color="purple" style={{ fontSize: '11px' }}>
                 {item.speaker}
               </Tag>
@@ -138,7 +140,7 @@ const TranscriptionItemComponent: React.FC<Props> = ({
 
           {/* Confidence */}
           {item.confidence > 0 && (
-            <Tooltip title={`Độ tin cậy: ${(item.confidence * 100).toFixed(0)}%`}>
+            <Tooltip title={t('transcriptionItem.confidenceTooltip', { percent: (item.confidence * 100).toFixed(0) })}>
               <Tag 
                 color={getConfidenceColor(item.confidence)}
                 style={{ fontSize: '11px' }}
@@ -150,7 +152,7 @@ const TranscriptionItemComponent: React.FC<Props> = ({
 
           {/* Final status */}
           {item.isFinal && (
-            <Tooltip title="Kết quả cuối cùng">
+            <Tooltip title={t('transcriptionItem.finalTooltip')}>
               <CheckCircleOutlined style={{ color: '#52c41a' }} />
             </Tooltip>
           )}
@@ -168,7 +170,7 @@ const TranscriptionItemComponent: React.FC<Props> = ({
           
           {/* Edit button - only for final results */}
           {item.isFinal && !isEditing && (
-            <Tooltip title="Sửa nội dung">
+            <Tooltip title={t('transcriptionItem.editTooltip')}>
               <Button
                 type="text"
                 size="small"
@@ -181,18 +183,18 @@ const TranscriptionItemComponent: React.FC<Props> = ({
           
           {/* Manual edit indicator */}
           {item.isManuallyEdited && (
-            <Tooltip title="Đã chỉnh sửa thủ công">
+            <Tooltip title={t('transcriptionItem.editedTag')}>
               <Tag color="orange" style={{ fontSize: '10px', margin: 0 }}>
-                ✏️ Edited
+                {t('transcriptionItem.editedLabel')}
               </Tag>
             </Tooltip>
           )}
           
           {/* AI refined indicator */}
           {item.isAIRefined && (
-            <Tooltip title="Đã chuẩn hóa bằng AI ✨">
+            <Tooltip title={t('transcriptionItem.aiTag')}>
               <Tag color="green" style={{ fontSize: '10px', margin: 0 }}>
-                ✨ AI
+                {t('transcriptionItem.aiLabel')}
               </Tag>
             </Tooltip>
           )}
@@ -208,13 +210,13 @@ const TranscriptionItemComponent: React.FC<Props> = ({
               {/* Edit Start Time */}
               <div style={{ display: 'flex', alignItems: 'center' }}>
                 <label style={{ fontSize: '12px', color: '#666', marginRight: '6px', whiteSpace: 'nowrap' }}>
-                  Thời điểm:
+                  {t('transcriptionItem.timeLabel')}
                 </label>
                 <Input
                   size="small"
                   value={editStartTime}
                   onChange={(e) => setEditStartTime(e.target.value)}
-                  placeholder="yyyy-MM-dd HH:mm:ss"
+                  placeholder={t('transcriptionItem.timePlaceholder')}
                   style={{ width: '170px' }}
                 />
               </div>
@@ -223,13 +225,13 @@ const TranscriptionItemComponent: React.FC<Props> = ({
               {editAudioTimeMs !== undefined && (
                 <div style={{ display: 'flex', alignItems: 'center' }}>
                   <label style={{ fontSize: '12px', color: '#666', marginRight: '6px', whiteSpace: 'nowrap' }}>
-                    Vị trí audio:
+                    {t('transcriptionItem.audioTimeLabel')}
                   </label>
                   <Input
                     size="small"
                     value={formatAudioTime(editAudioTimeMs)}
                     onChange={(e) => setEditAudioTimeMs(parseAudioTime(e.target.value))}
-                    placeholder="0:00"
+                    placeholder={t('transcriptionItem.audioTimePlaceholder')}
                     style={{ width: '80px' }}
                   />
                 </div>
@@ -238,13 +240,13 @@ const TranscriptionItemComponent: React.FC<Props> = ({
               {/* Edit Speaker */}
               <div style={{ display: 'flex', alignItems: 'center' }}>
                 <label style={{ fontSize: '12px', color: '#666', marginRight: '6px', whiteSpace: 'nowrap' }}>
-                  Người nói:
+                  {t('transcriptionItem.speakerLabel')}
                 </label>
                 <Input
                   size="small"
                   value={editSpeaker}
                   onChange={(e) => setEditSpeaker(e.target.value)}
-                  placeholder="Người nói 1"
+                  placeholder={t('transcriptionItem.speakerPlaceholder')}
                   style={{ width: '120px' }}
                 />
               </div>
@@ -267,14 +269,14 @@ const TranscriptionItemComponent: React.FC<Props> = ({
                 icon={<SaveOutlined />}
                 onClick={handleSaveEdit}
               >
-                Lưu
+                {t('transcriptionItem.save')}
               </Button>
               <Button
                 size="small"
                 icon={<CloseOutlined />}
                 onClick={handleCancelEdit}
               >
-                Hủy
+                {t('transcriptionItem.cancel')}
               </Button>
             </Space>
           </div>

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { Collapse, Empty, Space, Tag, Tooltip, Button } from 'antd';
 import { AudioOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import type { TranscriptionResult } from '../types/types';
 import { TranscriptionItem } from './TranscriptionItem';
 
@@ -23,6 +24,7 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
   onAIRefine,
   canRefineWithAI
 }) => {
+  const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState<number>(100);
@@ -221,10 +223,10 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
   }, []);
 
   const getConfidenceLabel = useCallback((confidence: number): string => {
-    if (confidence >= 0.9) return 'Cao';
-    if (confidence >= 0.7) return 'Trung bình';
-    return 'Thấp';
-  }, []);
+    if (confidence >= 0.9) return t('transcriptionItem.confidenceHigh');
+    if (confidence >= 0.7) return t('transcriptionItem.confidenceMid');
+    return t('transcriptionItem.confidenceLow');
+  }, [t]);
 
   const handleCollapseChange = (keys: string | string[]) => {
     // When panel expands, recalculate height after DOM renders
@@ -260,29 +262,28 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
             }}>
               <Space>
                 <AudioOutlined />
-                <span>Kết quả chuyển đổi giọng nói sang văn bản</span>
+                <span>{t('transcriptionPanel.title')}</span>
                 {isTranscribing && (
                   <Tag color="processing" icon={<AudioOutlined />}>
-                    Đang nhận dạng (chỉ hỗ trợ âm thanh từ Microphone)...
+                    {t('transcriptionPanel.recognizing')}
                   </Tag>
                 )}
                 {!isOnline && (
-                  <Tag color="default">Offline</Tag>
+                  <Tag color="default">{t('transcriptionPanel.offline')}</Tag>
                 )}
                 {transcriptions.length > 0 && (
-                  <Tag color="blue">{transcriptions.length} đoạn</Tag>
+                  <Tag color="blue">{t('transcriptionPanel.segments', { count: transcriptions.length })}</Tag>
                 )}
               </Space>
               
               {/* AI Refine Button in header */}
               {canRefineWithAI && !isTranscribing && transcriptions.length > 0 && onAIRefine && (
-                <Tooltip title="Sử dụng AI để chuẩn hóa và làm sạch văn bản chuyển đổi">
+                <Tooltip title={t('transcriptionPanel.refineAITooltip')}>
                   <Button
                     type="primary"
                     size="small"
-                    // icon={<RobotOutlined />}
                     onClick={(e) => {
-                      e.stopPropagation(); // Prevent collapse toggle
+                      e.stopPropagation();
                       onAIRefine();
                     }}
                     style={{ 
@@ -290,7 +291,7 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
                       border: 'none'
                     }}
                   >
-                    ✨Chuẩn hóa bằng AI
+                    {t('transcriptionPanel.refineAI')}
                   </Button>
                 </Tooltip>
               )}
@@ -318,8 +319,8 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
                     description={
                       isTranscribing
-                        ? 'Đang chờ kết quả chuyển đổi...'
-                        : 'Chưa có dữ liệu chuyển đổi. Bật chế độ ghi âm và Tự động chuyển giọng nói thành văn bản để bắt đầu.'
+                        ? t('transcriptionPanel.waitingTranscription')
+                        : t('transcriptionPanel.noData')
                     }
                   />
                 </div>
@@ -363,7 +364,7 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
                       right: '20px',
                       zIndex: 100
                     }}>
-                      <Tooltip title="Cuộn xuống cuối cùng">
+                      <Tooltip title={t('transcriptionPanel.scrollToBottom')}>
                         <Button
                           type="primary"
                           shape="circle"

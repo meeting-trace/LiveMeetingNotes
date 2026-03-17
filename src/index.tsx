@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { App as MainApp } from './App';
 import { ConfigProvider, theme, App as AntdApp } from 'antd';
 import './styles/global.css';
+import './i18n';
 import { registerSW } from 'virtual:pwa-register';
 
 // Register service worker with update prompt

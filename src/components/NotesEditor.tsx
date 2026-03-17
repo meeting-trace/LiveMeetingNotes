@@ -1,5 +1,6 @@
 import React, { useRef, useState, useCallback } from "react";
 import { Input } from "antd";
+import { useTranslation } from "react-i18next";
 import type { TextAreaRef } from "antd/es/input/TextArea";
 import type { NoteLine } from "../types/types";
 
@@ -85,6 +86,7 @@ export const NotesEditor: React.FC<Props> = ({
 }) => {
   // const [showTimestamps, setShowTimestamps] = useState(true);
   const [showTimestamps] = useState(true);
+  const { t } = useTranslation();
   const [editingDatetimeIndex, setEditingDatetimeIndex] = useState<
     number | null
   >(null);
@@ -870,12 +872,12 @@ export const NotesEditor: React.FC<Props> = ({
         }
       `}</style>
       <div className="editor-header">
-        <h3>📝 Ghi chép thủ công</h3>
+        <h3>{t('notes.title')}</h3>
         <div className="editor-controls">
           <span className="recording-hint">
             {isLiveMode
-              ? "💡 Gõ để tạo ngày giờ • Enter để xuống dòng mới • Shift+Enter để ngắt dòng"
-              : "💡 Nhấp chuột phải vào sóng âm để chèn ghi chú • Enter/Shift+Enter để ngắt dòng trong văn bản"}
+              ? t('notes.hintLive')
+              : t('notes.hintLoaded')}
           </span>
           {/* <button
             className="toggle-timestamps-btn"
@@ -951,8 +953,8 @@ export const NotesEditor: React.FC<Props> = ({
                 title={
                   timeMs !== undefined
                     ? isLiveMode
-                      ? "Nhấn để chỉnh sửa • Nhấp đúp để chuyển đến âm thanh"
-                      : "Nhấp đúp để chuyển đến âm thanh"
+                      ? t('notes.timestampTooltipLive')
+                      : t('notes.timestampTooltipLoaded')
                     : ""
                 }
               >
@@ -1016,7 +1018,7 @@ export const NotesEditor: React.FC<Props> = ({
                   value={line.speaker || ""} // ✅ Read from NoteLine object
                   onChange={(e) => handleSpeakerChange(index, e.target.value)}
                   onKeyDown={(e) => handleSpeakerKeyDown(index, e)}
-                  placeholder="Người nói"
+                  placeholder={t('notes.speakerPlaceholder')}
                   autoSize={{ minRows: 1, maxRows: 10 }}
                   style={{
                     fontFamily: "monospace",
@@ -1061,7 +1063,7 @@ export const NotesEditor: React.FC<Props> = ({
                   const target = e.target as HTMLTextAreaElement;
                   handleLineChange(index, target.value);
                 }}
-                placeholder="Nhập ghi chú ..."
+                placeholder={t('notes.notePlaceholder')}
                 autoSize={{ minRows: 1, maxRows: 10 }}
                 style={{
                   flex: 1,

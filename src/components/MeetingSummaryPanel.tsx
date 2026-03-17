@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Collapse, Button, Input, Space, Typography, Empty } from 'antd';
 import { SaveOutlined, CloseOutlined, FileTextOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -18,6 +19,7 @@ export const MeetingSummaryPanel: React.FC<Props> = ({
   onExportToWord,
   onMarkUnsaved
 }) => {
+  const { t } = useTranslation();
   const [isEditing, setIsEditing] = useState(false);
   const [editedSummary, setEditedSummary] = useState(summary);
 
@@ -46,7 +48,7 @@ export const MeetingSummaryPanel: React.FC<Props> = ({
           key: '1',
           label: (
             <Space>
-              <span>✨Tóm tắt nội dung</span>
+              <span>{t('summary.title')}</span>
             </Space>
           ),
           extra: isEditing ? (
@@ -57,14 +59,14 @@ export const MeetingSummaryPanel: React.FC<Props> = ({
                 icon={<SaveOutlined />}
                 onClick={handleSave}
               >
-                Lưu
+                {t('summary.save')}
               </Button>
               <Button
                 size="small"
                 icon={<CloseOutlined />}
                 onClick={handleCancel}
               >
-                Hủy
+                {t('summary.cancel')}
               </Button>
             </Space>
           ) : onExportToWord && summary ? (
@@ -77,7 +79,7 @@ export const MeetingSummaryPanel: React.FC<Props> = ({
                 onExportToWord();
               }}
             >
-              Xuất Word
+              {t('summary.exportWord')}
             </Button>
           ) : undefined,
           children: (
@@ -86,12 +88,12 @@ export const MeetingSummaryPanel: React.FC<Props> = ({
                 <div 
                   style={{ padding: '32px 0', cursor: 'pointer' }}
                   onDoubleClick={() => setIsEditing(true)}
-                  title="Double-click để chỉnh sửa"
+                  title={t('summary.editTooltip')}
                 >
-                  <Empty description="Chưa có tóm tắt">
+                  <Empty description={t('summary.empty')}>
                     <Text type="secondary">
-                      Double-click để thêm tóm tắt thủ công<br/>
-                      hoặc sử dụng "Chuyển đổi giọng nói bằng Gemini AI" để tự động tạo
+                      {t('summary.addManually')}<br/>
+                      {t('summary.orUseGemini')}
                     </Text>
                   </Empty>
                 </div>
@@ -99,7 +101,7 @@ export const MeetingSummaryPanel: React.FC<Props> = ({
                 <TextArea
                   value={editedSummary}
                   onChange={(e) => setEditedSummary(e.target.value)}
-                  placeholder="Nhập nội dung tóm tắt cuộc họp..."
+                  placeholder={t('summary.placeholder')}
                   autoSize={{ minRows: 8, maxRows: 20 }}
                   style={{ fontSize: '14px', lineHeight: '1.8' }}
                 />
@@ -119,7 +121,7 @@ export const MeetingSummaryPanel: React.FC<Props> = ({
                     cursor: 'pointer',
                     transition: 'box-shadow 0.2s'
                   }}
-                  title="Double-click để chỉnh sửa"
+                  title={t('summary.editTooltip')}
                   dangerouslySetInnerHTML={{
                     __html: summary
                       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // **bold** -> <strong>

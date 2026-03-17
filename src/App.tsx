@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { MetadataPanel } from "./components/MetadataPanel";
 import { RecordingControls } from "./components/RecordingControls";
 import { NotesEditor } from "./components/NotesEditor";
 import { AudioPlayer, AudioPlayerRef } from "./components/AudioPlayer";
 import { LiveWaveform } from "./components/LiveWaveform";
 import { HelpButton } from "./components/HelpButton";
+import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { TranscriptionConfig } from "./components/TranscriptionConfig";
 import { TranscriptionPanel } from "./components/TranscriptionPanel";
 import { MeetingSummaryPanel } from "./components/MeetingSummaryPanel";
@@ -40,6 +42,7 @@ import "./styles/global.css";
 
 export const App: React.FC = () => {
   const { modal, notification } = AntdApp.useApp();
+  const { t } = useTranslation();
   const [folderPath, setFolderPath] = useState<string>("");
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribingActive, setIsTranscribingActive] = useState(false);
@@ -223,16 +226,16 @@ export const App: React.FC = () => {
             let warningMessage = "";
 
             if (!isChrome && !isDesktop) {
-              warningMessage = `Bạn đang sử dụng ${browserName} trên ${deviceType}. Để có trải nghiệm tốt nhất với tính năng nhận dạng giọng nói, chúng tôi khuyến nghị sử dụng Google Chrome trên máy tính/laptop.`;
+              warningMessage = t('browserWarning.message', { browser: browserName, device: deviceType });
             } else if (!isChrome) {
-              warningMessage = `Bạn đang sử dụng ${browserName}. Để có trải nghiệm tốt nhất với tính năng nhận dạng giọng nói, chúng tôi khuyến nghị sử dụng Google Chrome trên máy tính/laptop.`;
+              warningMessage = t('browserWarning.message', { browser: browserName, device: 'máy tính' });
             } else if (!isDesktop) {
-              warningMessage = `Bạn đang sử dụng thiết bị ${deviceType}. Để có trải nghiệm tốt nhất với tính năng nhận dạng giọng nói, chúng tôi khuyến nghị sử dụng Google Chrome trên máy tính/laptop.`;
+              warningMessage = t('browserWarning.message', { browser: 'Chrome', device: deviceType });
             }
 
             if (warningMessage) {
               modal.info({
-                title: "💡 Khuyến nghị trình duyệt & thiết bị",
+                title: t('browserWarning.title'),
                 content: (
                   <div>
                     <p>{warningMessage}</p>
@@ -243,14 +246,11 @@ export const App: React.FC = () => {
                         color: "#666",
                       }}
                     >
-                      <strong>Lý do:</strong> Các thuật toán nhận dạng giọng nói
-                      đã được tối ưu hóa cho Web Speech API của Google Chrome
-                      trên máy tính, mang lại độ chính xác và hiệu suất cao
-                      nhất.
+                      {t('browserWarning.reason')}
                     </p>
                   </div>
                 ),
-                okText: "Đã hiểu",
+                okText: t('browserWarning.ok'),
                 width: 500,
                 onOk: () => {
                   sessionStorage.setItem(warningKey, "true");
@@ -342,7 +342,7 @@ export const App: React.FC = () => {
   const handleConvertTimestamps = useCallback(
     (newMeetingStartTime: Date) => {
       if (transcriptions.length === 0) {
-        message.info("Không có segments để convert");
+        message.info(t("transcriptionConfirm.noSegments"));
         return;
       }
 
@@ -367,7 +367,7 @@ export const App: React.FC = () => {
       setHasUnsavedChanges(true); // Mark as unsaved to show Save button
 
       message.success(
-        `✅ Đã convert ${convertedCount}/${transcriptions.length} segments`,
+        t("transcriptionConfirm.convertedSegments", { converted: convertedCount, total: transcriptions.length }),
       );
       console.log("🕐 Converted timestamps:", {
         newMeetingStartTime: newMeetingStartTime.toISOString(),
@@ -398,7 +398,7 @@ export const App: React.FC = () => {
         <span
           style={{ fontSize: "18px", fontWeight: "bold", color: "#fa8c16" }}
         >
-          ⚠️ File audio quá lớn
+          {t('fileTooLarge.title')}
         </span>
       ),
       width: 700,
@@ -415,27 +415,27 @@ export const App: React.FC = () => {
             }}
           >
             <div style={{ fontSize: "15px", marginBottom: "12px" }}>
-              <strong>📊 Thông tin file:</strong>
-              <br />• Thời lượng:{" "}
+              <strong>{t('fileTooLarge.fileInfo')}</strong>
+              <br />• {t('fileTooLarge.duration')}{" "}
               <span style={{ fontWeight: "bold" }}>
                 {durationMinutes}:{String(durationSeconds).padStart(2, "0")}
               </span>{" "}
-              (≈ {Math.ceil(audioDurationSec / 60)} phút)
-              <br />• Kích thước hiện tại:{" "}
+              (≈ {Math.ceil(audioDurationSec / 60)} {t('config.minutesSuffix')})
+              <br />• {t('fileTooLarge.currentSize')}{" "}
               <span style={{ color: "#fa8c16", fontWeight: "bold" }}>
                 {fileSizeMB.toFixed(2)} MB
               </span>
-              <br />• Giới hạn Gemini:{" "}
+              <br />• {t('fileTooLarge.geminiLimit')}{" "}
               <span style={{ color: "#52c41a", fontWeight: "bold" }}>
                 ≤ {maxSizeMB} MB
               </span>{" "}
-              và{" "}
+              {t('common.and')}{" "}
               <span style={{ color: "#52c41a", fontWeight: "bold" }}>
-                ≤ {maxDurationMinutes} phút
+                ≤ {maxDurationMinutes} {t('config.minutesSuffix')}
               </span>
             </div>
             <div style={{ fontSize: "13px", color: "#666" }}>
-              💡 File vượt quá giới hạn của Gemini API
+              {t('fileTooLarge.exceedsLimit')}
             </div>
           </div>
 
@@ -447,7 +447,7 @@ export const App: React.FC = () => {
               color: "#1890ff",
             }}
           >
-            🎯 Chọn phương án xử lý:
+            {t('fileTooLarge.chooseMethod')}
           </div>
 
           {/* Option 1: Auto-split entire file */}
@@ -474,18 +474,16 @@ export const App: React.FC = () => {
                 color: "#667eea",
               }}
             >
-              <span style={{ fontSize: "20px" }}>🤖</span> Phương án 1: Chuyển
-              đổi toàn bộ file (Tự động)
+              <span style={{ fontSize: "20px" }}>🤖</span> {t('fileTooLarge.autoMethod')}
             </div>
             <div style={{ fontSize: "13px", color: "#666", lineHeight: "1.6" }}>
-              • Hệ thống tự động chia file thành các phần nhỏ (≤ {maxSizeMB}MB)
+              {t('fileTooLarge.autoSplit', { maxSizeMB })}
               <br />
-              • Gửi lần lượt đến Gemini AI (tuân thủ 15 req/min, 1500 req/day)
+              {t('fileTooLarge.autoSend')}
               <br />
-              • Tự động gộp và sắp xếp kết quả theo timeline
-              <br />•{" "}
-              <strong style={{ color: "#52c41a" }}>✅ Khuyên dùng:</strong> Tiết
-              kiệm thời gian, xử lý toàn bộ nội dung
+              {t('fileTooLarge.autoMerge')}
+              <br />{" "}
+              <strong style={{ color: "#52c41a" }}>{t('fileTooLarge.autoRecommend')}</strong>
             </div>
           </div>
 
@@ -511,16 +509,15 @@ export const App: React.FC = () => {
                 color: "#1890ff",
               }}
             >
-              <span style={{ fontSize: "20px" }}>✂️</span> Phương án 2: Chọn
-              đoạn thủ công
+              <span style={{ fontSize: "20px" }}>✂️</span> {t('fileTooLarge.manualMethod')}
             </div>
             <div style={{ fontSize: "13px", color: "#666", lineHeight: "1.6" }}>
-              • Bạn tự chọn khoảng thời gian cụ thể cần chuyển đổi
+              {t('fileTooLarge.manualDesc1')}
               <br />
-              • Phù hợp khi chỉ cần transcribe một phần quan trọng
+              {t('fileTooLarge.manualDesc2')}
               <br />
-              • Tiết kiệm quota API nếu chỉ cần xử lý đoạn ngắn
-              <br />• Có thể chọn nhiều đoạn khác nhau trong cùng file
+              {t('fileTooLarge.manualDesc3')}
+              <br />{t('fileTooLarge.manualDesc4')}
             </div>
           </div>
 
@@ -535,12 +532,11 @@ export const App: React.FC = () => {
               marginTop: "16px",
             }}
           >
-            <strong>💡 Gợi ý:</strong> Nếu cần toàn bộ nội dung cuộc họp, chọn
-            Phương án 1. Nếu chỉ cần một phần, chọn Phương án 2.
+            <strong>{t('fileTooLarge.tip').split(':')[0]}:</strong>{t('fileTooLarge.tip').split(':').slice(1).join(':')}
           </div>
         </div>
       ),
-      okText: "Đóng",
+      okText: t('common.close'),
       cancelButtonProps: { style: { display: "none" } },
       okButtonProps: { size: "large", style: { height: "40px" } },
     });
@@ -566,7 +562,7 @@ export const App: React.FC = () => {
         <span
           style={{ fontSize: "18px", fontWeight: "bold", color: "#1890ff" }}
         >
-          ✂️ Chọn đoạn cần chuyển đổi
+          ✂️ {t('manualSegment.title')}
         </span>
       ),
       width: 600,
@@ -583,13 +579,13 @@ export const App: React.FC = () => {
             }}
           >
             <div style={{ fontSize: "15px", marginBottom: "12px" }}>
-              <strong>📊 Thông tin file:</strong>
-              <br />• Kích thước:{" "}
+              <strong>{t('fileTooLarge.fileInfo')}</strong>
+              <br />• {t('fileTooLarge.currentSize')}{" "}
               <span style={{ fontWeight: "bold" }}>
                 {fileSizeMB.toFixed(2)} MB
               </span>{" "}
               / {maxSizeMB} MB
-              <br />• Thời lượng:{" "}
+              <br />• {t('fileTooLarge.duration')}{" "}
               <span style={{ fontWeight: "bold" }}>
                 {durationMinutes}:{String(durationSeconds).padStart(2, "0")}
               </span>
@@ -607,8 +603,7 @@ export const App: React.FC = () => {
               color: "#1890ff",
             }}
           >
-            🎵 <strong>Mẹo:</strong> Phát audio và pause ở vị trí muốn chọn, rồi
-            xem thời gian trên audio player để nhập chính xác!
+            🎵 <strong>{t('manualSegment.tip').split(':')[0]}:</strong> {t('manualSegment.tip').split(':').slice(1).join(':')}
           </div>
 
           <div style={{ marginBottom: "12px" }}>
@@ -620,7 +615,7 @@ export const App: React.FC = () => {
                 fontWeight: "bold",
               }}
             >
-              ⏱️ Thời gian bắt đầu (phút:giây)
+              {t('manualSegment.startTime')}
             </label>
             <input
               ref={(el) => (startTimeInput = el)}
@@ -649,7 +644,7 @@ export const App: React.FC = () => {
                 fontWeight: "bold",
               }}
             >
-              ⏱️ Thời gian kết thúc (phút:giây)
+              {t('manualSegment.endTime')}
             </label>
             <input
               ref={(el) => (endTimeInput = el)}
@@ -679,13 +674,12 @@ export const App: React.FC = () => {
               color: "#666",
             }}
           >
-            <strong>📝 Lưu ý:</strong> Kết quả sẽ được gắn timestamp chính xác
-            theo thời gian bạn chọn
+            <strong>📝 {t('manualSegment.note').split(':')[0]}:</strong> {t('manualSegment.note').split(':').slice(1).join(':')}
           </div>
         </div>
       ),
-      okText: "✂️ Chuyển đổi đoạn đã chọn",
-      cancelText: "Quay lại",
+      okText: t('manualSegment.convert'),
+      cancelText: t('common.back'),
       okButtonProps: { size: "large", style: { height: "40px" } },
       cancelButtonProps: { size: "large", style: { height: "40px" } },
       onOk: async () => {
@@ -708,7 +702,7 @@ export const App: React.FC = () => {
 
     const config = speechToTextService.getConfig();
     if (!config || !config.geminiApiKey || !config.geminiModel) {
-      message.error("Vui lòng cấu hình Gemini API Key và Model trong Settings");
+      message.error(t('missingApiKey.description'));
       return;
     }
 
@@ -725,7 +719,7 @@ export const App: React.FC = () => {
       // Hiện cảnh báo cho audio dài, nhưng với tone khác (tính năng này đã được tối ưu cho audio dài)
       const confirmed = await new Promise<boolean>((resolve) => {
         modal.warning({
-          title: "⚠️ Audio rất dài",
+          title: t('longAudio.title'),
           width: 600,
           content: (
             <div style={{ marginTop: 16 }}>
@@ -745,38 +739,28 @@ export const App: React.FC = () => {
                     lineHeight: "1.8",
                   }}
                 >
-                  <strong>Thông tin:</strong>
-                  <br />• Thời lượng: <strong>{durationMinutes} phút</strong>
-                  <br />• Số phần ước tính:{" "}
-                  <strong>
-                    ~{Math.ceil(durationMinutes / maxDurationMinutes)} phần
-                  </strong>
-                  <br />• Thời gian xử lý:{" "}
-                  <strong>
-                    ~{Math.ceil(durationMinutes / 10)}-
-                    {Math.ceil(durationMinutes / 5)} phút
-                  </strong>
-                  <br />• Delay giữa các phần:{" "}
-                  <strong>{requestDelaySeconds}s</strong>
+                  <strong>{t('longAudio.info')}</strong>
+                  <br />• {t('longAudio.duration', { minutes: durationMinutes })}
+                  <br />• {t('longAudio.estimatedParts', { parts: Math.ceil(durationMinutes / maxDurationMinutes) })}
+                  <br />• {t('longAudio.estimatedTime', { min: Math.ceil(durationMinutes / 10), max: Math.ceil(durationMinutes / 5) })}
+                  <br />• {t('longAudio.delay', { seconds: requestDelaySeconds })}
                   <br />
                   <br />
-                  <strong style={{ color: "#ff7a45" }}>Lưu ý:</strong>
+                  <strong style={{ color: "#ff7a45" }}>{t('longAudio.notes')}</strong>
                   <br />
-                  • Quá trình này sẽ mất khá nhiều thời gian
+                  {t('longAudio.note1')}
                   <br />
-                  • Tốn nhiều token API (audio dài)
-                  <br />• Vui lòng không đóng trình duyệt trong lúc xử lý
+                  {t('longAudio.note2')}
+                  <br />{t('longAudio.note3')}
                 </div>
               </div>
               <div style={{ fontSize: "13px", color: "#666" }}>
-                <strong>💡 Gợi ý:</strong> Nếu chỉ cần tóm tắt một phần, hãy
-                chọn "Chuyển đổi đoạn đã chọn" và chọn khoảng thời gian ngắn
-                hơn.
+                <strong>{t('longAudio.tip').split(':')[0]}:</strong>{t('longAudio.tip').split(':').slice(1).join(':')}
               </div>
             </div>
           ),
-          okText: "✅ Tiếp tục xử lý",
-          cancelText: "Hủy",
+          okText: t('longAudio.continue'),
+          cancelText: t('common.cancel'),
           onOk: () => resolve(true),
           onCancel: () => resolve(false),
         });
@@ -787,7 +771,7 @@ export const App: React.FC = () => {
 
     // Create progress notification at bottom-right (non-blocking)
     let currentProgress = 0;
-    let currentMessage = "🚀 Đang bắt đầu...";
+    let currentMessage = t("autoSplit.starting");
     const notificationKey = `gemini-auto-split-${Date.now()}`;
 
     const updateProgressNotification = () => {
@@ -797,7 +781,7 @@ export const App: React.FC = () => {
           <span
             style={{ fontSize: "16px", fontWeight: "bold", color: "#667eea" }}
           >
-            <span style={{ fontSize: "20px" }}>🤖</span> Xử lý toàn bộ file
+            <span style={{ fontSize: "20px" }}>🤖</span> {t("autoSplit.notificationTitle")}
           </span>
         ),
         description: (
@@ -861,7 +845,7 @@ export const App: React.FC = () => {
         config.geminiModel,
         (progress, msg) => {
           currentProgress = progress;
-          currentMessage = msg || "⏳ Đang xử lý...";
+          currentMessage = msg || t("autoSplit.defaultProgress");
 
           // Update notification
           updateProgressNotification();
@@ -878,7 +862,7 @@ export const App: React.FC = () => {
           new Promise((resolve) => {
             let newKey = ctx.currentApiKey;
             modal.confirm({
-              title: "⚠️ Lỗi Gemini AI — Cần xử lý",
+              title: t('retryError.title'),
               width: 520,
               icon: null,
               content: (
@@ -893,27 +877,29 @@ export const App: React.FC = () => {
                     }}
                   >
                     <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 14 }}>
-                      ❌ Lỗi tại phần {ctx.chunkIndex}/{ctx.chunkTotal}:
+                      {t('retryError.errorAt', { current: ctx.chunkIndex, total: ctx.chunkTotal })}
                     </div>
                     <div style={{ color: "#cf1322", fontSize: 13 }}>{ctx.error}</div>
                   </div>
                   <div style={{ marginBottom: 12, color: "#595959", fontSize: 13 }}>
-                    Đã tự động thử lại <strong>{ctx.attempt}</strong> lần, vẫn thất bại. Bạn có muốn tiếp tục thử không?
+                    {t('retryError.retriedFailed', { count: ctx.attempt })}
                   </div>
                   <div style={{ marginBottom: 6, fontSize: 13, fontWeight: 600 }}>
-                    API Key{" "}
-                    <span style={{ fontWeight: 400, color: "#8c8c8c" }}>(có thể đổi key khác nếu cần)</span>:
+                    {t('retryError.apiKeyLabel')}
                   </div>
                   <Input
                     defaultValue={ctx.currentApiKey}
                     onChange={(e) => { newKey = e.target.value; }}
-                    placeholder="Nhập API key mới hoặc giữ nguyên key hiện tại"
+                    placeholder={t('retryError.apiKeyPlaceholder')}
                     style={{ fontFamily: "monospace", fontSize: 12 }}
                   />
+                  <div style={{ marginTop: 6, fontSize: 12, color: "#8c8c8c" }}>
+                    {t('retryError.apiKeyHint')}
+                  </div>
                 </div>
               ),
-              okText: "🔄 Thử lại",
-              cancelText: "🛑 Dừng lại",
+              okText: t('retryError.retryBtn'),
+              cancelText: t('retryError.stopBtn'),
               onOk: () => resolve({ retry: true, newApiKey: newKey?.trim() || undefined }),
               onCancel: () => resolve({ retry: false }),
             });
@@ -924,7 +910,7 @@ export const App: React.FC = () => {
       notification.destroy(notificationKey);
 
       // Show success message
-      message.success("✅ Gemini xử lý hoàn tất!");
+      message.success(t("transcriptionConfirm.completed"));
 
       // Save summary
       if (parsed.summary) {
@@ -935,7 +921,7 @@ export const App: React.FC = () => {
       // Show truncation warning if detected
       if (parsed.isTruncated && parsed.truncationWarning) {
         modal.warning({
-          title: "⚠️ Cảnh báo: Kết quả bị cắt ngắn",
+          title: t('truncationWarning.title'),
           width: 600,
           content: (
             <div style={{ marginTop: 16 }}>
@@ -961,12 +947,11 @@ export const App: React.FC = () => {
               <div
                 style={{ marginTop: 12, color: "#595959", fontSize: "13px" }}
               >
-                <strong>Kết quả nhận được:</strong> {parsed.results.length}{" "}
-                segments
+                {t('truncationWarning.received', { count: parsed.results.length })}
               </div>
             </div>
           ),
-          okText: "Đóng",
+          okText: t('common.close'),
         });
       }
 
@@ -984,8 +969,8 @@ export const App: React.FC = () => {
         // Show warning modal (yellow) for policy violations
         modal.warning({
           title: isRecitationError
-            ? "⚠️ Phát hiện nội dung có bản quyền"
-            : "⚠️ Nội dung bị từ chối",
+            ? t('contentPolicy.recitationTitle')
+            : t('contentPolicy.safetyTitle'),
           width: 480,
           content: (
             <div style={{ marginTop: 16 }}>
@@ -1014,7 +999,7 @@ export const App: React.FC = () => {
               </div>
             </div>
           ),
-          okText: "Đóng",
+          okText: t('common.close'),
         });
         console.warn("Auto-split policy violation:", error);
         return;
@@ -1022,7 +1007,7 @@ export const App: React.FC = () => {
 
       // Show error modal (red) for other errors
       modal.error({
-        title: "❌ Lỗi chuyển đổi",
+        title: t('transcriptionError.title'),
         width: 480,
         content: (
           <div style={{ marginTop: 16 }}>
@@ -1047,7 +1032,7 @@ export const App: React.FC = () => {
             </div>
           </div>
         ),
-        okText: "Đóng",
+        okText: t('common.close'),
       });
       console.error("Auto-split transcription error:", error);
     }
@@ -1060,7 +1045,7 @@ export const App: React.FC = () => {
     maxSizeMB: number,
   ) => {
     if (!audioBlob || !startTimeInput || !endTimeInput) {
-      message.error("Thiếu thông tin cần thiết");
+      message.error(t("transcriptionConfirm.missingInfo"));
       return;
     }
 
@@ -1073,12 +1058,12 @@ export const App: React.FC = () => {
     const parseTime = (timeStr: string): number => {
       const parts = timeStr.trim().split(":");
       if (parts.length !== 2) {
-        throw new Error("Định dạng thời gian không hợp lệ");
+        throw new Error(t("transcriptionConfirm.invalidTimeFormat"));
       }
       const minutes = parseInt(parts[0]);
       const seconds = parseInt(parts[1]);
       if (isNaN(minutes) || isNaN(seconds)) {
-        throw new Error("Thời gian phải là số");
+        throw new Error(t("transcriptionConfirm.timeNotNumber"));
       }
       return (minutes * 60 + seconds) * 1000; // Convert to milliseconds
     };
@@ -1088,19 +1073,19 @@ export const App: React.FC = () => {
       const endMs = parseTime(endTimeInput.value);
 
       if (startMs >= endMs) {
-        message.error("Thời gian bắt đầu phải nhỏ hơn thời gian kết thúc");
+        message.error(t("transcriptionConfirm.startBeforeEnd"));
         return;
       }
 
       if (endMs > audioDurationMs) {
         message.error(
-          `Thời gian kết thúc không được vượt quá ${durationMinutes}:${String(durationSeconds).padStart(2, "0")}`,
+          t("transcriptionConfirm.endExceedsDuration", { duration: `${durationMinutes}:${String(durationSeconds).padStart(2, "0")}` }),
         );
         return;
       }
 
       // Show processing modal
-      const hideLoading = message.loading("✂️ Đang cắt đoạn audio...", 0);
+      const hideLoading = message.loading(t("autoSplit.convertingSegment"), 0);
 
       try {
         // Extract audio segment
@@ -1128,7 +1113,7 @@ export const App: React.FC = () => {
         if (!config) return;
 
         const hideProcessing = message.loading(
-          "🤖 Đang chuyển đổi đoạn audio...",
+          t("autoSplit.convertingSegment"),
           0,
         );
 
@@ -1169,7 +1154,7 @@ export const App: React.FC = () => {
           // Show truncation warning if detected
           if (parsed.isTruncated && parsed.truncationWarning) {
             modal.warning({
-              title: "⚠️ Cảnh báo: Kết quả bị cắt ngắn",
+              title: t("truncationWarning.title"),
               width: 600,
               content: (
                 <div style={{ marginTop: 16 }}>
@@ -1193,7 +1178,7 @@ export const App: React.FC = () => {
                   </div>
                 </div>
               ),
-              okText: "Đóng",
+              okText: t("common.close"),
             });
           }
 
@@ -1210,8 +1195,8 @@ export const App: React.FC = () => {
             // Show warning modal (yellow) for policy violations
             modal.warning({
               title: isRecitationError
-                ? "⚠️ Phát hiện nội dung có bản quyền"
-                : "⚠️ Nội dung bị từ chối",
+                ? t("contentPolicy.recitationTitle")
+                : t("contentPolicy.safetyTitle"),
               width: 480,
               content: (
                 <div style={{ marginTop: 16 }}>
@@ -1240,19 +1225,19 @@ export const App: React.FC = () => {
                   </div>
                 </div>
               ),
-              okText: "Đóng",
+              okText: t("common.close"),
             });
             console.warn("Manual segment policy violation:", error);
             return;
           }
 
           // Show error message for other errors
-          message.error(`Lỗi chuyển đổi: ${error.message}`);
+          message.error(t("transcriptionError.conversionError", { message: error.message }));
           console.error("Transcription error:", error);
         }
       } catch (error: any) {
         hideLoading();
-        message.error(`Lỗi cắt audio: ${error.message}`);
+        message.error(t("transcriptionError.audioCutError", { message: error.message }));
         console.error("Audio extraction error:", error);
       }
     } catch (error: any) {
@@ -1290,10 +1275,10 @@ export const App: React.FC = () => {
                 marginBottom: "8px",
               }}
             >
-              📊 Kết quả chuyển đổi:
+              {t('mergeOrReplace.result')}
             </div>
             <div style={{ fontSize: "14px" }}>
-              🤖 {newResults.length} đoạn văn bản từ Gemini AI
+              {t('mergeOrReplace.newSegments', { count: newResults.length })}
             </div>
           </div>
 
@@ -1305,7 +1290,7 @@ export const App: React.FC = () => {
               color: "#1890ff",
             }}
           >
-            💾 Chọn cách xử lý dữ liệu:
+            {t('mergeOrReplace.choose')}
           </div>
 
           {/* Option 1: Merge */}
@@ -1326,17 +1311,15 @@ export const App: React.FC = () => {
                 color: "#1890ff",
               }}
             >
-              <span style={{ fontSize: "20px" }}>🔄</span> Gộp vào dữ liệu hiện
-              tại
+              <span style={{ fontSize: "20px" }}>🔄</span> {t('mergeOrReplace.mergeOption')}
             </div>
             <div style={{ fontSize: "13px", color: "#666", lineHeight: "1.6" }}>
-              • Giữ nguyên {transcriptions.length} đoạn cũ
-              <br />• Thêm {newResults.length} đoạn mới từ AI
+              {t('mergeOrReplace.mergeDesc1', { oldCount: transcriptions.length })}
+              <br />{t('mergeOrReplace.mergeDesc2', { newCount: newResults.length })}
               <br />
-              • Tự động sắp xếp theo thời gian (timeline)
+              {t('mergeOrReplace.mergeDesc3')}
               <br />•{" "}
-              <strong style={{ color: "#52c41a" }}>✅ Khuyên dùng:</strong> Khi
-              bạn đã có transcription và muốn bổ sung
+              <strong style={{ color: "#52c41a" }}>{t('mergeOrReplace.mergeDesc4')}</strong>
             </div>
           </div>
 
@@ -1357,21 +1340,17 @@ export const App: React.FC = () => {
                 color: "#fa8c16",
               }}
             >
-              <span style={{ fontSize: "20px" }}>🔁</span> Thay thế toàn bộ dữ
-              liệu cũ
+              <span style={{ fontSize: "20px" }}>🔁</span> {t('mergeOrReplace.replaceOption')}
             </div>
             <div style={{ fontSize: "13px", color: "#666", lineHeight: "1.6" }}>
               •{" "}
               <strong style={{ color: "#fa8c16" }}>
-                ⚠️ Xóa {transcriptions.length} đoạn cũ
+                {t('mergeOrReplace.replaceDesc1', { oldCount: transcriptions.length })}
               </strong>
-              <br />• Chỉ giữ lại {newResults.length} đoạn mới từ AI
+              <br />• {t('mergeOrReplace.replaceDesc2', { newCount: newResults.length })}
               <br />
-              • Dùng khi transcription cũ kém chất lượng
-              <br />• <strong style={{ color: "#ff4d4f" }}>
-                Cảnh báo:
-              </strong>{" "}
-              Không thể hoàn tác!
+              • {t('mergeOrReplace.replaceDesc3')}
+              <br />• <strong style={{ color: "#ff4d4f" }}>{t('mergeOrReplace.replaceDesc4')}</strong>
             </div>
           </div>
 
@@ -1386,13 +1365,12 @@ export const App: React.FC = () => {
               marginTop: "16px",
             }}
           >
-            💡 <strong>Gợi ý:</strong> Nếu bạn chưa chắc, hãy chọn "Gộp" để
-            không mất dữ liệu cũ.
+            💡 <strong>{t('mergeOrReplace.tip').split(':')[0]}:</strong> {t('mergeOrReplace.tip').split(':').slice(1).join(':')}
           </div>
         </div>
       ),
-      okText: "🔄 Gộp vào dữ liệu cũ",
-      cancelText: "🔁 Thay thế toàn bộ",
+      okText: t('mergeOrReplace.mergeBtn'),
+      cancelText: t('mergeOrReplace.replaceBtn'),
       okButtonProps: { size: "large", style: { height: "40px" } },
       cancelButtonProps: {
         size: "large",
@@ -1414,7 +1392,7 @@ export const App: React.FC = () => {
         setHasUnsavedChanges(true);
 
         message.success(
-          `✅ Đã gộp ${newResults.length} đoạn mới vào dữ liệu (tổng: ${transcriptions.length + newResults.length})`,
+          t("mergeOrReplace.mergedSuccess", { newCount: newResults.length, total: transcriptions.length + newResults.length }),
         );
         console.log(
           `✅ Merged ${newResults.length} segments, total: ${transcriptions.length + newResults.length}`,
@@ -1426,7 +1404,7 @@ export const App: React.FC = () => {
         setHasUnsavedChanges(true);
 
         message.success(
-          `✅ Đã thay thế toàn bộ dữ liệu cũ bằng ${newResults.length} đoạn mới từ AI`,
+          t("mergeOrReplace.replacedSuccess", { count: newResults.length }),
         );
         console.log(
           `✅ Replaced all transcriptions with ${newResults.length} new segments`,
@@ -1444,7 +1422,7 @@ export const App: React.FC = () => {
       }>;
 
       if (!audioBlob) {
-        message.error("Chưa có audio để chuyển đổi");
+        message.error(t("audioPlayer.noAudio"));
         return;
       }
 
@@ -1472,13 +1450,10 @@ export const App: React.FC = () => {
       // Check if API key is provided
       if (!apiKey || apiKey.trim().length === 0) {
         modal.error({
-          title: "⚠️ Thiếu Gemini API Key",
+          title: t("missingApiKey.title"),
           content: (
             <div style={{ marginTop: 16 }}>
-              <p>
-                Vui lòng thêm <strong>Gemini API Key</strong> trong Settings
-                trước khi sử dụng tính năng này.
-              </p>
+              <p>{t("missingApiKey.description")}</p>
               <div
                 style={{
                   marginTop: "12px",
@@ -1487,9 +1462,9 @@ export const App: React.FC = () => {
                   borderRadius: "6px",
                 }}
               >
-                <strong>Hướng dẫn lấy API Key:</strong>
+                <strong>{t("missingApiKey.guide")}</strong>
                 <br />
-                1️⃣ Truy cập:{" "}
+                {t("missingApiKey.step1")}{" "}
                 <a
                   href="https://aistudio.google.com/app/apikey"
                   target="_blank"
@@ -1498,15 +1473,15 @@ export const App: React.FC = () => {
                   https://aistudio.google.com/app/apikey
                 </a>
                 <br />
-                2️⃣ Đăng nhập với Google Account
+                {t("missingApiKey.step2")}
                 <br />
-                3️⃣ Click "Create API Key"
+                {t("missingApiKey.step3")}
                 <br />
-                4️⃣ Copy và paste vào Settings
+                {t("missingApiKey.step4")}
               </div>
             </div>
           ),
-          okText: "Đã hiểu",
+          okText: t("common.ok"),
         });
         return;
       }
@@ -1514,12 +1489,10 @@ export const App: React.FC = () => {
       // Validate model is selected
       if (!modelName || !modelName.startsWith("models/")) {
         modal.error({
-          title: "⚠️ Chưa chọn Gemini Model",
+          title: t("missingModel.title"),
           content: (
             <div style={{ marginTop: 16 }}>
-              <p>
-                Vui lòng chọn <strong>Gemini Model</strong> trong Settings.
-              </p>
+              <p>{t("missingModel.description")}</p>
               <div
                 style={{
                   marginTop: "12px",
@@ -1528,19 +1501,19 @@ export const App: React.FC = () => {
                   borderRadius: "6px",
                 }}
               >
-                <strong>Các bước:</strong>
+                <strong>{t("missingModel.steps")}</strong>
                 <br />
-                1️⃣ Mở Settings → Nhập API Key
+                {t("missingModel.step1")}
                 <br />
-                2️⃣ Chờ hệ thống tải danh sách models
+                {t("missingModel.step2")}
                 <br />
-                3️⃣ Chọn model từ dropdown (khuyên dùng: Gemini Flash Latest)
+                {t("missingModel.step3")}
                 <br />
-                4️⃣ Lưu và thử lại
+                {t("missingModel.step4")}
               </div>
             </div>
           ),
-          okText: "Đã hiểu",
+          okText: t("common.ok"),
         });
         return;
       }
@@ -1551,7 +1524,7 @@ export const App: React.FC = () => {
 
       if (audioDurationMs === 0) {
         message.warning(
-          "Không thể xác định thời lượng audio. Đang thử chuyển đổi...",
+          t("transcriptionConfirm.cannotDetermineAudio"),
         );
       }
 
@@ -1564,8 +1537,7 @@ export const App: React.FC = () => {
           <span
             style={{ fontSize: "18px", fontWeight: "bold", color: "#ff4d4f" }}
           >
-            <span style={{ fontSize: "24px" }}></span>Gemini AI có thể đưa ra
-            thông tin không chính xác, HÃY THẬN TRỌNG!!!
+            <span style={{ fontSize: "24px" }}></span>{t("transcriptionConfirm.title")}
           </span>
         ),
         width: 600,
@@ -1592,31 +1564,28 @@ export const App: React.FC = () => {
                   }}
                 >
                   <strong style={{ fontSize: "16px" }}>
-                    🤖 Audio dài ({durationMinutes} phút) - Tự động xử lý thông
-                    minh
+                    {t("transcriptionConfirm.longAudio", { minutes: durationMinutes })}
                   </strong>
                   <br />
                   <strong style={{ color: "#1890ff" }}>
-                    ✨ Hệ thống sẽ tự động:
+                    {t("transcriptionConfirm.autoSteps")}
                   </strong>
-                  <br />• 📦 Chia file thành các phần nhỏ (≤{" "}
-                  {maxDurationMinutes}p hoặc ≤ {maxFileSizeMB}MB/phần)
+                  <br />• {t("transcriptionConfirm.step1", { maxMin: maxDurationMinutes, maxMB: maxFileSizeMB })}
                   <br />
-                  • 🔄 Xử lý tuần tự từng phần với Gemini AI
+                  • {t("transcriptionConfirm.step2")}
                   <br />
-                  • 🧩 Tự động ghép kết quả theo timeline
+                  • {t("transcriptionConfirm.step3")}
                   <br />
-                  • 📝 Tổng hợp tóm tắt hoàn chỉnh
+                  • {t("transcriptionConfirm.step4")}
                   <br />
                   <strong style={{ color: "#0050b3" }}>
-                    ⏱️ Thời gian dự kiến:
+                    {t("transcriptionConfirm.estimatedTime")}
                   </strong>
-                  <br />• Khoảng {Math.ceil(durationMinutes / 15)}-
-                  {Math.ceil(durationMinutes / 10)} phút để xử lý toàn bộ
+                  <br />• {t("transcriptionConfirm.timeRange", { min: Math.ceil(durationMinutes / 15), max: Math.ceil(durationMinutes / 10) })}
                   <br />
-                  • Có delay 5s giữa các phần (tuân thủ rate limit)
+                  • {t("transcriptionConfirm.delay")}
                   <br />
-                  • Bạn có thể theo dõi tiến trình trực tiếp
+                  • {t("transcriptionConfirm.canMonitor")}
                   <br />
                 </div>
               </div>
@@ -1632,19 +1601,19 @@ export const App: React.FC = () => {
               }}
             >
               <div style={{ fontSize: "15px", marginBottom: "12px" }}>
-                <strong>🎯 Thông tin chuyển đổi:</strong>
-                <br />• Model:{" "}
+                <strong>{t("transcriptionConfirm.info")}</strong>
+                <br />• {t("transcriptionConfirm.model")}{" "}
                 <span style={{ fontWeight: "bold", color: "#667eea" }}>
                   {modelName.replace("models/", "")}
                 </span>
-                <br />• Kích thước file gốc:{" "}
+                <br />• {t("transcriptionConfirm.originalSize")}{" "}
                 <span style={{ fontWeight: "bold" }}>
                   {(audioBlob.size / (1024 * 1024)).toFixed(2)} MB
                 </span>
                 <br />
                 {audioDurationMs > 0 && (
                   <>
-                    • Thời lượng:{" "}
+                    • {t("transcriptionConfirm.audioDuration")}{" "}
                     <span
                       style={{
                         fontWeight: "bold",
@@ -1677,15 +1646,15 @@ export const App: React.FC = () => {
                   style={{ fontSize: "14px", color: "#666", lineHeight: "1.8" }}
                 >
                   <strong style={{ color: "#1890ff" }}>
-                    ✨ Lợi ích của Gemini AI:
+                    {t("transcriptionConfirm.benefits")}
                   </strong>
                   <br />
-                  • Độ chính xác cao hơn Web Speech API
+                  • {t("transcriptionConfirm.benefit1")}
                   <br />
-                  • Tự động phân biệt người nói
+                  • {t("transcriptionConfirm.benefit2")}
                   <br />
-                  • Làm sạch văn bản (loại bỏ từ đệm, sửa lỗi)
-                  <br />• Hỗ trợ tiếng Việt tốt hơn
+                  • {t("transcriptionConfirm.benefit3")}
+                  <br />• {t("transcriptionConfirm.benefit4")}
                 </div>
               </div>
             )}
@@ -1700,15 +1669,15 @@ export const App: React.FC = () => {
                 color: "#666",
               }}
             >
-              <strong>⏳ Thời gian xử lý:</strong>{" "}
+              <strong>{t("transcriptionConfirm.processingTime")}</strong>{" "}
               {isLongAudio
-                ? `Khoảng ${Math.ceil(durationMinutes / 15)}-${Math.ceil(durationMinutes / 10)} phút (tự động chia nhỏ)`
-                : "Tùy thuộc vào độ dài audio (khoảng 1-3 phút cho file 10-20 phút)"}
+                ? t("transcriptionConfirm.timeRange", { min: Math.ceil(durationMinutes / 15), max: Math.ceil(durationMinutes / 10) })
+                : t("transcriptionConfirm.processingTimeShort")}
               {isLongAudio && (
                 <>
                   <br />
                   <strong style={{ color: "#1890ff" }}>
-                    ℹ️ Audio dài sẽ được xử lý thông minh, an toàn!
+                    {t("transcriptionConfirm.longAudioNote")}
                   </strong>
                 </>
               )}
@@ -1716,9 +1685,9 @@ export const App: React.FC = () => {
           </div>
         ),
         okText: isLongAudio
-          ? "🤖 Bắt đầu (Tự động chia nhỏ)"
-          : "🚀 Bắt đầu chuyển đổi",
-        cancelText: "Hủy",
+          ? t("transcriptionConfirm.startAutoBtn")
+          : t("transcriptionConfirm.startBtn"),
+        cancelText: t("transcriptionConfirm.cancelBtn"),
         okButtonProps: {
           size: "large",
           danger: false,
@@ -1735,7 +1704,7 @@ export const App: React.FC = () => {
           const startProcessing = async () => {
             // Create progress notification at bottom-right (non-blocking)
             let progressPercent = 0;
-            let progressMessage = "Đang khởi tạo...";
+            let progressMessage = t("transcriptionConfirm.progressInit");
             const notificationKey = `gemini-progress-${Date.now()}`;
 
             notification.open({
@@ -1748,7 +1717,7 @@ export const App: React.FC = () => {
                     color: "#667eea",
                   }}
                 >
-                  <span style={{ fontSize: "20px" }}>🤖</span> Gemini AI
+                  <span style={{ fontSize: "20px" }}>🤖</span> {t("transcriptionConfirm.progressTitle")}
                 </span>
               ),
               description: (
@@ -1800,7 +1769,7 @@ export const App: React.FC = () => {
                 new Promise((resolve) => {
                   let newKey = ctx.currentApiKey;
                   modal.confirm({
-                    title: "⚠️ Lỗi Gemini AI — Cần xử lý",
+                    title: t("retryError.title"),
                     width: 520,
                     icon: null,
                     content: (
@@ -1821,7 +1790,7 @@ export const App: React.FC = () => {
                               fontSize: 14,
                             }}
                           >
-                            ❌ Lỗi tại phần {ctx.chunkIndex}/{ctx.chunkTotal}:
+                            {t("retryError.errorAt", { current: ctx.chunkIndex, total: ctx.chunkTotal })}
                           </div>
                           <div style={{ color: "#cf1322", fontSize: 13 }}>
                             {ctx.error}
@@ -1834,9 +1803,7 @@ export const App: React.FC = () => {
                             fontSize: 13,
                           }}
                         >
-                          Đã tự động thử lại{" "}
-                          <strong>{ctx.attempt}</strong> lần, vẫn thất bại. Bạn
-                          có muốn tiếp tục thử không?
+                          {t("retryError.retriedFailed", { count: ctx.attempt })}
                         </div>
                         <div
                           style={{
@@ -1845,20 +1812,14 @@ export const App: React.FC = () => {
                             fontWeight: 600,
                           }}
                         >
-                          API Key{" "}
-                          <span
-                            style={{ fontWeight: 400, color: "#8c8c8c" }}
-                          >
-                            (có thể đổi key khác nếu cần)
-                          </span>
-                          :
+                          {t("retryError.apiKeyLabel")}
                         </div>
                         <Input
                           defaultValue={ctx.currentApiKey}
                           onChange={(e) => {
                             newKey = e.target.value;
                           }}
-                          placeholder="Nhập API key mới hoặc giữ nguyên key hiện tại"
+                          placeholder={t("retryError.apiKeyPlaceholder")}
                           style={{ fontFamily: "monospace", fontSize: 12 }}
                         />
                         <div
@@ -1868,12 +1829,12 @@ export const App: React.FC = () => {
                             color: "#8c8c8c",
                           }}
                         >
-                          💡 Để trống / giữ nguyên để dùng API key hiện tại.
+                          {t("retryError.apiKeyHint")}
                         </div>
                       </div>
                     ),
-                    okText: "🔄 Thử lại",
-                    cancelText: "🛑 Dừng lại",
+                    okText: t("retryError.retryBtn"),
+                    cancelText: t("retryError.stopBtn"),
                     onOk: () =>
                       resolve({
                         retry: true,
@@ -1905,7 +1866,7 @@ export const App: React.FC = () => {
                               progressPercent === 100 ? "#52c41a" : "#667eea",
                           }}
                         >
-                          <span style={{ fontSize: "20px" }}>🤖</span> Gemini AI
+                          <span style={{ fontSize: "20px" }}>🤖</span> {t("transcriptionConfirm.progressTitle")}
                         </span>
                       ),
                       description: (
@@ -1970,7 +1931,7 @@ export const App: React.FC = () => {
               notification.destroy(notificationKey);
 
               // Show success message
-              message.success("✅ Gemini xử lý hoàn tất!");
+              message.success(t("transcriptionConfirm.completed"));
 
               // Save summary if available
               if (parsed.summary) {
@@ -1981,7 +1942,7 @@ export const App: React.FC = () => {
               // Show truncation warning if detected
               if (parsed.isTruncated && parsed.truncationWarning) {
                 modal.warning({
-                  title: "⚠️ Cảnh báo: Kết quả bị cắt ngắn",
+                  title: t("truncationWarning.title"),
                   width: 600,
                   content: (
                     <div style={{ marginTop: 16 }}>
@@ -2005,7 +1966,7 @@ export const App: React.FC = () => {
                       </div>
                     </div>
                   ),
-                  okText: "Đóng",
+                  okText: t("common.close"),
                 });
               }
 
@@ -2031,8 +1992,8 @@ export const App: React.FC = () => {
                 // Show warning modal with special styling for content policy violations
                 modal.warning({
                   title: isRecitationError
-                    ? "⚠️ Phát hiện nội dung có bản quyền"
-                    : "⚠️ Vấn đề về an toàn nội dung",
+                    ? t("contentPolicy.recitationTitle")
+                    : t("contentPolicy.safetyTitle"),
                   width: 600,
                   content: (
                     <div style={{ marginTop: 16 }}>
@@ -2066,14 +2027,12 @@ export const App: React.FC = () => {
                           lineHeight: "1.6",
                         }}
                       >
-                        <strong>ℹ️ Thông tin:</strong>
+                        <strong>{t("contentPolicy.info")}</strong>
                         <br />
-                        Đây là cơ chế bảo vệ tự động của Google Gemini API để
-                        tuân thủ chính sách nội dung và luật bản quyền.
                       </div>
                     </div>
                   ),
-                  okText: "Đã hiểu",
+                  okText: t("common.ok"),
                   okButtonProps: { size: "large" },
                 });
                 return;
@@ -2081,7 +2040,7 @@ export const App: React.FC = () => {
 
               // Show error modal for other errors
               modal.error({
-                title: "❌ Lỗi chuyển đổi",
+                title: t("transcriptionError.title"),
                 width: 480,
                 content: (
                   <div style={{ marginTop: 16 }}>
@@ -2101,7 +2060,7 @@ export const App: React.FC = () => {
                           wordBreak: "break-word",
                         }}
                       >
-                        <strong>Chi tiết lỗi:</strong>
+                        <strong>{t("transcriptionError.details")}</strong>
                         <br />
                         {error.message}
                       </div>
@@ -2114,17 +2073,17 @@ export const App: React.FC = () => {
                         lineHeight: "1.6",
                       }}
                     >
-                      <strong>💡 Gợi ý khắc phục:</strong>
+                      <strong>{t("transcriptionError.fixSuggestion")}</strong>
                       <ul style={{ marginTop: "8px", paddingLeft: "20px" }}>
-                        <li>Kiểm tra kết nối internet</li>
-                        <li>Xác nhận Gemini API Key còn hợp lệ</li>
-                        <li>Thử lại với file audio nhỏ hơn</li>
-                        <li>Kiểm tra Console để xem chi tiết lỗi</li>
+                        <li>{t("transcriptionError.fix1")}</li>
+                        <li>{t("transcriptionError.fix2")}</li>
+                        <li>{t("transcriptionError.fix3")}</li>
+                        <li>{t("transcriptionError.fix4")}</li>
                       </ul>
                     </div>
                   </div>
                 ),
-                okText: "Đã hiểu",
+                okText: t("common.ok"),
                 okButtonProps: { size: "large" },
               });
               console.error("Gemini transcription error:", error);
@@ -2383,7 +2342,7 @@ export const App: React.FC = () => {
     const showProgress = (percent: number, step: string) => {
       notification.open({
         key: NOTIF_KEY,
-        message: "🔄 Đang khôi phục dữ liệu tự động lưu",
+        message: t("backup.restoring"),
         description: (
           <div>
             <div style={{ marginBottom: 6, color: "#595959", fontSize: 13 }}>
@@ -2429,7 +2388,7 @@ export const App: React.FC = () => {
 
       decision = await new Promise<Decision>((resolve) => {
         const modalRef = modal.info({
-          title: "🔄 Chọn cách khôi phục dữ liệu",
+          title: t("backup.selectMethod"),
           width: 500,
           // Prevent X / ESC — every footer button calls resolve() so the Promise
           // always settles and handleRestoreBackup never hangs.
@@ -2447,9 +2406,9 @@ export const App: React.FC = () => {
                   lineHeight: 1.7,
                 }}
               >
-                📁 File ghi âm ước tính: <strong>~{durationMin} phút</strong>
+                {t("backup.estimatedAudio", { minutes: durationMin })}
                 <br />
-                🖥️ RAM cần để vẽ waveform: <strong>~{ramMB} MB</strong>
+                {t("backup.ramUsage", { mb: ramMB })}
               </div>
 
               {isLarge && (
@@ -2464,16 +2423,14 @@ export const App: React.FC = () => {
                     lineHeight: 1.7,
                   }}
                 >
-                  ⚠️ File lớn — có thể gây{" "}
-                  <strong style={{ color: "#cf1322" }}>thiếu RAM</strong> khi
-                  tải lên waveform.
+                  {t("backup.largeFileWarning")}
                 </div>
               )}
 
               <div style={{ fontSize: 13, color: "#595959", lineHeight: 1.7 }}>
                 {hasDirPicker
-                  ? "Khi chọn Khôi phục toàn bộ, bạn sẽ chọn thư mục lưu. Sau khi ghép xong file ghi âm và ghi chú sẽ được lưu vào đó trước khi tải lên giao diện."
-                  : "Khi chọn Khôi phục toàn bộ, file ghi âm sẽ tự động tải về thư mục Downloads sau khi ghép xong."}
+                  ? t("backup.fullRestoreNoteFSAPI")
+                  : t("backup.fullRestoreNoteFallback")}
               </div>
             </div>
           ),
@@ -2498,7 +2455,7 @@ export const App: React.FC = () => {
                   resolve({ action: "cancel" });
                 }}
               >
-                ❌ Hủy
+                {t("backup.cancelBtn")}
               </button>
 
               <button
@@ -2513,7 +2470,7 @@ export const App: React.FC = () => {
                   resolve({ action: "notesOnly" });
                 }}
               >
-                📝 Chỉ ghi chú
+                {t("backup.notesOnlyBtn")}
               </button>
 
               <button
@@ -2548,7 +2505,7 @@ export const App: React.FC = () => {
                   }
                 }}
               >
-                🎵 Khôi phục toàn bộ
+                {t("backup.fullRestoreBtn")}
               </button>
             </div>
           ),
@@ -2578,7 +2535,7 @@ export const App: React.FC = () => {
       !("showDirectoryPicker" in window);
 
     // ── Step 3: Load from localStorage + IndexedDB with progress ─────────────
-    showProgress(0, "Đang bắt đầu khôi phục...");
+    showProgress(0, t("backup.start"));
     const backup = await loadBackup({
       skipAudio,
       onProgress: (pct, step) => showProgress(pct, step),
@@ -2630,7 +2587,7 @@ export const App: React.FC = () => {
     const notesFilename = `${projectFolderName}_notes.json`;
 
     if (backup.audioBlob && !skipAudio) {
-      showProgress(96, "Đang lưu file ghi âm và ghi chú về máy...");
+      showProgress(96, t("backup.saving"));
 
       // Notes payload — everything useful for the user to have on disk
       const notesPayload = {
@@ -2678,7 +2635,7 @@ export const App: React.FC = () => {
           dataSavedToDisk = true;
           notification.open({
             key: "files-saved-ok",
-            message: "✅ Đã lưu file về máy",
+            message: t("backup.savedTitle"),
             description: `📁 ${dirHandle.name}/${projectFolderName}/`,
             duration: 5,
             placement: "bottomRight",
@@ -2786,12 +2743,11 @@ export const App: React.FC = () => {
       // Show "rendering" progress — closable so user can dismiss if decode is very slow
       notification.open({
         key: NOTIF_KEY,
-        message: "🔄 Đang khôi phục dữ liệu tự động lưu",
+        message: t("backup.restoring"),
         description: (
           <div>
             <div style={{ marginBottom: 6, color: "#595959", fontSize: 13 }}>
-              Đang tải file âm thanh lên giao diện... (có thể mất vài phút với
-              file lớn)
+              {t("backup.renderingWaveform")}
             </div>
             <Progress percent={95} size="small" status="active" />
           </div>
@@ -2844,11 +2800,11 @@ export const App: React.FC = () => {
         clearWaveformRefs();
         notification.open({
           key: NOTIF_KEY,
-          message: "✅ Khôi phục hoàn tất",
+          message: t("backup.restoredSuccess"),
           description: (
             <div>
               <div style={{ marginBottom: 6, color: "#595959", fontSize: 13 }}>
-                Đã khôi phục ghi chú và file ghi âm.
+                {t("backup.restoredWithAudio")}
               </div>
               <Progress percent={100} size="small" status="success" />
             </div>
@@ -2867,7 +2823,7 @@ export const App: React.FC = () => {
         const showDownload = isOOM && !dataSavedToDisk;
         notification.open({
           key: NOTIF_KEY,
-          message: "⚠️ Khôi phục hoàn tất (không có waveform)",
+          message: t("backup.restoredNoWaveform"),
           description: (
             <div>
               <div style={{ marginBottom: 6, color: "#faad14", fontSize: 13 }}>
@@ -2878,8 +2834,7 @@ export const App: React.FC = () => {
                   <div
                     style={{ marginBottom: 6, fontSize: 13, color: "#595959" }}
                   >
-                    File ghi âm vẫn còn trong bộ nhớ. Tải về máy để tránh mất dữ
-                    liệu:
+                    {t("backup.audioInMemory")}
                   </div>
                   <button
                     onClick={downloadBackupAudio}
@@ -2894,7 +2849,7 @@ export const App: React.FC = () => {
                       fontWeight: 600,
                     }}
                   >
-                    💾 Tải file ghi âm về máy
+                    {t("backup.downloadAudioBtn")}
                   </button>
                 </div>
               )}
@@ -2920,14 +2875,13 @@ export const App: React.FC = () => {
             const showDownload = !dataSavedToDisk;
             notification.open({
               key: NOTIF_KEY,
-              message: "⚠️ Khôi phục hoàn tất (waveform timeout)",
+              message: t("backup.restoredWaveformTimeout"),
               description: (
                 <div>
                   <div
                     style={{ marginBottom: 6, color: "#faad14", fontSize: 13 }}
                   >
-                    Ghi chú đã được khôi phục. Waveform mất quá nhiều thời gian
-                    để tải.
+                    {t("backup.notesRestoredWaveformLoading")}
                   </div>
                   {showDownload && (
                     <div style={{ marginTop: 10 }}>
@@ -2944,7 +2898,7 @@ export const App: React.FC = () => {
                           fontWeight: 600,
                         }}
                       >
-                        💾 Tải file ghi âm về máy
+                        {t("backup.downloadAudioBtn")}
                       </button>
                     </div>
                   )}
@@ -2968,11 +2922,11 @@ export const App: React.FC = () => {
       // No audio — show success immediately
       notification.open({
         key: NOTIF_KEY,
-        message: "✅ Khôi phục hoàn tất",
+        message: t("backup.restoredSuccess"),
         description: (
           <div>
             <div style={{ marginBottom: 6, color: "#595959", fontSize: 13 }}>
-              Đã khôi phục ghi chú (không có audio).
+              {t("backup.restoredNoAudio")}
             </div>
             <Progress percent={100} size="small" status="success" />
           </div>
@@ -3074,26 +3028,24 @@ export const App: React.FC = () => {
       // Check if user deleted all text (wants to remove segment)
       if (!newText || newText.trim() === "") {
         modal.confirm({
-          title: "🗑️ Xóa segment này?",
+          title: t("deleteSegment.title"),
           icon: <ExclamationCircleOutlined style={{ color: "#ff4d4f" }} />,
           content: (
             <div style={{ fontSize: "14px", lineHeight: "1.6" }}>
-              <p>Bạn đã xóa toàn bộ nội dung của segment này.</p>
-              <p style={{ marginBottom: "8px" }}>Bạn muốn:</p>
+              <p>{t("deleteSegment.deletedAll")}</p>
+              <p style={{ marginBottom: "8px" }}>{t("deleteSegment.wantTo")}</p>
               <ul style={{ paddingLeft: "20px", margin: "0" }}>
                 <li>
-                  <strong>Xóa segment:</strong> Segment này sẽ bị xóa hoàn toàn
-                  khỏi danh sách
+                  <strong>{t("deleteSegment.doDelete")}</strong>
                 </li>
                 <li>
-                  <strong>Hủy bỏ:</strong> Giữ nguyên segment gốc (không lưu
-                  thay đổi)
+                  <strong>{t("deleteSegment.doCancel")}</strong>
                 </li>
               </ul>
             </div>
           ),
-          okText: "Xóa segment",
-          cancelText: "Hủy bỏ",
+          okText: t("deleteSegment.confirmDelete"),
+          cancelText: t("deleteSegment.cancelBtn"),
           okButtonProps: {
             danger: true,
           },
@@ -3101,7 +3053,7 @@ export const App: React.FC = () => {
             // Remove the segment
             setTranscriptions((prev) => prev.filter((item) => item.id !== id));
             setHasUnsavedChanges(true);
-            message.success("✅ Đã xóa segment");
+            message.success(t("deleteSegment.deleted"));
             // console.log('🗑️ Transcription segment deleted:', id);
           },
           // onCancel: do nothing (keep original segment)
@@ -3270,7 +3222,7 @@ export const App: React.FC = () => {
   // Handle AI refinement
   const handleAIRefine = async () => {
     if (!transcriptionConfig) {
-      message.warning("Vui lòng cấu hình Speech-to-Text Settings trước");
+      message.warning(t("aiRefine.noConfig"));
       setShowTranscriptionConfig(true);
       return;
     }
@@ -3283,13 +3235,13 @@ export const App: React.FC = () => {
         content: (
           <div>
             <div style={{ fontWeight: "bold", marginBottom: "8px" }}>
-              Cần Gemini API Key để sử dụng tính năng AI
+              {t("aiRefine.needApiKey")}
             </div>
             <div style={{ fontSize: "13px", lineHeight: "1.6" }}>
-              <strong>Cách lấy API Key miễn phí:</strong>
+              <strong>{t("aiRefine.getKeyFree")}</strong>
               <ol style={{ paddingLeft: "20px", margin: "8px 0" }}>
                 <li>
-                  Truy cập:{" "}
+                  {t("aiRefine.getKeyStep1")}{" "}
                   <a
                     href="https://aistudio.google.com/app/apikey"
                     target="_blank"
@@ -3297,10 +3249,10 @@ export const App: React.FC = () => {
                     Google AI Studio
                   </a>
                 </li>
-                <li>Click "Create API Key"</li>
-                <li>Copy API key và paste vào Settings → Gemini API Key</li>
-                <li>Hệ thống sẽ tự động tải danh sách models</li>
-                <li>Chọn model (khuyên dùng: Gemini Flash Latest)</li>
+                <li>{t("aiRefine.getKeyStep2")}</li>
+                <li>{t("aiRefine.getKeyStep3")}</li>
+                <li>{t("aiRefine.getKeyStep4")}</li>
+                <li>{t("aiRefine.getKeyStep5")}</li>
               </ol>
             </div>
           </div>
@@ -3318,16 +3270,16 @@ export const App: React.FC = () => {
         content: (
           <div>
             <div style={{ fontWeight: "bold", marginBottom: "8px" }}>
-              Vui lòng chọn Gemini Model trong Settings
+              {t("aiRefine.needModel")}
             </div>
             <div style={{ fontSize: "13px", lineHeight: "1.6" }}>
-              <strong>Các bước:</strong>
+              <strong>{t("aiRefine.selectModelSteps")}</strong>
               <ol style={{ paddingLeft: "20px", margin: "8px 0" }}>
-                <li>Mở Settings</li>
-                <li>Nhập Gemini API Key (nếu chưa có)</li>
-                <li>Đợi hệ thống tải danh sách models</li>
-                <li>Chọn model từ dropdown (khuyên dùng: Gemini Flash Latest)</li>
-                <li>Lưu và thử lại</li>
+                <li>{t("aiRefine.modelStep1")}</li>
+                <li>{t("aiRefine.modelStep2")}</li>
+                <li>{t("aiRefine.modelStep3")}</li>
+                <li>{t("aiRefine.modelStep4")}</li>
+                <li>{t("aiRefine.modelStep5")}</li>
               </ol>
             </div>
           </div>
@@ -3339,7 +3291,7 @@ export const App: React.FC = () => {
     }
 
     if (transcriptions.length === 0) {
-      message.warning("Không có dữ liệu chuyển đổi để chuẩn hóa");
+      message.warning(t("aiRefine.noData"));
       return;
     }
 
@@ -3347,8 +3299,7 @@ export const App: React.FC = () => {
     modal.confirm({
       title: (
         <div style={{ fontSize: "18px", fontWeight: "bold", color: "#ff4d4f" }}>
-          🤖 Gemini AI có thể đưa ra thông tin không chính xác, HÃY THẬN
-          TRỌNG!!!
+          {t("aiRefine.warningTitle")}
         </div>
       ),
       icon: <ExclamationCircleOutlined style={{ color: "#ff4d4f" }} />,
@@ -3363,13 +3314,13 @@ export const App: React.FC = () => {
                 color: "#52c41a",
               }}
             >
-              ✨ AI sẽ thực hiện:
+              {t("aiRefine.willDo")}
             </div>
             <ul style={{ paddingLeft: "20px", margin: "0" }}>
-              <li>Sửa lỗi nhận diện từ Web Speech API</li>
-              <li>Loại bỏ từ thừa, từ đệm (à, ừm, thì...)</li>
-              <li>Thêm dấu câu và viết hoa đúng quy tắc</li>
-              <li>Gộp các đoạn liên quan thành câu hoàn chỉnh</li>
+              <li>{t("aiRefine.task1")}</li>
+              <li>{t("aiRefine.task2")}</li>
+              <li>{t("aiRefine.task3")}</li>
+              <li>{t("aiRefine.task4")}</li>
             </ul>
           </div>
 
@@ -3394,12 +3345,11 @@ export const App: React.FC = () => {
               }}
             >
               <span style={{ fontSize: "20px" }}>⚠️</span>
-              CẢNH BÁO QUAN TRỌNG VỀ BẢO MẬT
+              {t("aiRefine.securityTitle")}
             </div>
 
             <div style={{ marginBottom: "12px", color: "#595959" }}>
-              Dữ liệu của bạn sẽ được <strong>gửi đến Google Gemini API</strong>{" "}
-              để xử lý.
+              {t("aiRefine.dataSentTo")}
             </div>
 
             <div
@@ -3418,29 +3368,16 @@ export const App: React.FC = () => {
                   color: "#cf1322",
                 }}
               >
-                🚫 KHÔNG sử dụng với thông tin nhạy cảm
+                {t("aiRefine.noSensitive")}
               </div>
               <ul
                 style={{ paddingLeft: "20px", margin: "0", color: "#595959" }}
               >
-                <li>
-                  <strong>Tài chính:</strong> Mật khẩu, số tài khoản, số thẻ,
-                  giao dịch ngân hàng
-                </li>
-                <li>
-                  <strong>Y tế:</strong> Bệnh án, đơn thuốc, kết quả xét nghiệm
-                </li>
-                <li>
-                  <strong>Cá nhân:</strong> CCCD/CMND, địa chỉ, số điện thoại
-                  nhạy cảm
-                </li>
-                <li>
-                  <strong>Doanh nghiệp:</strong> Bí mật thương mại, kế hoạch
-                  kinh doanh, các nội dung mật khác
-                </li>
-                <li>
-                  <strong>Bảo mật:</strong> API keys, tokens, credentials
-                </li>
+                <li>{t("aiRefine.sensitive1")}</li>
+                <li>{t("aiRefine.sensitive2")}</li>
+                <li>{t("aiRefine.sensitive3")}</li>
+                <li>{t("aiRefine.sensitive4")}</li>
+                <li>{t("aiRefine.sensitive5")}</li>
               </ul>
             </div>
 
@@ -3451,8 +3388,7 @@ export const App: React.FC = () => {
                 fontSize: "13px",
               }}
             >
-              💡 Khuyến nghị: Hãy xem lại nội dung transcript trước khi sử dụng
-              chức năng này
+              {t("aiRefine.reviewAdvice")}
             </div>
           </div>
 
@@ -3466,13 +3402,12 @@ export const App: React.FC = () => {
               color: "#595959",
             }}
           >
-            <strong>ℹ️ Lưu ý:</strong> Quá trình này sẽ thay thế toàn bộ kết quả
-            hiện tại. Bạn có thể chỉnh sửa lại sau nếu cần.
+            {t("aiRefine.replaceNote")}
           </div>
         </div>
       ),
-      okText: "Đồng ý, tiếp tục",
-      cancelText: "Hủy bỏ",
+      okText: t("aiRefine.confirmBtn"),
+      cancelText: t("aiRefine.cancelBtn"),
       okButtonProps: {
         danger: false,
         type: "primary",
@@ -3499,13 +3434,13 @@ export const App: React.FC = () => {
     const selectedModel = transcriptionConfig!.geminiModel;
 
     if (!selectedModel) {
-      message.error("Model không được chọn. Vui lòng cấu hình lại.");
+      message.error(t("aiRefine.noModelSelected"));
       return;
     }
 
     // Step 1: Check quota status (non-blocking — only block if exceeded)
     const hideCheckingMsg = message.loading(
-      "🔍 Đang kiểm tra hạn mức API Key...",
+      t("aiRefine.checkingQuota"),
       0,
     );
     try {
@@ -3517,14 +3452,14 @@ export const App: React.FC = () => {
 
       if (quotaStatus.status === "exceeded") {
         // Quota exceeded — notify and abort (non-blocking message, no modal)
-        message.error({ content: `🚫 ${quotaStatus.message}`, duration: 8 });
+        message.error({ content: t("aiRefine.quotaExceeded", { message: quotaStatus.message }), duration: 8 });
         return;
       }
 
       if (quotaStatus.status === "limited") {
         // Quota limited — warn but continue
         message.warning({
-          content: `⚠️ ${quotaStatus.message}. Hệ thống sẽ tự động chia nhỏ để tối ưu quota.`,
+          content: t("aiRefine.quotaLimited", { message: quotaStatus.message }),
           duration: 6,
         });
       }
@@ -3532,14 +3467,14 @@ export const App: React.FC = () => {
       hideCheckingMsg();
       // Continue even if quota check fails
       message.warning({
-        content: "Không thể kiểm tra quota, sẽ tiếp tục xử lý...",
+        content: t("aiRefine.quotaCheckFailed"),
         duration: 3,
       });
     }
 
     // Step 2: Show progress as non-blocking notification at bottom-right (same as speech-to-text)
     let currentProgress = 0;
-    let currentMessage = "🚀 Đang bắt đầu...";
+    let currentMessage = t("aiRefine.progressPrepare");
     const notificationKey = `ai-refine-${Date.now()}`;
 
     const updateProgressNotification = () => {
@@ -3549,7 +3484,7 @@ export const App: React.FC = () => {
           <span
             style={{ fontSize: "16px", fontWeight: "bold", color: "#5046e4" }}
           >
-            <span style={{ fontSize: "20px" }}>🤖</span> AI chuẩn hóa văn bản
+            <span style={{ fontSize: "20px" }}>🤖</span> {t("aiRefine.progressTitle")}
           </span>
         ),
         description: (
@@ -3583,7 +3518,7 @@ export const App: React.FC = () => {
             <div
               style={{ fontSize: "12px", color: "#6b7280", lineHeight: "1.5" }}
             >
-              💡 Đang xử lý từng batch với delay để tuân thủ rate limit
+              {t("aiRefine.progressRateLimit")}
             </div>
           </div>
         ),
@@ -3596,9 +3531,9 @@ export const App: React.FC = () => {
     const updateProgress = (progress: number) => {
       currentProgress = Math.floor(progress);
       if (progress < 10) {
-        currentMessage = "⏳ Đang chuẩn bị dữ liệu...";
+        currentMessage = t("aiRefine.progressPrepare");
       } else if (progress < 30) {
-        currentMessage = "📦 Đang chia batches để tối ưu quota...";
+        currentMessage = t("aiRefine.progressBatch");
       } else if (progress < 90) {
         const totalBatches = Math.ceil(transcriptions.length / 50);
         const currentBatch = Math.max(
@@ -3606,12 +3541,12 @@ export const App: React.FC = () => {
           Math.floor((progress / 100) * totalBatches),
         );
         if (totalBatches > 1) {
-          currentMessage = `🔄 Đang xử lý batch ${currentBatch}/${totalBatches}... (${Math.floor(progress)}%)`;
+          currentMessage = t("aiRefine.progressProcessing", { current: currentBatch, total: totalBatches, percent: Math.floor(progress) });
         } else {
-          currentMessage = `📡 Đang gửi đến AI... ${Math.floor(progress)}%`;
+          currentMessage = t("aiRefine.progressSending", { percent: Math.floor(progress) });
         }
       } else {
-        currentMessage = "✅ Hoàn thành!";
+        currentMessage = t("aiRefine.progressDone");
       }
       updateProgressNotification();
     };
@@ -3672,11 +3607,11 @@ export const App: React.FC = () => {
       if (refinedResult.isPartial && refinedResult.partialWarning) {
         // Still saved everything refined so far — notify user clearly
         message.warning({
-          content: `⚠️ Đã lưu ${refinedResults.length} segments đã chuẩn hóa. Xem chi tiết bên dưới.`,
+          content: t("aiRefine.partialSaved", { count: refinedResults.length }),
           duration: 6,
         });
         modal.warning({
-          title: "⚠️ Hết hạn mức API — Đã lưu kết quả một phần",
+          title: t("aiRefine.partialTitle"),
           width: 620,
           content: (
             <div style={{ fontSize: "14px", lineHeight: "1.8" }}>
@@ -3702,27 +3637,24 @@ export const App: React.FC = () => {
                   color: "#135200",
                 }}
               >
-                <strong>✅ Đã lưu tự động:</strong> {refinedResults.length}{" "}
-                segments đã được chuẩn hóa và cập nhật vào danh sách. Phần còn
-                lại giữ nguyên văn bản gốc.
+                {t("aiRefine.partialAutoSaved", { count: refinedResults.length })}
               </div>
             </div>
           ),
-          okText: "Đã hiểu",
+          okText: t("common.ok"),
         });
       } else {
-        const summaryMsg = refinedResult.summary
-          ? ` và tóm tắt nội dung!`
-          : `!`;
         message.success(
-          `✅ Đã chuẩn hóa thành công ${refinedResults.length} đoạn văn bản${summaryMsg}`,
+          refinedResult.summary
+            ? t("aiRefine.successMsgWithSummary", { count: refinedResults.length })
+            : t("aiRefine.successMsg", { count: refinedResults.length })
         );
       }
 
       // Show truncation warning if detected
       if (refinedResult.isTruncated && refinedResult.truncationWarning) {
         modal.warning({
-          title: "⚠️ Cảnh báo: Kết quả bị cắt ngắn",
+          title: t("aiRefine.truncTitle"),
           width: 600,
           content: (
             <div style={{ marginTop: 16 }}>
@@ -3748,12 +3680,11 @@ export const App: React.FC = () => {
               <div
                 style={{ marginTop: 12, color: "#595959", fontSize: "13px" }}
               >
-                <strong>Kết quả nhận được:</strong> {refinedResults.length}{" "}
-                segments
+                <strong>{t("aiRefine.truncReceived", { count: refinedResults.length })}</strong>
               </div>
             </div>
           ),
-          okText: "Đóng",
+          okText: t("common.close"),
         });
       }
     } catch (error: any) {
@@ -3768,7 +3699,7 @@ export const App: React.FC = () => {
         error.message.includes("Vượt hạn mức")
       ) {
         modal.error({
-          title: "🚫 Vượt hạn mức Gemini API",
+          title: t("aiRefine.quotaExceededTitle"),
           width: 600,
           content: (
             <div style={{ fontSize: "14px", lineHeight: "1.8" }}>
@@ -3801,27 +3732,25 @@ export const App: React.FC = () => {
                     color: "#0050b3",
                   }}
                 >
-                  📌 Thông tin hạn mức Gemini Free Tier:
+                  {t("aiRefine.quotaFreeInfo")}
                 </div>
                 <ul
                   style={{ margin: 0, paddingLeft: "20px", color: "#003a8c" }}
                 >
-                  <li>15 requests/phút</li>
-                  <li>1,500 requests/ngày</li>
-                  <li>
-                    <strong>250,000 tokens/ngày</strong> ← Giới hạn chính
-                  </li>
-                  <li>Reset: Mỗi 24 giờ</li>
+                  <li>{t("aiRefine.quota1")}</li>
+                  <li>{t("aiRefine.quota2")}</li>
+                  <li><strong>{t("aiRefine.quota3")}</strong></li>
+                  <li>{t("aiRefine.quota4")}</li>
                 </ul>
               </div>
             </div>
           ),
-          okText: "Đã hiểu",
+          okText: t("common.ok"),
         });
       } else {
         // Regular error message
         message.error({
-          content: `Lỗi khi chuẩn hóa bằng AI: ${error.message}`,
+          content: t("aiRefine.errorMsg", { message: error.message }),
           duration: 8,
         });
       }
@@ -3858,7 +3787,7 @@ export const App: React.FC = () => {
               }}
             >
               <h2 style={{ marginTop: 0, color: "#ffa500" }}>
-                🔄 Khôi phục dữ liệu
+                {t("backup.restoreTitle")}
               </h2>
               <p
                 style={{
@@ -3867,17 +3796,12 @@ export const App: React.FC = () => {
                   color: "#fffefecc",
                 }}
               >
-                Phát hiện dữ liệu tự động sao lưu từ{" "}
-                <strong>
-                  {backupAge !== null ? `${backupAge} phút` : "một lúc"}
-                </strong>{" "}
-                trước.
+                {t("backup.detected", { age: backupAge !== null ? `${backupAge} phút` : "một lúc" })}
                 <br />
-                Có thể trình duyệt đã bị đóng đột ngột hoặc bạn chưa lưu dữ
-                liệu.
+                {t("backup.detectedReason")}
               </p>
               <p style={{ fontSize: "14px", color: "#fffefecc" }}>
-                Bạn có muốn khôi phục dữ liệu này không?
+                {t("backup.question")}
               </p>
               <div style={{ display: "flex", gap: "12px", marginTop: "20px" }}>
                 <button
@@ -3894,7 +3818,7 @@ export const App: React.FC = () => {
                     cursor: "pointer",
                   }}
                 >
-                  ✅ Khôi phục
+                  {t("backup.doRestore")}
                 </button>
                 <button
                   onClick={handleDiscardBackup}
@@ -3909,7 +3833,7 @@ export const App: React.FC = () => {
                     cursor: "pointer",
                   }}
                 >
-                  🗑️ Bỏ qua
+                  {t("backup.doDiscard")}
                 </button>
               </div>
             </div>
@@ -3917,17 +3841,18 @@ export const App: React.FC = () => {
         )}
 
         <header className="app-header">
-          <h1>📝 Live Meeting Notes</h1>
+          <h1>{t("app.title")}</h1>
           <div className="status-indicator">
-            {navigator.onLine ? "🌐 Online" : "📴 Offline"}
+            {navigator.onLine ? t("app.online") : t("app.offline")}
             {hasUnsavedChanges && (
               <span
                 className="unsaved-indicator"
-                title="Bạn có dữ liệu chưa lưu"
+                title={t("app.unsavedTitle")}
               >
-                ⚠️ Chưa lưu
+                {t("app.unsaved")}
               </span>
             )}
+            <LanguageSwitcher />
             <HelpButton />
           </div>
         </header>

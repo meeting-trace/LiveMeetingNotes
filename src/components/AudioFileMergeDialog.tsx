@@ -18,6 +18,7 @@ import {
   ArrowUpOutlined,
   ArrowDownOutlined,
 } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
 import { AudioMerger } from "../services/audioMerger";
 
 const { Text } = Typography;
@@ -72,6 +73,7 @@ export const AudioFileMergeDialog: React.FC<Props> = ({
   const [progress, setProgress] = useState(0);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const dragIdRef = useRef<string | null>(null);
+  const { t } = useTranslation();
 
   // Reset items when audioFiles prop changes (dialog reopens)
   React.useEffect(() => {
@@ -157,8 +159,8 @@ export const AudioFileMergeDialog: React.FC<Props> = ({
     } catch (err) {
       console.error("❌ Merge failed:", err);
       Modal.error({
-        title: "Lỗi ghép âm thanh",
-        content: `Không thể ghép các file âm thanh: ${err instanceof Error ? err.message : String(err)}`,
+        title: t('audioMerge.errorTitle'),
+        content: t('audioMerge.errorContent', { error: err instanceof Error ? err.message : String(err) }),
       });
     } finally {
       setMerging(false);
@@ -178,15 +180,15 @@ export const AudioFileMergeDialog: React.FC<Props> = ({
   const footer = (
     <Space style={{ width: "100%", justifyContent: "flex-end" }}>
       <Button onClick={onCancel} disabled={merging}>
-        Hủy
+        {t('audioMerge.cancel')}
       </Button>
       {audioFiles.length > 0 && (
         <Button
           onClick={() => onUseSingle(items[0].blob)}
           disabled={merging}
-          title="Chỉ tải file đầu tiên, bỏ qua phần còn lại"
+          title={t('audioMerge.useFirstOnlyTitle')}
         >
-          Chỉ dùng file đầu tiên
+          {t('audioMerge.useFirstOnly')}
         </Button>
       )}
       <Button
@@ -197,8 +199,8 @@ export const AudioFileMergeDialog: React.FC<Props> = ({
         loading={merging}
       >
         {selectedCount <= 1
-          ? "Tải file đã chọn"
-          : `Ghép ${selectedCount} file & tải`}
+          ? t('audioMerge.loadSelected')
+          : t('audioMerge.mergeAndLoad', { count: selectedCount })}
       </Button>
     </Space>
   );
@@ -209,7 +211,7 @@ export const AudioFileMergeDialog: React.FC<Props> = ({
       title={
         <Space>
           <MergeCellsOutlined style={{ color: "#1890ff" }} />
-          <span>Phát hiện nhiều file âm thanh</span>
+          <span>{t('audioMerge.title')}</span>
         </Space>
       }
       footer={footer}
@@ -224,12 +226,10 @@ export const AudioFileMergeDialog: React.FC<Props> = ({
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          message={`Tìm thấy ${audioFiles.length} file âm thanh trong thư mục dự án.`}
+          message={t('audioMerge.found', { count: audioFiles.length })}
           description={
             <span>
-              Bạn có thể <strong>tick chọn</strong> những file muốn dùng và{" "}
-              <strong>kéo thả</strong> (hoặc dùng nút ↑ ↓) để sắp xếp thứ tự
-              ghép. Các file sẽ được nối tiếp nhau theo thứ tự từ trên xuống.
+              {t('audioMerge.instructions')}
             </span>
           }
         />
@@ -239,8 +239,8 @@ export const AudioFileMergeDialog: React.FC<Props> = ({
             type="warning"
             showIcon
             style={{ marginBottom: 16 }}
-            message="Nhiều định dạng khác nhau"
-            description="Các file có định dạng khác nhau sẽ được chuyển đổi định dạng và xuất ra WAV."
+            message={t('audioMerge.mixedFormats')}
+            description={t('audioMerge.mixedFormatsDesc')}
           />
         )}
 
@@ -355,7 +355,7 @@ export const AudioFileMergeDialog: React.FC<Props> = ({
                   icon={<DeleteOutlined />}
                   danger
                   disabled={merging}
-                  title="Bỏ chọn file này"
+                  title={t('audioMerge.deselectFile')}
                   onClick={(e) => {
                     e.stopPropagation();
                     toggleCheck(item.id);

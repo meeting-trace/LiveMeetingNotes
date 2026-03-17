@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button, Space, message } from 'antd';
 import { ReloadOutlined, CloseOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import { updateManager } from '../services/updateManager';
 
 interface Props {
@@ -8,13 +9,14 @@ interface Props {
 }
 
 export const UpdateNotification: React.FC<Props> = ({ onClose }) => {
+  const { t } = useTranslation();
   const handleUpdate = async () => {
     try {
-      message.loading({ content: '🔄 Đang cập nhật...', key: 'update', duration: 0 });
+      message.loading({ content: t('update.updating'), key: 'update', duration: 0 });
       await updateManager.applyUpdate();
       // Page will reload automatically after update
     } catch (error: any) {
-      message.error({ content: `❌ Lỗi khi cập nhật: ${error.message}`, key: 'update' });
+      message.error({ content: t('update.updateError', { error: error.message }), key: 'update' });
     }
   };
 
@@ -50,10 +52,10 @@ export const UpdateNotification: React.FC<Props> = ({ onClose }) => {
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '8px', color: '#1890ff' }}>
-            ✨ Phiên bản mới có sẵn!
+            {t('update.newVersion')}
           </div>
           <div style={{ fontSize: '14px', color: '#666', marginBottom: '12px' }}>
-            Có bản cập nhật mới của ứng dụng. Cập nhật ngay để trải nghiệm tính năng mới nhất.
+            {t('update.description')}
           </div>
           
           <Space>
@@ -63,14 +65,14 @@ export const UpdateNotification: React.FC<Props> = ({ onClose }) => {
               onClick={handleUpdate}
               size="small"
             >
-              Cập nhật ngay
+              {t('update.updateNow')}
             </Button>
             <Button
               icon={<CloseOutlined />}
               onClick={onClose}
               size="small"
             >
-              Để sau
+              {t('update.later')}
             </Button>
           </Space>
         </div>

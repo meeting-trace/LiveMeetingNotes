@@ -1,6 +1,7 @@
 import React, { memo } from 'react';
 import { Input, Button, Space } from 'antd';
 import { SaveOutlined, CloseOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 
 interface Props {
   editText: string;
@@ -31,6 +32,7 @@ export const TranscriptionEditForm: React.FC<Props> = memo(({
   onCancel,
   formatAudioTime
 }) => {
+  const { t } = useTranslation();
   return (
     <div style={{ marginTop: '8px' }}>
       {/* All metadata fields in one row */}
@@ -44,13 +46,13 @@ export const TranscriptionEditForm: React.FC<Props> = memo(({
         {/* Edit Start Time */}
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <label style={{ fontSize: '12px', color: '#666', marginRight: '6px', whiteSpace: 'nowrap' }}>
-            Thời điểm:
+            {t('transcriptionItem.timeLabel')}
           </label>
           <Input
             size="small"
             value={editStartTime}
             onChange={(e) => onStartTimeChange(e.target.value)}
-            placeholder="yyyy-MM-dd HH:mm:ss"
+            placeholder={t('transcriptionItem.timePlaceholder')}
             style={{ width: '170px' }}
           />
         </div>
@@ -59,13 +61,13 @@ export const TranscriptionEditForm: React.FC<Props> = memo(({
         {editAudioTimeMs !== undefined && (
           <div style={{ display: 'flex', alignItems: 'center' }}>
             <label style={{ fontSize: '12px', color: '#666', marginRight: '6px', whiteSpace: 'nowrap' }}>
-              Vị trí audio:
+              {t('transcriptionItem.audioTimeLabel')}
             </label>
             <Input
               size="small"
               value={formatAudioTime(editAudioTimeMs)}
               onChange={(e) => onAudioTimeChange(e.target.value)}
-              placeholder="0:00"
+              placeholder={t('transcriptionItem.audioTimePlaceholder')}
               style={{ width: '80px' }}
             />
           </div>
@@ -74,13 +76,13 @@ export const TranscriptionEditForm: React.FC<Props> = memo(({
         {/* Edit Speaker */}
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <label style={{ fontSize: '12px', color: '#666', marginRight: '6px', whiteSpace: 'nowrap' }}>
-            Người nói:
+            {t('transcriptionItem.speakerLabel')}
           </label>
           <Input
             size="small"
             value={editSpeaker}
             onChange={(e) => onSpeakerChange(e.target.value)}
-            placeholder="Người nói 1"
+            placeholder={t('transcriptionItem.speakerPlaceholder')}
             style={{ width: '120px' }}
           />
         </div>
@@ -102,14 +104,14 @@ export const TranscriptionEditForm: React.FC<Props> = memo(({
           icon={<SaveOutlined />}
           onClick={onSave}
         >
-          Lưu
+          {t('transcriptionItem.save')}
         </Button>
         <Button
           size="small"
           icon={<CloseOutlined />}
           onClick={onCancel}
         >
-          Hủy
+          {t('transcriptionItem.cancel')}
         </Button>
       </Space>
     </div>

@@ -7,12 +7,12 @@ import {
   SaveOutlined,
   FolderAddOutlined,
   SettingOutlined,
-  // SoundOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   GlobalOutlined,
   ExclamationCircleOutlined,
 } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
 import { AudioRecorderService } from "../services/audioRecorder";
 import {
   FileManagerService,
@@ -119,6 +119,7 @@ export const RecordingControls: React.FC<Props> = ({
   onTranscriptionConfigChange,
 }) => {
   const { message } = App.useApp();
+  const { t } = useTranslation();
   const [duration, setDuration] = useState<number>(0);
   const [recorder] = useState(() => new AudioRecorderService());
   const [fileManager] = useState(() => new FileManagerService());
@@ -197,16 +198,15 @@ export const RecordingControls: React.FC<Props> = ({
           audioSource === ("both" as AudioSourceType))
       ) {
         Modal.warning({
-          title: "⚠️ Đã dừng chia sẻ màn hình",
+          title: t('recording.streamEndedTitle'),
           content: (
             <div>
               <p style={{ marginBottom: "12px" }}>
-                Bạn đã dừng chia sẻ màn hình/tab. Việc ghi âm từ system audio sẽ
-                không còn hoạt động.
+                {t('recording.streamEnded')}
               </p>
             </div>
           ),
-          okText: "Đã hiểu",
+          okText: t('common.ok'),
         });
       }
     });
@@ -256,17 +256,17 @@ export const RecordingControls: React.FC<Props> = ({
           // Show appropriate message based on actual audio source
           if (actualSourceType === ("both" as AudioSourceType)) {
             message.success(
-              "🎤 Bắt đầu chuyển đổi giọng nói từ microphone sang văn bản (chỉ ghi nhận giọng nói của bạn)",
+              t('recording.startTranscribeBoth'),
             );
           } else {
-            message.success("🎤 Bắt đầu chuyển đổi giọng nói sang văn bản");
+            message.success(t('recording.startTranscribe'));
           }
         } catch (error: any) {
           onTranscribingChange?.(false);
           console.error("Failed to start transcription:", error);
           // Don't show error message if we already warned user about no mic
           if (audioSource !== "both" || actualSourceType !== "system") {
-            message.error("Không thể bắt đầu chuyển đổi: " + error.message);
+            message.error(t('recording.startTranscribeError') + error.message);
           }
         }
       } else if (!isRecording || !autoTranscribe || isPaused) {
@@ -305,7 +305,7 @@ export const RecordingControls: React.FC<Props> = ({
       audioSource === ("both" as AudioSourceType)
     ) {
       Modal.confirm({
-        title: "⚠️ Lưu ý khi thao tác chọn nguồn âm thanh khác để ghi âm!",
+        title: t('recording.systemAudioWarningTitle'),
         icon: <ExclamationCircleOutlined />,
         content: (
           <div>
@@ -316,21 +316,19 @@ export const RecordingControls: React.FC<Props> = ({
                 color: "#d4380d",
               }}
             >
-              Khi chọn tab/màn hình, BẮT BUỘC phải chọn "Also share system
-              audio" (hoặc "Đồng thời chia sẻ âm thanh hệ thống")!
+              {t('recording.systemAudioWarning')}
             </p>
             <p style={{ marginBottom: "8px" }}>
-              ✅ <strong>Chrome:</strong> Chọn tab → CHỌN "Also share tab audio"
-              <br />✅ <strong>Window/Entire screen:</strong> CHỌN "Also share
-              system audio"
+              {t('recording.systemAudioChrome')}
+              <br />{t('recording.systemAudioWindow')}
             </p>
             <p style={{ color: "#cf1322", marginTop: "12px" }}>
-              ❌ Nếu không CHỌN, bạn sẽ KHÔNG nhận được âm thanh từ nguồn khác!
+              {t('recording.systemAudioWarning2')}
             </p>
           </div>
         ),
-        okText: "Đã hiểu, tiếp tục",
-        cancelText: "Hủy",
+        okText: t('recording.systemAudioOk'),
+        cancelText: t('common.cancel'),
         onOk: async () => {
           await startRecordingWithSource();
         },
@@ -372,19 +370,18 @@ export const RecordingControls: React.FC<Props> = ({
 
       // Show appropriate message based on audio source
       const sourceMessages: Record<string, string> = {
-        microphone: "🎤 Bắt đầu ghi âm từ microphone",
-        system: "🔊 Bắt đầu ghi âm từ Nguồn khác (cuộc họp)",
-        both: "🎤+🔊 Bắt đầu ghi âm từ cả microphone và Nguồn khác",
+        microphone: t('recording.startMicMsg'),
+        system: t('recording.startSystemMsg'),
+        both: t('recording.startBothMsg'),
       };
 
-      message.success(sourceMessages[audioSource] || "Bắt đầu ghi âm");
+      message.success(sourceMessages[audioSource] || t('recording.startRecording'));
 
       // Warn if user selected 'both' but only got system audio (no mic available)
       if (audioSource === "both" && actualSourceType === "system") {
         setTimeout(() => {
           message.warning({
-            content:
-              "⚠️ Không phát hiện microphone. Chỉ ghi âm từ Nguồn khác (system audio). Nếu kết nối mic sau, vui lòng dừng và ghi âm lại.",
+            content: t('recording.noMicDetected'),
             duration: 6,
           });
         }, 500);
@@ -393,30 +390,28 @@ export const RecordingControls: React.FC<Props> = ({
       // Show detailed error modal for system audio failures
       if (error.message.includes("audio") || error.message.includes("Share")) {
         Modal.error({
-          title: "❌ Không nhận được được âm thanh",
+          title: t('recording.noAudioTitle'),
           content: (
             <div>
               <p style={{ marginBottom: "12px", fontWeight: 600 }}>
                 {error.message}
               </p>
               <p style={{ marginTop: "12px" }}>
-                <strong>Cách khắc phục:</strong>
+                <strong>{t('recording.noAudioFix')}</strong>
               </p>
               <ol style={{ paddingLeft: "20px", marginTop: "8px" }}>
-                <li>Click nút "Ghi âm" lại</li>
-                <li>
-                  Khi dialog hiện ra, chọn tab cuộc họp (Zoom/Teams/Meet ...)
-                </li>
+                <li>{t('recording.noAudioFix1')}</li>
+                <li>{t('recording.noAudioFix2')}</li>
                 <li>
                   <strong style={{ color: "#d4380d" }}>
-                    Nhớ CHỌN "Also share system audio"
+                    {t('recording.noAudioFix3')}
                   </strong>
                 </li>
-                <li>Click "Share"</li>
+                <li>{t('recording.noAudioFix4')}</li>
               </ol>
             </div>
           ),
-          okText: "Đã hiểu",
+          okText: t('common.ok'),
         });
       } else {
         message.error(error.message);
@@ -435,7 +430,7 @@ export const RecordingControls: React.FC<Props> = ({
         speechToTextService.stopTranscription();
       }
 
-      message.info("⏸️ Đã tạm dừng ghi âm");
+      message.info(t('recording.pausedMsg'));
     } catch (error: any) {
       message.error(error.message);
     }
@@ -464,7 +459,7 @@ export const RecordingControls: React.FC<Props> = ({
         }
       }
 
-      message.success("▶️ Tiếp tục ghi âm");
+      message.success(t('recording.resumedMsg'));
     } catch (error: any) {
       message.error(error.message);
     }
@@ -492,18 +487,16 @@ export const RecordingControls: React.FC<Props> = ({
       // If paused, just update for next resume
       if (isPaused) {
         message.info(
-          `🌐 Ngôn ngữ sẽ đổi sang ${getLanguageName(languageCode)} khi tiếp tục`,
+          t('recording.langChangePending', { lang: getLanguageName(languageCode) }),
         );
       } else if (isRecording && autoTranscribe) {
-        // If recording and auto-transcribe is ON, restart transcription immediately
         message.loading({
-          content: `🌐 Đang chuyển sang ${getLanguageName(languageCode)}...`,
+          content: t('recording.langChanging', { lang: getLanguageName(languageCode) }),
           key: "langChange",
         });
 
         speechToTextService.stopTranscription();
 
-        // Wait a bit for service to stop cleanly, then restart with new language
         setTimeout(async () => {
           if (autoTranscribe && navigator.onLine && audioStream) {
             try {
@@ -512,14 +505,14 @@ export const RecordingControls: React.FC<Props> = ({
                 onNewTranscription,
               );
               message.success({
-                content: `✅ Đã chuyển sang ${getLanguageName(languageCode)}`,
+                content: t('recording.langChanged', { lang: getLanguageName(languageCode) }),
                 key: "langChange",
                 duration: 2,
               });
             } catch (error: any) {
               console.error("Failed to restart transcription:", error);
               message.error({
-                content: `⚠️ Không thể khởi động lại: ${error.message}`,
+                content: t('recording.langChangeError', { message: error.message }),
                 key: "langChange",
                 duration: 3,
               });
@@ -527,7 +520,7 @@ export const RecordingControls: React.FC<Props> = ({
           }
         }, 500);
       } else {
-        message.success(`🌐 Đã chọn ${getLanguageName(languageCode)}`);
+        message.success(t('recording.langSelected', { lang: getLanguageName(languageCode) }));
       }
     }
   };
@@ -558,7 +551,7 @@ export const RecordingControls: React.FC<Props> = ({
       setIsPaused(false);
       await handleStopRecording();
     } catch (error: any) {
-      message.error(`Lỗi khi dừng: ${error.message}`);
+      message.error(t('recording.stopFromPauseError', { message: error.message }));
       setIsPaused(false);
       onRecordingChange(false);
     }
@@ -576,7 +569,7 @@ export const RecordingControls: React.FC<Props> = ({
       sanitized = sanitized.substring(0, 50);
     }
     // Fallback if empty after sanitization
-    return sanitized || "Cuộc họp";
+    return sanitized || t('recording.defaultMeetingTitle');
   };
 
   const handleStopRecording = async () => {
@@ -595,12 +588,12 @@ export const RecordingControls: React.FC<Props> = ({
       // If auto-transcription is active, wait for it to complete
       if (autoTranscribe && speechToTextService.isProcessing()) {
         message.loading({
-          content: "⏳ Đang chờ chuyển đổi giọng nói hoàn tất...",
+          content: t('recording.waitTranscribingMsg'),
           key: "waitTranscription",
         });
         await speechToTextService.waitForCompletion(10000);
         message.success({
-          content: "✅ Chuyển đổi giọng nói hoàn tất",
+          content: t('recording.transcribingCompleteMsg'),
           key: "waitTranscription",
           duration: 2,
         });
@@ -652,7 +645,7 @@ export const RecordingControls: React.FC<Props> = ({
     const minutes = String(now.getMinutes()).padStart(2, "0");
     const timePrefix = `${year}${month}${day}_${hours}${minutes}`;
 
-    const sanitizedTitle = sanitizeMeetingTitle(meetingInfo.title || "Meeting");
+    const sanitizedTitle = sanitizeMeetingTitle(meetingInfo.title);
     const projectName = `${timePrefix}_${sanitizedTitle}`;
     // Get actual audio extension from MediaRecorder (webm/mp3/wav/ogg/mp4)
     const audioExtension = recorder.getAudioFileExtension();
@@ -664,7 +657,7 @@ export const RecordingControls: React.FC<Props> = ({
       // No folder selected, prompt user
       const folder = await fileManager.selectFolder();
       if (!folder) {
-        message.info("Vui lòng chọn thư mục để lưu ghi âm.");
+        message.info(t('recording.selectFolderToSave'));
         return; // User cancelled
       }
       onFolderSelect(folder);
@@ -871,9 +864,7 @@ export const RecordingControls: React.FC<Props> = ({
         const minutes = String(now.getMinutes()).padStart(2, "0");
         const timePrefix = `${year}${month}${day}_${hours}${minutes}`;
 
-        const sanitizedTitle = sanitizeMeetingTitle(
-          meetingInfo.title || "Meeting",
-        );
+        const sanitizedTitle = sanitizeMeetingTitle(meetingInfo.title);
         const projectName = `${timePrefix}_${sanitizedTitle}`;
 
         const downloader = new FileDownloadService();
@@ -896,7 +887,7 @@ export const RecordingControls: React.FC<Props> = ({
         );
 
         message.info(
-          "Tệp đã được tải xuống. Vui lòng lưu vào thư mục ghi chú cuộc họp của bạn.",
+          t('recording.downloadedSaveHint'),
         );
         setLastProjectName(projectName);
         onSaveComplete();
@@ -912,7 +903,7 @@ export const RecordingControls: React.FC<Props> = ({
         // No folder selected, prompt user
         const folder = await fileManager.selectFolder();
         if (!folder) {
-          message.info("Vui lòng chọn thư mục để lưu ghi chú.");
+          message.info(t('recording.selectFolderToSaveNotes'));
           return; // User cancelled
         }
         onFolderSelect(folder);
@@ -927,9 +918,7 @@ export const RecordingControls: React.FC<Props> = ({
       const minutes = String(now.getMinutes()).padStart(2, "0");
       const timePrefix = `${year}${month}${day}_${hours}${minutes}`;
 
-      const sanitizedTitle = sanitizeMeetingTitle(
-        meetingInfo.title || "Meeting",
-      );
+      const sanitizedTitle = sanitizeMeetingTitle(meetingInfo.title);
       const projectName = `${timePrefix}_${sanitizedTitle}`;
 
       // Create project subdirectory and get its handle
@@ -1033,14 +1022,12 @@ export const RecordingControls: React.FC<Props> = ({
       const minutes = String(now.getMinutes()).padStart(2, "0");
       const timePrefix = `${year}${month}${day}_${hours}${minutes}`;
 
-      const sanitizedTitle = sanitizeMeetingTitle(
-        meetingInfo.title || "Meeting",
-      );
+      const sanitizedTitle = sanitizeMeetingTitle(meetingInfo.title);
       const newProjectName = `${timePrefix}_${sanitizedTitle}`;
 
       // If no lastProjectName (e.g., after reload), notify user we're creating new version
       if (!lastProjectName) {
-        message.info("Đang lưu dữ liệu đã khôi phục...");
+        message.info(t('recording.savingRestoredData'));
       }
 
       // Build updated metadata with current notes
@@ -1448,16 +1435,12 @@ export const RecordingControls: React.FC<Props> = ({
 
     try {
       if (!FileManagerService.isSupported()) {
-        message.error(
-          "Trình duyệt của bạn không hỗ trợ tải project. Vui lòng sử dụng Chrome hoặc Edge.",
-        );
+        message.error(t('recording.noProjectSupport'));
         return;
       }
 
       if (hasUnsavedChanges) {
-        const confirmed = window.confirm(
-          "Bạn có dữ liệu chưa lưu. Tải project mới sẽ mất dữ liệu hiện tại. Tiếp tục?",
-        );
+        const confirmed = window.confirm(t('recording.unsavedConfirm'));
         if (!confirmed) return;
       }
 
@@ -1493,7 +1476,7 @@ export const RecordingControls: React.FC<Props> = ({
       applyLoadedProject(projectData, mergedBlob);
     } catch (error: any) {
       console.error("Apply project after merge error:", error);
-      message.error(`Lỗi khi tải project: ${error.message}`);
+      message.error(t('recording.loadProjectError', { message: error.message }));
     }
   };
 
@@ -1502,7 +1485,7 @@ export const RecordingControls: React.FC<Props> = ({
     setShowMergeDialog(false);
     setPendingAudioFiles([]);
     pendingProjectDataRef.current = null;
-    message.info("Đã hủy tải project");
+    message.info(t('recording.cancelLoadProject'));
   };
 
   // Called when user wants to use only first audio file
@@ -1515,7 +1498,7 @@ export const RecordingControls: React.FC<Props> = ({
       applyLoadedProject(projectData, blob);
     } catch (error: any) {
       console.error("Apply project (single audio) error:", error);
-      message.error(`Lỗi khi tải project: ${error.message}`);
+      message.error(t('recording.loadProjectError', { message: error.message }));
     }
   };
 
@@ -1560,7 +1543,7 @@ export const RecordingControls: React.FC<Props> = ({
               disabled={isRecording}
               size="middle"
             >
-              Chọn thư mục
+              {t('recording.selectFolder')}
             </Button>
 
             <Button
@@ -1572,7 +1555,7 @@ export const RecordingControls: React.FC<Props> = ({
               size="middle"
               type="default"
             >
-              Tải dự án đã lưu
+              {t('recording.loadProject')}
             </Button>
 
             {/* Show Save Notes button when has unsaved data but not saved yet */}
@@ -1583,7 +1566,7 @@ export const RecordingControls: React.FC<Props> = ({
                 onClick={handleSaveNotes}
                 size="middle"
               >
-                Lưu ghi chú
+                {t('recording.saveNotes')}
               </Button>
             )}
 
@@ -1596,7 +1579,7 @@ export const RecordingControls: React.FC<Props> = ({
                 size="middle"
                 className="btn-success"
               >
-                Lưu thay đổi
+                {t('recording.saveChanges')}
               </Button>
             )}
 
@@ -1617,9 +1600,8 @@ export const RecordingControls: React.FC<Props> = ({
               size="middle"
               className={!transcriptionConfig ? "blink-btn" : ""}
               style={{ marginLeft: "auto", width: 150 }}
-              // style={{ width: 150 }}
             >
-              Cấu hình
+              {t('recording.configure')}
             </Button>
           )}
         </div>
@@ -1639,7 +1621,7 @@ export const RecordingControls: React.FC<Props> = ({
             <Tooltip
               title={
                 isRecording || isPaused
-                  ? "Không thể đổi nguồn khi đang ghi âm. Dừng hẳn để chọn nguồn khác."
+                  ? t('recording.cannotChangeSource')
                   : ""
               }
             >
@@ -1653,13 +1635,13 @@ export const RecordingControls: React.FC<Props> = ({
                 style={{ width: 200 }}
               >
                 <Select.Option value={"microphone" as AudioSourceType}>
-                  🎤 Microphone
+                  {t('recording.mic')}
                 </Select.Option>
                 <Select.Option value={"system" as AudioSourceType}>
-                  🔊 Nguồn khác
+                  {t('recording.other')}
                 </Select.Option>
                 <Select.Option value={"both" as AudioSourceType}>
-                  🎤+🔊 Kết hợp
+                  {t('recording.combined')}
                 </Select.Option>
               </Select>
             </Tooltip>
@@ -1674,7 +1656,7 @@ export const RecordingControls: React.FC<Props> = ({
                   size="middle"
                   disabled={isProcessing || audioBlob !== null}
                 >
-                  Ghi âm
+                  {t('recording.start')}
                 </Button>
 
                 {isProcessing && (
@@ -1685,7 +1667,7 @@ export const RecordingControls: React.FC<Props> = ({
                       fontWeight: 600,
                     }}
                   >
-                    ⏳ Đang xử lý...
+                    {t('recording.processing')}
                   </span>
                 )}
 
@@ -1697,7 +1679,7 @@ export const RecordingControls: React.FC<Props> = ({
                       fontStyle: "italic",
                     }}
                   >
-                    💡 Tải lại trang web này để bắt đầu Dự án mới
+                    {t('recording.reloadHint')}
                   </span>
                 )}
               </>
@@ -1710,7 +1692,7 @@ export const RecordingControls: React.FC<Props> = ({
                   size="large"
                   className="btn-success"
                 >
-                  Tiếp tục
+                  {t('recording.resume')}
                 </Button>
                 <Button
                   type="primary"
@@ -1719,7 +1701,7 @@ export const RecordingControls: React.FC<Props> = ({
                   size="large"
                   danger
                 >
-                  Dừng hẳn
+                  {t('recording.stopAll')}
                 </Button>
               </>
             ) : (
@@ -1730,7 +1712,7 @@ export const RecordingControls: React.FC<Props> = ({
                   onClick={handlePauseRecording}
                   size="large"
                 >
-                  Tạm dừng
+                  {t('recording.pause')}
                 </Button>
                 <Button
                   type="primary"
@@ -1739,7 +1721,7 @@ export const RecordingControls: React.FC<Props> = ({
                   size="large"
                   danger
                 >
-                  Dừng
+                  {t('recording.stop')}
                 </Button>
               </>
             )}
@@ -1750,20 +1732,16 @@ export const RecordingControls: React.FC<Props> = ({
             )}
             {isRecording && !isPaused && (
               <span className="recording-indicator">
-                🔴 Đang ghi âm{" "}
-                {recorder.getAudioSourceType() ===
-                ("microphone" as AudioSourceType)
-                  ? "từ Mic"
-                  : recorder.getAudioSourceType() ===
-                      ("system" as AudioSourceType)
-                    ? "từ Nguồn khác"
-                    : "từ Mic và Nguồn khác"}{" "}
-                ...
+                {recorder.getAudioSourceType() === ("microphone" as AudioSourceType)
+                  ? t('recording.recordingMic')
+                  : recorder.getAudioSourceType() === ("system" as AudioSourceType)
+                    ? t('recording.recordingOther')
+                    : t('recording.recordingBoth')}
               </span>
             )}
 
             {isPaused && (
-              <span className="paused-indicator">⏸️ Đã tạm dừng</span>
+              <span className="paused-indicator">{t('recording.paused')}</span>
             )}
           </Space>
 
@@ -1773,16 +1751,16 @@ export const RecordingControls: React.FC<Props> = ({
               <Tooltip
                 title={
                   isRecording && !isPaused
-                    ? "Bật/tắt chuyển đổi giọng nói sang văn bản tự động"
+                    ? t('recording.toggleTranscribeTooltip')
                     : isPaused
-                      ? "Thay đổi sẽ có hiệu lực khi tiếp tục ghi âm"
-                      : "Dùng cho chức năng chuyển đổi giọng nói sang văn bản trực tuyến"
+                      ? t('recording.languageChangeEffect')
+                      : t('recording.liveTranscribeHint')
                 }
               >
                 <Space>
                   {/* <SoundOutlined style={{ fontSize: '18px', color: autoTranscribe ? '#16a34a' : '#9ca3af' }} /> */}
                   <span style={{ fontSize: "14px" }}>
-                    Live Transcribe 🎤 → 🔠:
+                    {t('recording.liveTranscribe')}
                   </span>
                   <Switch
                     checked={autoTranscribe}
@@ -1790,8 +1768,8 @@ export const RecordingControls: React.FC<Props> = ({
                       setAutoTranscribe(checked);
                     }}
                     disabled={isRecording && !isPaused}
-                    checkedChildren="ON"
-                    unCheckedChildren="OFF"
+                    checkedChildren={t('recording.on')}
+                    unCheckedChildren={t('recording.off')}
                   />
                 </Space>
               </Tooltip>
@@ -1800,10 +1778,10 @@ export const RecordingControls: React.FC<Props> = ({
               <Tooltip
                 title={
                   isRecording && !isPaused
-                    ? "🔄 Đổi ngôn ngữ ngay - Chuyển đổi giọng nói sẽ khởi động lại (ghi âm không bị gián đoạn)"
+                    ? t('recording.switchLangNow')
                     : isPaused
-                      ? "Thay đổi sẽ có hiệu lực khi tiếp tục ghi âm"
-                      : "Chọn ngôn ngữ để chuyển đổi giọng nói"
+                      ? t('recording.languageChangeEffect')
+                      : t('recording.selectLanguage')
                 }
               >
                 <Select
@@ -1814,16 +1792,16 @@ export const RecordingControls: React.FC<Props> = ({
                   suffixIcon={<GlobalOutlined />}
                   disabled={false}
                 >
-                  <Select.Option value="vi-VN">🇻🇳 Tiếng Việt</Select.Option>
-                  <Select.Option value="en-US">🇺🇸 English (US)</Select.Option>
-                  <Select.Option value="en-GB">🇬🇧 English (UK)</Select.Option>
-                  <Select.Option value="ja-JP">🇯🇵 日本語</Select.Option>
-                  <Select.Option value="ko-KR">🇰🇷 한국어</Select.Option>
-                  <Select.Option value="zh-CN">🇨🇳 中文 (简)</Select.Option>
-                  <Select.Option value="zh-TW">🇹🇼 中文 (繁)</Select.Option>
-                  <Select.Option value="fr-FR">🇫🇷 Français</Select.Option>
-                  <Select.Option value="de-DE">🇩🇪 Deutsch</Select.Option>
-                  <Select.Option value="es-ES">🇪🇸 Español</Select.Option>
+                  <Select.Option value="vi-VN">{t('recording.langVi')}</Select.Option>
+                  <Select.Option value="en-US">{t('recording.langEnUS')}</Select.Option>
+                  <Select.Option value="en-GB">{t('recording.langEnGB')}</Select.Option>
+                  <Select.Option value="ja-JP">{t('recording.langJa')}</Select.Option>
+                  <Select.Option value="ko-KR">{t('recording.langKo')}</Select.Option>
+                  <Select.Option value="zh-CN">{t('recording.langZhCN')}</Select.Option>
+                  <Select.Option value="zh-TW">{t('recording.langZhTW')}</Select.Option>
+                  <Select.Option value="fr-FR">{t('recording.langFr')}</Select.Option>
+                  <Select.Option value="de-DE">{t('recording.langDe')}</Select.Option>
+                  <Select.Option value="es-ES">{t('recording.langEs')}</Select.Option>
                 </Select>
               </Tooltip>
             </Space>
@@ -1839,14 +1817,13 @@ export const RecordingControls: React.FC<Props> = ({
                 marginLeft: "auto",
               }}
             >
-              ℹ️Cấu hình để sử dụng
+              {t('recording.configureHint')}
             </span>
           )}
         </div>
         {!FileManagerService.isSupported() && (
           <div className="browser-warning">
-            ⚠️ Trình duyệt của bạn không hỗ trợ truy cập thư mục trực tiếp. Các
-            file sẽ được tải về.
+            {t('recording.noFolderAccess')}
           </div>
         )}
       </div>

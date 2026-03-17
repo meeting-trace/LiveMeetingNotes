@@ -1,6 +1,7 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { Input, Collapse, Modal } from 'antd';
 import { ExclamationCircleOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import type { MeetingInfo } from '../types/types';
 
 const { TextArea } = Input;
@@ -18,6 +19,7 @@ export const MetadataPanel: React.FC<Props> = ({
   hasSegments = false,
   onConvertTimestamps
 }) => {
+  const { t } = useTranslation();
   // Local state for immediate UI update
   const [localInfo, setLocalInfo] = useState<MeetingInfo>(meetingInfo);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -55,25 +57,25 @@ export const MetadataPanel: React.FC<Props> = ({
         
         // Show confirmation modal
         Modal.confirm({
-          title: '🕐 Convert nhãn thời gian?',
+          title: t('metadata.convertTimestampTitle'),
           icon: <ExclamationCircleOutlined />,
           content: (
             <div style={{ marginTop: 16 }}>
-              <p>Bạn đã thay đổi thời gian bắt đầu cuộc họp:</p>
+              <p>{t('metadata.timeChanged')}</p>
               <ul style={{ marginLeft: 20, marginTop: 8 }}>
-                <li><b>Trước:</b> {previousDateTime.toLocaleString('vi-VN')}</li>
-                <li><b>Sau:</b> {newDateTime.toLocaleString('vi-VN')}</li>
+                <li><b>{t('metadata.before')}</b> {previousDateTime.toLocaleString()}</li>
+                <li><b>{t('metadata.after')}</b> {newDateTime.toLocaleString()}</li>
               </ul>
               <p style={{ marginTop: 12 }}>
-                Bạn có muốn cập nhật lại nhãn thời gian (startTime) của các segments theo thời gian mới không?
+                {t('metadata.convertQuestion')}
               </p>
               <p style={{ fontSize: '12px', color: '#666', marginTop: 8 }}>
-                ℹ️ Công thức: <code>startTime = thời gian bắt đầu họp + audioTimeMs</code>
+                {t('metadata.convertFormula')}
               </p>
             </div>
           ),
-          okText: 'Có, convert lại',
-          cancelText: 'Không',
+          okText: t('metadata.convertOk'),
+          cancelText: t('metadata.convertNo'),
           width: 520,
           onOk: () => {
             // User confirmed - convert timestamps
@@ -109,21 +111,21 @@ export const MetadataPanel: React.FC<Props> = ({
       items={[
         {
           key: '1',
-          label: '📋 Thông tin chung',
+          label: t('metadata.title'),
           children: (
             <div className="metadata-form">
               <div className="form-row">
-                <label>Tên cuộc họp:</label>
+                <label>{t('metadata.meetingName')}</label>
                 <Input
                   value={localInfo.title}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('title', e.target.value)}
-                  placeholder="VD: Họp giao ban, thảo luận dự án..."
+                  placeholder={t('metadata.meetingNamePlaceholder')}
                 />
               </div>
 
               <div className="form-row form-row-split">
                 <div className="form-field">
-                  <label>Ngày:</label>
+                  <label>{t('metadata.date')}</label>
                   <Input
                     type="date"
                     value={localInfo.date}
@@ -132,7 +134,7 @@ export const MetadataPanel: React.FC<Props> = ({
                 </div>
 
                 <div className="form-field">
-                  <label>Giờ:</label>
+                  <label>{t('metadata.time')}</label>
                   <Input
                     type="time"
                     value={localInfo.time}
@@ -141,32 +143,32 @@ export const MetadataPanel: React.FC<Props> = ({
                 </div>
 
                 <div className="form-field">
-                <label>Địa điểm:</label>
+                <label>{t('metadata.location')}</label>
                 <Input
                   value={localInfo.location}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('location', e.target.value)}
-                  placeholder="VD: Phòng họp A / Zoom"
+                  placeholder={t('metadata.locationPlaceholder')}
                 />
               </div>
               </div>
 
               <div className="form-row form-row-split2" >
                 <div className="form-field">
-                  <label>Chủ trì:</label>
+                  <label>{t('metadata.host')}</label>
                   <TextArea
                   value={localInfo.host}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleChange('host', e.target.value)}
-                  placeholder="Tên người chủ trì"
+                  placeholder={t('metadata.hostPlaceholder')}
                   rows={1}
                   />
                 </div>
 
                 <div className="form-field">
-                <label>Thành viên tham dự:</label>
+                <label>{t('metadata.attendees')}</label>
                 <TextArea
                   value={localInfo.attendees}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleChange('attendees', e.target.value)}
-                  placeholder="Tên cách nhau bởi dấu phẩy (VD: Linh, Minh, Quang, ...) - LiveMeetingNotes được đầu tư & phát triển bởi Nguyen Dac Hung"
+                  placeholder={t('metadata.attendeesPlaceholder')}
                   rows={1}
                 />
               </div>
