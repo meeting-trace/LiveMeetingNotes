@@ -1,516 +1,247 @@
-# 📚 LiveMeetingNote - Hướng dẫn sử dụng đầy đủ
+# 📚 LiveMeetingNote - Hướng dẫn sử dụng
 
-## 🎯 Mục đích chương trình
+## 🎯 Ứng dụng này dùng để làm gì?
 
-**LiveMeetingNote** là ứng dụng web, giúp ghi chép cuộc họp với các khả năng:
+**LiveMeetingNote** giúp bạn ghi âm và ghi chép cuộc họp ngay trên trình duyệt, không cần cài đặt gì thêm.
 
-- 🎙️ Ghi âm chất lượng cao và đánh dấu thời gian tự động
-- 📴 Làm việc hoàn toàn offline
-- 💾 Lưu trữ file trực tiếp vào máy tính
-- 🌐 Tương thích đa nền tảng (Chrome, Edge, Firefox, Safari)
-- 🔒 100% bảo mật - Không upload dữ liệu lên server
+- 🎙️ Ghi âm trực tiếp từ microphone hoặc âm thanh hệ thống
+- 📝 Ghi chú kèm mốc thời gian tự động
+- 🤖 Chuyển giọng nói sang văn bản (Speech-to-Text) + chuẩn hóa bằng Gemini AI
+- 💾 Lưu file về máy — không upload dữ liệu lên server
+- 📴 Hoạt động offline sau lần tải đầu tiên
 
 ---
 
-## ✨ Tính năng chi tiết
+## 🚀 Bắt đầu nhanh
 
-### 1. 🎙️ Ghi âm cuộc họp
+1. Mở ứng dụng trên **Chrome**
+2. Điền thông tin cuộc họp (tiêu đề, ngày, chủ trì...)
+3. Chọn nguồn âm thanh → Click **"Ghi âm"**
+4. Gõ ghi chú trong quá trình họp → **ENTER** để đánh dấu mốc thời gian
+5. Click **"Dừng"** → Files tự động lưu vào thư mục đã chọn
 
-- **Định dạng:** WebM (Opus codec) chất lượng cao (~140MB/2.5h)
-- **Thời lượng:** Không giới hạn
-- **Hiển thị:** Real-time duration counter
+---
 
-**🎯 Chọn nguồn âm thanh (Audio Source):**
+## ✨ Các tính năng chính
 
-Trước khi bấm "Ghi âm", bạn có 3 tùy chọn nguồn:
+### 1. 🎙️ Ghi âm
 
-1. **🎤 Microphone** (Mặc định)
-   - Ghi âm từ microphone của bạn
-   - Phù hợp cho: Ghi chú cá nhân, cuộc họp trực tiếp
+**Chọn nguồn âm thanh trước khi bắt đầu:**
 
-2. **🔊 System Audio**
-   - Ghi âm trực tiếp từ cuộc họp online (Zoom, Teams, Meet, Google Meet...)
-   - **Chỉ ghi âm người khác**, không bao gồm microphone của bạn
-   - Phù hợp cho: Nghe và ghi chép từ cuộc họp online
+| Nguồn | Ghi được | Dùng khi |
+|-------|----------|----------|
+| 🎤 **Microphone** (mặc định) | Tiếng bạn nói | Họp trực tiếp, ghi chú cá nhân |
+| 🔊 **System Audio** | Âm thanh từ máy tính | Chỉ nghe, không cần nói vào mic |
+| 🎤+🔊 **Cả hai** *(khuyên dùng)* | Cả bạn lẫn người kia | Tham gia họp online |
 
-3. **🎤+🔊 Cả hai** (Khuyến nghị cho cuộc họp online)
-   - Mix cả microphone của bạn + âm thanh từ cuộc họp
-   - Ghi được cả 2 bên (bạn nói + người khác nói)
-   - Phù hợp cho: Tham gia tích cực vào cuộc họp online
+**Dùng System Audio (nguồn âm thanh hệ thống):**
+1. Chọn **System Audio** hoặc **Cả hai**
+2. Click **"Ghi âm"** → trình duyệt hỏi bạn muốn share tab/cửa sổ nào
+3. Chọn tab cuộc họp → **⚠️ nhớ tick "Share audio"** trước khi click Share
+> Chỉ hỗ trợ Chrome/Edge. Nếu quên tick "Share audio" sẽ không có tiếng.
 
-**Cách sử dụng System Audio:**
-1. Chọn **System Audio** hoặc **Cả hai** từ dropdown
-2. Click nút **"Ghi âm"**
-3. Trình duyệt sẽ hỏi bạn muốn share màn hình/tab nào
-4. **QUAN TRỌNG:** Chọn tab cuộc họp (Zoom/Teams/Meet) và **tick vào ô "Share audio"** (hoặc "Share tab audio")
-5. Click **"Share"** để bắt đầu
+**Tạm dừng & tiếp tục:** Bạn có thể nhấn **Tạm dừng** trong lúc ghi âm rồi **Tiếp tục** mà không bị mất dữ liệu. File ghi âm vẫn là một file liên tục.
 
-⚠️ **Lưu ý:**
-- Tính năng này chỉ hoạt động trên **Chrome/Edge** (Chrome 74+, Edge 79+)
-- Firefox hỗ trợ hạn chế
-- Safari chưa hỗ trợ
-- Nếu quên tick "Share audio", bạn sẽ không ghi được âm thanh
+---
 
-**Cách sử dụng thông thường:**
-1. Chọn nguồn âm thanh phù hợp
-2. Click nút **"Ghi âm"** (màu đỏ)
-3. Cho phép truy cập microphone/screen sharing khi trình duyệt yêu cầu
-4. Bắt đầu nói và ghi chép
-5. Click **"Dừng"** để kết thúc ghi âm
+### 2. 📝 Ghi chú kèm mốc thời gian
 
-### 2. ⏱️ Timestamp tự động
+Mỗi dòng ghi chú là một ô riêng, có thể gán **người nói** và **mốc thời gian**.
 
-Timestamp giúp đánh dấu các thời điểm quan trọng trong cuộc họp để dễ dàng review sau này.
+- Nhấn **ENTER** → tạo dòng mới
+- Trong lúc ghi âm, nhấn ENTER → dòng mới **tự động gắn mốc thời gian** tại thời điểm đó
+- Click vào **mốc thời gian** `[00:02:15]` → audio player nhảy đến đúng vị trí đó
+- Gán **tên người nói** cho từng dòng để dễ phân biệt
 
-**Tính năng:**
-- Nhấn **ENTER** trong khi ghi âm → chèn timestamp màu xanh `[HH:MM:SS]`
-- Timestamp ghi lại chính xác thời điểm trong audio
-- **Double-click** vào timestamp → tự động jump đến vị trí đó khi playback
-- Timestamp được lưu trong metadata.json với độ chính xác millisecond
+---
 
-**Ví dụ:**
+### 3. 🎵 Nghe lại audio
+
+Sau khi ghi âm hoặc load project, waveform hiển thị để bạn nghe lại:
+
+- **Play/Pause**, tua -10s/+10s, điều chỉnh âm lượng
+- **Right-click** vào waveform → chèn mốc thời gian tại vị trí đang nghe
+- Click vào mốc thời gian trong ghi chú → nhảy đến đúng vị trí trên audio
+
+---
+
+### 4. 💾 Lưu file
+
+**Chrome/Edge:** Chọn thư mục trước, files sẽ tự lưu vào subfolder khi dừng ghi âm.
+
+Tên folder và file có format: `YYYYMMDD_HHMM_[Tiêu đề cuộc họp]`
+
 ```
-[00:02:15] Chủ tọa khai mạc cuộc họp
-[00:05:30] Thảo luận về dự án Q1
-[00:15:45] Quyết định phân công nhiệm vụ
-```
-
-### 3. 📝 Rich Text Editor
-
-Editor hỗ trợ định dạng văn bản đa dạng như Microsoft Word:
-
-**Toolbar:**
-- **Bold** (Ctrl+B) - In đậm
-- **Italic** (Ctrl+I) - In nghiêng
-- **Underline** (Ctrl+U) - Gạch chân
-- **Bullet list** - Danh sách dấu đầu dòng
-- **Numbered list** - Danh sách đánh số
-- **Text color** - Màu chữ
-- **Background color** - Màu nền
-- **Font size** - Kích thước chữ
-
-**Tips:**
-- Sử dụng màu để highlight các điểm quan trọng
-- Dùng numbered list cho action items
-- Dùng bullet list cho notes chung
-
-### 4. 🎵 Audio Playback với WaveSurfer.js
-
-Sau khi ghi âm hoặc load project, audio player hiển thị waveform đồ họa.
-
-**Controls:**
-- **Play/Pause** - Phát/Tạm dừng (hoặc nhấn Space)
-- **Skip -10s** - Lùi 10 giây
-- **Skip +10s** - Tiến 10 giây
-- **Volume slider** - Điều chỉnh âm lượng
-- **Zoom slider** - Phóng to/thu nhỏ waveform
-- **Seek bar** - Kéo thả để jump đến vị trí bất kỳ
-
-**Tương tác:**
-- **Double-click** vào waveform → Seek đến vị trí đó
-- **Right-click** vào waveform → Chèn timestamp tại vị trí đang nghe (hữu ích khi review)
-- **Double-click** timestamp trong notes → Jump audio đến vị trí đó
-
-### 5. 💾 Lưu trữ file tự động
-
-#### Chrome/Edge (File System Access API):
-1. Click **"Select Folder"** → Chọn thư mục lưu trữ
-2. Cấp quyền write access cho folder
-3. Khi save, files tự động lưu vào subfolder có format:
-   ```
-   YYYYMMDD_HHMM_[Meeting Title]/
-   ```
-
-**Ví dụ folder structure:**
-```
-📁 20260119_1430_Weekly_Team_Meeting/
-├── 📄 20260119_1430_Weekly_Team_Meeting.wav
-├── 📄 20260119_1430_Weekly_Team_Meeting_meeting_info.json
-├── 📄 20260119_1430_Weekly_Team_Meeting_metadata.json
-└── 📄 20260119_1430_Weekly_Team_Meeting.docx
+📁 20260317_0930_Hop_hang_tuan/
+├── 20260317_0930_Hop_hang_tuan.webm        ← File ghi âm
+├── 20260317_0930_Hop_hang_tuan_meeting_info.json
+├── 20260317_0930_Hop_hang_tuan_metadata.json
+├── 20260317_0930_Hop_hang_tuan_transcription.json  ← (nếu có speech-to-text)
+└── 20260317_0930_Hop_hang_tuan.docx        ← Word document
 ```
 
-#### Safari/Firefox (Download fallback):
-- Files được download vào thư mục **Downloads** mặc định
-- Bạn cần tự tổ chức files vào folder
+**Safari/Firefox:** Files tự động tải về thư mục Downloads.
 
-**Output files:**
-- **`.wav`** - File ghi âm
-- **`_meeting_info.json`** - Metadata cuộc họp (title, date, host, attendees...)
-- **`_metadata.json`** - Notes content + timestamp map (tương thích C# TranscriptionProject)
-- **`.docx`** - Word document để chia sẻ qua email
+> Không cần chọn thư mục trước — nếu chưa chọn, ứng dụng sẽ hỏi khi bạn dừng ghi âm.
 
-### 6. 📂 Load Project
+---
 
-Load lại project đã lưu để tiếp tục chỉnh sửa.
+### 5. 📂 Mở project cũ
 
-**Cách sử dụng:**
-1. Click nút **"Load Project"**
-2. Chọn **folder** chứa project (folder có chứa các file .wav, .json)
-3. Ứng dụng tự động load:
-   - Meeting information
-   - Notes content với timestamps
-   - Audio file để playback
-   - Timestamp map để seek
+1. Click **"Load Project"** → chọn **thư mục** của project cũ
+2. Nếu thư mục có nhiều file ghi âm → hiện hộp thoại để chọn/gộp file
+3. Dữ liệu load lên: thông tin họp, ghi chú, timestamps, audio
 
-**Sau khi load:**
-- Chỉnh sửa notes/meeting info tùy ý
-- Click **"Save Changes"** → Tạo version mới với timestamp hiện tại
-- Files mới sẽ không ghi đè files cũ (có timestamp khác nhau)
+**Chỉnh sửa và lưu lại:**
+- Sửa ghi chú hoặc thông tin họp tùy ý
+- Click **"Lưu thay đổi"** → tạo phiên bản mới (không ghi đè bản cũ)
 
-### 7. 🔄 Auto-backup & Recovery
+---
 
-Bảo vệ dữ liệu khỏi mất mát do sự cố.
+### 6. 🔄 Tự động sao lưu & Khôi phục
 
-**Cơ chế:**
-- Tự động backup mỗi **3 giây** sau khi có thay đổi
-- Backup lưu vào **localStorage** (meeting info, notes, timestamps) + **IndexedDB** (audio blob)
-- Khi refresh page/đóng browser/crash → Hiện dialog khôi phục
+Ứng dụng tự động lưu dữ liệu trong nền để phòng trường hợp mất điện, đóng nhầm trình duyệt...
 
-**Dialog khôi phục:**
+- **Ghi chú & thông tin họp:** Lưu vào localStorage mỗi khi có thay đổi
+- **File ghi âm:** Lưu từng đoạn vào IndexedDB mỗi 30 giây trong lúc ghi
+
+Nếu bạn vào lại ứng dụng mà chưa lưu lần trước, hộp thoại **khôi phục** sẽ xuất hiện:
 ```
 🔄 Khôi phục dữ liệu
-Phát hiện dữ liệu tự động sao lưu từ 5 phút trước.
-[✅ Khôi phục]  [🗑️ Bỏ qua]
+Phát hiện dữ liệu sao lưu từ 5 phút trước.
+[📝 Chỉ ghi chú]  [🎵 Khôi phục toàn bộ]  [❌ Hủy]
 ```
 
-**Khi nào backup bị xóa:**
-- Khi click **Save** thành công
-- Khi click **"Bỏ qua"** trong dialog
+> Sao lưu bị xóa sau khi bạn lưu thành công hoặc chủ động hủy.
 
-### 8. 📴 Offline Support (PWA)
+---
 
-Ứng dụng hoạt động 100% offline sau lần load đầu tiên.
+### 7. 🎤 Speech-to-Text (Chuyển giọng nói → văn bản)
 
-**Service Worker:**
-- Cache tất cả assets (HTML, CSS, JS, fonts, icons)
-- Cache WaveSurfer.js, Quill.js, RecordRTC libraries
-- Interceptor cho tất cả requests
+Tự động nhận diện giọng nói khi ghi âm, dùng **Google Web Speech API** (miễn phí, cần internet).
 
-**Cài đặt như app native:**
-- Chrome/Edge: Click icon "Install" trên address bar
-- Safari iOS: **Share** → **Add to Home Screen**
-- Android: Banner "Add to Home screen" tự động hiện
+**Bật tắt:**
+- Toggle **"Tự động chuyển giọng nói"** trên thanh công cụ (mặc định: BẬT)
 
-**Status indicator:**
-- 🌐 **Online** - Có kết nối internet
-- 📴 **Offline** - Không có internet (vẫn hoạt động bình thường)
+**Chọn ngôn ngữ:**
+- Chọn thẳng từ dropdown ngôn ngữ trên thanh công cụ (Tiếng Việt, English...)
+- Có thể đổi ngôn ngữ ngay cả khi đang ghi âm
 
-### 9. 🎤 Speech-to-Text (Chuyển đổi giọng nói sang văn bản)
+> ⚠️ Speech-to-Text **chỉ hoạt động với microphone**. Nếu chọn "System Audio" (không có mic), tính năng này tự động tắt.
 
-Chuyển đổi giọng nói thành văn bản real-time trong quá trình ghi âm sử dụng **Google Web Speech API** (hoàn toàn miễn phí).
+**Chỉnh sửa kết quả:**
+- **Double-click** vào một đoạn transcription → chỉnh sửa nội dung, tên người nói, vị trí audio
+- Xóa toàn bộ nội dung rồi lưu → xóa đoạn đó
+- **Click vào mốc thời gian** 📍 → nhảy đến vị trí đó trên audio
 
-**Cấu hình:**
-1. Click nút **"Cấu hình Speech-to-Text"** (chỉ hiện khi online)
-2. Điền các thông tin:
-   - **Language**: Chọn ngôn ngữ (Tiếng Việt, English, etc.)
-   - **Max Alternatives**: Số lượng kết quả thay thế (1-5)
-   - **Interim Results**: Bật để xem kết quả tạm thời
-3. Click **"Lưu"**
+---
 
-**Sử dụng:**
-- Bật toggle **"Tự động chuyển giọng nói thành văn bản: ON"** trước khi ghi âm
-- Bắt đầu ghi âm → Nói vào microphone
-- Kết quả hiện real-time trong panel **"Kết quả chuyển đổi giọng nói sang văn bản"**
-- Panel tự động expand/collapse theo nội dung
+### 8. 🤖 Chuẩn hóa bằng Gemini AI
 
-**Các loại kết quả:**
-- 🔵 **Tạm thời (Interim)**: Kết quả đang xử lý, có thể thay đổi
-- 🟢 **Cuối cùng (Final)**: Kết quả đã xác định, không thay đổi
-- 🟡 **Đã chỉnh sửa (Edited)**: User đã edit thủ công
+Dùng **Google Gemini AI** để làm sạch kết quả speech-to-text: sửa lỗi nhận diện, bỏ từ đệm, thêm dấu câu, viết hoa...
 
-**Chỉnh sửa transcription:**
-1. **Double-click** vào segment → Mở edit mode
-2. Chỉnh sửa:
-   - **Text**: Nội dung văn bản
-   - **Speaker**: Tên người nói
-   - **Time**: Thời gian (format: `YYYY-MM-DD HH:MM:SS`)
-   - **Audio Time**: Vị trí trên audio (format: `MM:SS` hoặc `H:MM:SS`)
-3. Click **💾 Save** hoặc **❌ Cancel**
-
-**Xóa segment:**
-- Xóa toàn bộ text trong edit mode → Click Save
-- Hiện dialog xác nhận xóa
-- Click **"Xóa segment"** → Segment biến mất khỏi danh sách
-
-**Seek audio:**
-- **Double-click** vào **audio time tag** (📍 MM:SS) → Jump đến vị trí đó trên audio
-- Không trigger edit mode
-
-### 10. 🤖 AI Text Refinement (Chuẩn hóa văn bản bằng AI)
-
-Sử dụng **Google Gemini AI** để chuẩn hóa và làm sạch kết quả chuyển đổi giọng nói.
-
-**⚠️ YÊU CẦU:**
-- Cần **Gemini API Key** (miễn phí)
+**Yêu cầu:**
+- Cần **Gemini API Key** (miễn phí tại [aistudio.google.com](https://aistudio.google.com/app/apikey))
 - Cần kết nối internet
-- **KHÔNG sử dụng với thông tin nhạy cảm** (dữ liệu gửi đến Google API)
 
-**Lấy Gemini API Key (miễn phí):**
-1. Truy cập: https://aistudio.google.com/app/apikey
-2. Click **"Create API Key"**
-3. Copy API key
-4. Paste vào **Settings → Gemini API Key**
-5. Hệ thống tự động tải danh sách models
-
-**Chọn Gemini Model:**
-- **Gemini Flash Latest** (Khuyên dùng): Nhanh, chất lượng tốt
-- **Gemini 2.5 Pro**: Chất lượng cao hơn, chậm hơn
-- **Gemini 2.0 Flash**: Cân bằng giữa tốc độ và chất lượng
+**Cách lấy API Key:**
+1. Vào Settings → mục **Gemini API Key**
+2. Paste key vào → hệ thống tự tải danh sách models
 
 **Sử dụng:**
-1. Sau khi có kết quả chuyển đổi giọng nói
-2. Click nút **"🤖 Chuẩn hóa bằng AI"** trong header của Transcription Panel
-3. Đọc kỹ **cảnh báo bảo mật:**
-   - ⚠️ Dữ liệu sẽ gửi đến Google Gemini API
-   - 🚫 **KHÔNG dùng** với:
-     - Mật khẩu, số tài khoản, thông tin tài chính
-     - Thông tin y tế cá nhân (bệnh án, đơn thuốc...)
-     - CCCD/CMND, địa chỉ, số điện thoại nhạy cảm
-     - Bí mật thương mại, kế hoạch kinh doanh
-     - API keys, tokens, credentials
-4. Click **"Đồng ý, tiếp tục"**
-5. Đợi AI xử lý (hiện progress bar)
-6. Kết quả được thay thế toàn bộ transcription hiện tại
+1. Sau khi có kết quả speech-to-text → Click **"🤖 Chuẩn hóa bằng AI"**
+2. Xác nhận cảnh báo bảo mật → Đợi xử lý
+3. Kết quả được gắn nhãn **"🤖 AI"**, vẫn có thể chỉnh sửa thêm
 
-**AI sẽ thực hiện:**
-- ✅ Sửa lỗi nhận diện từ Web Speech API
-- ✅ Loại bỏ từ thừa, từ đệm (à, ừm, thì, là, mà...)
-- ✅ Thêm dấu câu đúng quy tắc (dấu chấm, phẩy, hỏi, than...)
-- ✅ Viết hoa chính xác (đầu câu, danh từ riêng, chức danh...)
-- ✅ Gộp các đoạn liên quan thành câu hoàn chỉnh
-
-**Dữ liệu gửi đến AI:**
-- **Primary**: Transcriptions (có thể đã được user edit → độ tin cậy cao)
-- **Supplementary**: Raw transcripts (output gốc từ Web Speech API → chỉ tham khảo metadata)
-
-**Sau khi refine:**
-- Segments được đánh dấu **"🤖 AI"**
-- Có thể **edit lại** nếu cần
-- **Save project** → Lưu cả raw transcripts để refine lại sau
-
-**Tips:**
-- Review kết quả trước khi save
-- Có thể refine nhiều lần với model khác nhau
-- Khi load project cũ, raw transcripts được giữ nguyên để refine lại
-
-### 11. ⚠️ Unsaved Changes Warning
-
-Bảo vệ dữ liệu chưa lưu.
-
-**Indicators:**
-- Icon **⚠️ Chưa lưu** hiển thị trên header khi có thay đổi
-- Cảnh báo khi đóng tab/refresh page:
-  ```
-  Bạn có dữ liệu chưa lưu. Bạn có chắc muốn rời khỏi trang?
-  ```
-
-**Trạng thái:**
-1. **Recording** → Unsaved (đang ghi âm)
-2. **Has audio/notes** → Unsaved (có dữ liệu chưa save lần đầu)
-3. **Saved** → No warning (đã save)
-4. **Modified after save** → Unsaved (chỉnh sửa sau khi save)
+> 🚫 **KHÔNG dùng** cho: mật khẩu, thông tin tài chính/y tế, bí mật kinh doanh. Dữ liệu được gửi đến Google API.
 
 ---
 
-## 🎮 Workflow sử dụng
+### 9. 📋 Tóm tắt cuộc họp (Meeting Summary)
 
-### Scenario 1: Ghi âm cuộc họp mới
+Panel **"Tóm tắt cuộc họp"** hiển thị tóm tắt do Gemini AI tạo ra sau khi chuẩn hóa transcription.
 
+- **Double-click** vào nội dung để chỉnh sửa thủ công
+- Tóm tắt được lưu vào file `.docx` khi xuất Word
+
+---
+
+### 10. 📴 Dùng offline (PWA)
+
+Sau lần đầu tiên tải trang, ứng dụng có thể chạy hoàn toàn offline.
+
+**Cài đặt như app:**
+- Chrome/Edge: Click icon "Install" trên thanh địa chỉ
+- Safari iOS: **Share** → **Add to Home Screen**
+
+---
+
+## 🎮 Quy trình sử dụng điển hình
+
+### Ghi âm cuộc họp mới
 ```
-1. Click "Select Folder" → Chọn thư mục lưu file
-2. Điền thông tin cuộc họp:
-   - Meeting Title: "Weekly Team Meeting"
-   - Date: 2026-01-19
-   - Time: 14:30
-   - Location: "Conference Room A"
-   - Host: "John Doe"
-   - Attendees: "Alice, Bob, Charlie"
-3. Click "Record" → Bắt đầu ghi âm
-4. Gõ notes, nhấn ENTER để chèn timestamp khi có điểm quan trọng
-5. Click "Stop" → Files tự động lưu vào folder
-6. Review: Playback audio, double-click timestamp để seek
+1. Điền thông tin: tiêu đề, ngày giờ, chủ trì, thành phần
+2. Chọn nguồn âm thanh → Click "Ghi âm"
+3. Gõ ghi chú trong lúc họp, nhấn ENTER để đánh dấu mốc
+4. Click "Dừng" → files lưu tự động
+5. Nghe lại, click mốc thời gian để tua đến đúng chỗ
 ```
 
-### Scenario 2: Chỉ ghi chép không ghi âm
-
+### Chỉ ghi chú, không ghi âm
 ```
-1. Click "Select Folder" (optional - có thể bỏ qua nếu dùng Safari/Firefox)
-2. Điền thông tin cuộc họp
-3. Gõ notes (KHÔNG nhấn Record)
-4. Click "Save Notes" → Lưu meeting_info.json + metadata.json + .docx
-   (Không có file .wav)
+1. Điền thông tin cuộc họp
+2. Gõ ghi chú (không nhấn Ghi âm)
+3. Click "Lưu ghi chú" → lưu meeting_info.json + metadata.json + .docx
 ```
 
-### Scenario 3: Load project cũ để chỉnh sửa
-
+### Chỉnh sửa project cũ
 ```
-1. Click "Load Project" → Chọn folder project cũ
-   (Ví dụ: 20260119_1430_Weekly_Team_Meeting/)
-2. Dữ liệu tự động load lên form
-3. Chỉnh sửa notes/meeting info
-4. Click "Save Changes" → Tạo version mới:
-   20260119_1530_Weekly_Team_Meeting/ (timestamp mới)
+1. Click "Load Project" → chọn thư mục project
+2. Sửa ghi chú hoặc thông tin họp
+3. Click "Lưu thay đổi" → tạo phiên bản mới trong cùng thư mục
 ```
 
 ---
 
-## 📊 Định dạng dữ liệu
-
-### meeting_info.json
-
-```json
-{
-  "MeetingTitle": "Weekly Team Meeting",
-  "MeetingDate": "2026-01-19",
-  "MeetingTime": "14:30",
-  "Location": "Conference Room A",
-  "Host": "John Doe",
-  "Attendees": "Alice, Bob, Charlie",
-  "CreatedAt": "2026-01-19T14:30:00.000Z"
-}
-```
-
-### metadata.json
-
-```json
-{
-  "ProjectName": "20260119_1430_Weekly_Team_Meeting",
-  "Model": "Live Recording",
-  "Language": "vi",
-  "AudioFileName": "20260119_1430_Weekly_Team_Meeting.wav",
-  "Duration": "00:15:30.5000000",
-  "RecordingStartTime": "2026-01-19T14:30:00.000Z",
-  "Timestamps": [
-    {
-      "Index": 0,
-      "Text": "Opening remarks and agenda review",
-      "DateTime": "2026-01-19T14:30:15.500Z",
-      "StartTime": "00:00:15.5000000",
-      "EndTime": "00:02:30.2500000",
-      "Highlight": false
-    },
-    {
-      "Index": 1,
-      "Text": "Discussion on Q1 project goals",
-      "DateTime": "2026-01-19T14:32:30.250Z",
-      "StartTime": "00:02:30.2500000",
-      "EndTime": "00:05:45.7500000",
-      "Highlight": false
-    }
-  ]
-}
-```
-
-**Lưu ý:** Format tương thích với C# TranscriptionProject để import vào hệ thống khác.
-
----
-
-## ⌨️ Keyboard Shortcuts
+## ⌨️ Phím tắt
 
 | Phím | Chức năng |
 |------|-----------|
-| `Enter` | Insert timestamp (khi đang recording) |
-| `Ctrl+B` | Bold text |
-| `Ctrl+I` | Italic text |
-| `Ctrl+U` | Underline text |
-| `Space` | Play/Pause audio (khi focus player) |
+| `Enter` | Tạo dòng ghi chú mới (gắn mốc thời gian nếu đang ghi âm) |
+| `Ctrl+Z` | Hoàn tác |
+| `Ctrl+Y` | Làm lại |
+| `Space` | Play/Pause audio (khi focus vào audio player) |
 
-## 🖱️ Mouse Actions
+## 🖱️ Thao tác chuột
 
-| Action | Chức năng |
-|--------|-----------|
-| **Double-click timestamp** | Seek audio đến vị trí đó |
-| **Double-click waveform** | Seek đến vị trí click |
-| **Right-click waveform** | Insert timestamp tại vị trí đang nghe |
-
----
-
-## 💡 Use Cases
-
-### 1. Cuộc họp nội bộ
-- Ghi âm toàn bộ cuộc họp
-- Đánh dấu các quyết định quan trọng bằng timestamp
-- Export Word document để gửi email tổng kết
-
-### 2. Phỏng vấn ứng viên
-- Ghi âm câu hỏi - trả lời
-- Ghi chú đánh giá kèm timestamp
-- Review lại các câu trả lời bằng audio playback
-
-### 3. Training/Workshop
-- Ghi âm bài giảng
-- Note các key points với timestamp
-- Chia sẻ file cho người vắng mặt
-
-### 4. Họp khách hàng
-- Ghi âm yêu cầu của khách hàng
-- Timestamp các thỏa thuận quan trọng
-- Lưu trữ làm tài liệu pháp lý
-
-### 5. Remote teams
-- Ghi âm meeting online (qua screen recorder)
-- Ghi chép action items
-- Chia sẻ notes + audio cho timezone khác
+| Thao tác | Chức năng |
+|----------|-----------|
+| Click mốc thời gian `[00:02:15]` | Tua audio đến vị trí đó |
+| Click thời gian 📍 trong transcription | Tua audio đến vị trí đó |
+| Right-click vào waveform | Chèn mốc thời gian tại vị trí đang nghe |
+| Double-click đoạn transcription | Mở chỉnh sửa đoạn đó |
 
 ---
 
-## 🔧 Troubleshooting
+## 🔧 Xử lý sự cố thường gặp
 
 ### Microphone không hoạt động
-**Nguyên nhân:** Browser chưa được cấp quyền microphone
-**Giải pháp:**
-1. Click icon 🔒 trên address bar
-2. Chọn "Site settings"
-3. Microphone → Allow
+Click icon 🔒 trên thanh địa chỉ → **Site settings** → Microphone → **Allow**
+
+### Không có tiếng khi dùng System Audio
+Khi chọn share màn hình, phải **tick vào "Also share system audio"** trước khi click Share.
 
 ### File không lưu được (Chrome/Edge)
-**Nguyên nhân:** Chưa cấp quyền write cho folder
-**Giải pháp:**
-1. Click "Select Folder" lại
-2. Chọn folder
-3. Click "View files" → Allow
+Click lại **"Select Folder"** → chọn lại thư mục → cấp quyền ghi khi hỏi.
 
-### Audio không play được
-**Nguyên nhân:** Browser không hỗ trợ WAV format
-**Giải pháp:**
-- Cập nhật browser lên version mới nhất
-- Sử dụng Chrome/Edge
-
-### Backup không khôi phục được
-**Nguyên nhân:** localStorage bị xóa hoặc audio blob quá lớn
-**Giải pháp:**
-- Audio dài hơn 1 giờ có thể không backup được
-- Khuyến nghị: Save định kỳ mỗi 15-20 phút
+### Speech-to-Text không nhận diện
+- Kiểm tra kết nối internet (tính năng này cần online)
+- Kiểm tra ngôn ngữ đã chọn đúng chưa
+- Speech-to-Text không chạy với nguồn "System Audio Only"
 
 ---
 
-## ⚡ Performance Tips
+## 📞 Hỗ trợ
 
-- **Bundle size:** ~2MB (minified)
-- **Audio recording:** Real-time, không lag
-- **File save:** Instant (Chrome/Edge với File System Access API)
-- **Recommended:** Chrome 90+ hoặc Edge 90+ để có trải nghiệm tốt nhất
-
----
-
-## 📞 Support & Feedback
-
-- **GitHub Issues:** [https://github.com/nsmo-public/LiveMeetingNotes/issues](https://github.com/nsmo-public/Web_MeetingNote/issues)
-- **Discussions:** [https://github.com/nsmo-public/LiveMeetingNotes/discussions](https://github.com/nsmo-public/Web_MeetingNote/discussions)
-- **Documentation:** [README.md](README.md) | [QUICKSTART.md](QUICKSTART.md) | [PRIVACY.md](PRIVACY.md)
-
----
-
-## 🎉 Kết luận
-
-**LiveMeetingNote** là giải pháp ghi chép cuộc họp:
-- ✅ Chuyên nghiệp
-- ✅ Miễn phí
-- ✅ Bảo mật (100% client-side)
-- ✅ Offline-capable
-- ✅ Cross-platform
-
-Phù hợp cho doanh nghiệp, teams, freelancers, giáo dục và bất kỳ ai cần ghi âm + ghi chép có tổ chức.
-
-**Happy note-taking! 📝🎙️**
+- **Tài liệu:** [README.md](README.md) | [QUICKSTART.md](QUICKSTART.md) | [PRIVACY.md](PRIVACY.md)
+- **GitHub Issues:** [github.com/nsmo-public/Web_MeetingNote/issues](https://github.com/nsmo-public/Web_MeetingNote/issues)

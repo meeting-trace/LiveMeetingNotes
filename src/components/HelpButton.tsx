@@ -36,6 +36,8 @@ export const HelpButton: React.FC = () => {
               t('help.feature12'),
               t('help.feature13'),
               t('help.feature14'),
+              t('help.feature15'),
+              t('help.feature16'),
             ]}
             renderItem={item => <List.Item>{item}</List.Item>}
           />
@@ -54,6 +56,8 @@ export const HelpButton: React.FC = () => {
                 <List.Item>{t('help.featRecord1')}</List.Item>
                 <List.Item>{t('help.featRecord2')}</List.Item>
                 <List.Item>{t('help.featRecord3')}</List.Item>
+                <List.Item>{t('help.featRecord4')}</List.Item>
+                <List.Item>{t('help.featRecord5')}</List.Item>
               </List>
             </div>
 
@@ -64,6 +68,7 @@ export const HelpButton: React.FC = () => {
               <List size="small">
                 <List.Item>{t('help.featTimestamp1Pre')} <Tag color="blue">ENTER</Tag> {t('help.featTimestamp1Post')}</List.Item>
                 <List.Item>• <strong>{t('help.featTimestamp2Bold')}</strong> {t('help.featTimestamp2Post')}</List.Item>
+                <List.Item>{t('help.featTimestampSpeaker')}</List.Item>
                 <List.Item>{t('help.featTimestamp3')}</List.Item>
               </List>
             </div>
@@ -77,7 +82,7 @@ export const HelpButton: React.FC = () => {
               <Text strong>{t('help.featSTTLiveHeader')}</Text>
               <List size="small">
                 <List.Item>{t('help.featSTTLive1')}</List.Item>
-                <List.Item>{t('help.featSTTLive2Pre')} <Tag color="orange" icon={<span>⚙️</span>}>{t('recording.configure')}</Tag> {t('help.featSTTLive2Post')}</List.Item>
+                <List.Item>{t('help.featSTTLive2Pre')}</List.Item>
                 <List.Item>{t('help.featSTTLive3Pre')} <Tag color="cyan">{t('recording.liveTranscribe')}</Tag> {t('help.featSTTLive3Post')}</List.Item>
                 <List.Item>{t('help.featSTTLive4')}</List.Item>
                 <List.Item>{t('help.featSTTLive5')}</List.Item>
@@ -117,6 +122,17 @@ export const HelpButton: React.FC = () => {
                 <List.Item>• <strong>{t('help.featAI7Bold')}</strong> {t('help.featAI7Post')}</List.Item>
                 <List.Item>{t('help.featAI8')}</List.Item>
                 <List.Item>• <Text type="danger"><strong>{t('help.featAI9Bold')}</strong></Text> {t('help.featAI9Post')}</List.Item>
+              </List>
+            </div>
+
+            <Divider style={{ margin: '12px 0' }} />
+
+            <div>
+              <Title level={4}>{t('help.featSummaryTitle')}</Title>
+              <List size="small">
+                <List.Item>{t('help.featSummary1')}</List.Item>
+                <List.Item>{t('help.featSummary2')}</List.Item>
+                <List.Item>{t('help.featSummary3')}</List.Item>
               </List>
             </div>
 
@@ -262,6 +278,12 @@ export const HelpButton: React.FC = () => {
                 </List.Item>
                 <List.Item>
                   <Tag>Space</Tag> {t('help.shortcutSpaceDesc')}
+                </List.Item>
+                <List.Item>
+                  <Tag>Ctrl+Z</Tag> {t('help.shortcutUndoDesc')}
+                </List.Item>
+                <List.Item>
+                  <Tag>Ctrl+Y</Tag> {t('help.shortcutRedoDesc')}
                 </List.Item>
               </List>
 
