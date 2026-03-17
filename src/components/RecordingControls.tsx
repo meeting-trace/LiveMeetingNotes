@@ -9,9 +9,9 @@ import {
   SettingOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
-  GlobalOutlined,
   ExclamationCircleOutlined,
 } from "@ant-design/icons";
+import 'flag-icons/css/flag-icons.min.css';
 import { useTranslation } from "react-i18next";
 import { AudioRecorderService } from "../services/audioRecorder";
 import {
@@ -34,6 +34,20 @@ import type {
   TranscriptionResult,
   AudioSourceType,
 } from "../types/types";
+
+// Speech recognition language list with ISO 3166-1 alpha-2 country codes for flag-icons
+const SPEECH_LANGUAGES = [
+  { value: 'vi-VN', fiCode: 'vn', labelKey: 'recording.langVi',   shortLabel: 'Tiếng Việt' },
+  { value: 'en-US', fiCode: 'us', labelKey: 'recording.langEnUS', shortLabel: 'English (US)' },
+  { value: 'en-GB', fiCode: 'gb', labelKey: 'recording.langEnGB', shortLabel: 'English (UK)' },
+  { value: 'ja-JP', fiCode: 'jp', labelKey: 'recording.langJa',   shortLabel: '日本語' },
+  { value: 'ko-KR', fiCode: 'kr', labelKey: 'recording.langKo',   shortLabel: '한국어' },
+  { value: 'zh-CN', fiCode: 'cn', labelKey: 'recording.langZhCN', shortLabel: '中文 (简体)' },
+  { value: 'zh-TW', fiCode: 'tw', labelKey: 'recording.langZhTW', shortLabel: '中文 (繁體)' },
+  { value: 'fr-FR', fiCode: 'fr', labelKey: 'recording.langFr',   shortLabel: 'Français' },
+  { value: 'de-DE', fiCode: 'de', labelKey: 'recording.langDe',   shortLabel: 'Deutsch' },
+  { value: 'es-ES', fiCode: 'es', labelKey: 'recording.langEs',   shortLabel: 'Español' },
+];
 
 /**
  * Helper: Get file extension from audio blob MIME type
@@ -1787,22 +1801,28 @@ export const RecordingControls: React.FC<Props> = ({
                 <Select
                   value={selectedLanguage}
                   onChange={handleLanguageChange}
-                  style={{ width: 150 }}
+                  style={{ width: 155 }}
                   size="middle"
-                  suffixIcon={<GlobalOutlined />}
                   disabled={false}
-                >
-                  <Select.Option value="vi-VN">{t('recording.langVi')}</Select.Option>
-                  <Select.Option value="en-US">{t('recording.langEnUS')}</Select.Option>
-                  <Select.Option value="en-GB">{t('recording.langEnGB')}</Select.Option>
-                  <Select.Option value="ja-JP">{t('recording.langJa')}</Select.Option>
-                  <Select.Option value="ko-KR">{t('recording.langKo')}</Select.Option>
-                  <Select.Option value="zh-CN">{t('recording.langZhCN')}</Select.Option>
-                  <Select.Option value="zh-TW">{t('recording.langZhTW')}</Select.Option>
-                  <Select.Option value="fr-FR">{t('recording.langFr')}</Select.Option>
-                  <Select.Option value="de-DE">{t('recording.langDe')}</Select.Option>
-                  <Select.Option value="es-ES">{t('recording.langEs')}</Select.Option>
-                </Select>
+                  labelRender={(opt) => {
+                    const lang = SPEECH_LANGUAGES.find(l => l.value === opt.value);
+                    return lang ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <span className={`fi fi-${lang.fiCode}`} style={{ fontSize: 14, borderRadius: 2 }} />
+                        {lang.shortLabel}
+                      </span>
+                    ) : <span>{opt.label}</span>;
+                  }}
+                  options={SPEECH_LANGUAGES.map(l => ({
+                    value: l.value,
+                    label: (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span className={`fi fi-${l.fiCode}`} style={{ fontSize: 16, borderRadius: 2, flexShrink: 0 }} />
+                        {t(l.labelKey)}
+                      </span>
+                    ),
+                  }))}
+                />
               </Tooltip>
             </Space>
           )}

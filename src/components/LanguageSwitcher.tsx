@@ -28,16 +28,16 @@ export const LanguageSwitcher: React.FC = () => {
       size="small"
       style={{ minWidth: 64, display: 'flex', alignItems: 'center' }}
       labelRender={() => (
-        <span style={{ color: '#fff', fontWeight: 600, letterSpacing: '0.02em', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-          <FlagIcon fiCode={current.fiCode} size={13} />
+        <span style={{ color: '#fff', fontWeight: 500, letterSpacing: '0.02em', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <FlagIcon fiCode={current.fiCode} size={12} />
           {current.labelText}
         </span>
       )}
       options={LANGUAGES.map(l => ({
         value: l.value,
         label: (
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}>
-            <FlagIcon fiCode={l.fiCode} size={13} />
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 500 }}>
+            <FlagIcon fiCode={l.fiCode} size={12} />
             {l.labelText}
           </span>
         ),
