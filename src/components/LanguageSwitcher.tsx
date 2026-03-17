@@ -1,12 +1,20 @@
 import React from 'react';
 import { Select } from 'antd';
-// import { GlobalOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import 'flag-icons/css/flag-icons.min.css';
 
+// fi-XX uses ISO 3166-1 alpha-2 country codes (lowercase)
 const LANGUAGES = [
-  { value: 'vi', flag: '🇻🇳', label: "🌐"},
-  { value: 'en', flag: '🇺🇸', label: "🌐"},
+  { value: 'vi', fiCode: 'vn', labelText: 'VI' },
+  { value: 'en', fiCode: 'us', labelText: 'EN' },
 ];
+
+const FlagIcon: React.FC<{ fiCode: string; size?: number }> = ({ fiCode, size = 18 }) => (
+  <span
+    className={`fi fi-${fiCode}`}
+    style={{ fontSize: size, lineHeight: 1, borderRadius: 2, flexShrink: 0 }}
+  />
+);
 
 export const LanguageSwitcher: React.FC = () => {
   const { i18n } = useTranslation();
@@ -18,19 +26,19 @@ export const LanguageSwitcher: React.FC = () => {
       value={i18n.language}
       onChange={(val) => i18n.changeLanguage(val)}
       size="small"
-      // suffixIcon={<GlobalOutlined style={{ color: 'white', fontSize: 12, verticalAlign: 'middle' }} />}
-      style={{ minWidth: 60, display: 'flex', alignItems: 'center' }}
+      style={{ minWidth: 64, display: 'flex', alignItems: 'center' }}
       labelRender={() => (
-        <span style={{ color: '#fff', fontWeight: 600, letterSpacing: '0.02em', lineHeight: 1, display: 'inline-flex', alignItems: 'center' }}>
-          {current.label}&nbsp;{current.flag}
+        <span style={{ color: '#fff', fontWeight: 600, letterSpacing: '0.02em', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <FlagIcon fiCode={current.fiCode} size={13} />
+          {current.labelText}
         </span>
       )}
       options={LANGUAGES.map(l => ({
         value: l.value,
         label: (
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 , verticalAlign: 'middle'}}>
-            <span style={{ fontSize: 18 }}>{l.flag}</span>
-            {/* <span>{l.label}</span> */}
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}>
+            <FlagIcon fiCode={l.fiCode} size={13} />
+            {l.labelText}
           </span>
         ),
       }))}
