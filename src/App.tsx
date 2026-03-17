@@ -36,7 +36,7 @@ import type {
   SpeechToTextConfig,
   TranscriptionResult,
 } from "./types/types";
-import { message, App as AntdApp, Progress, Input } from "antd";
+import { message, App as AntdApp, Progress, Input, Modal } from "antd";
 import { ExclamationCircleOutlined } from "@ant-design/icons";
 import "./styles/global.css";
 
@@ -882,7 +882,9 @@ export const App: React.FC = () => {
                     <div style={{ color: "#cf1322", fontSize: 13 }}>{ctx.error}</div>
                   </div>
                   <div style={{ marginBottom: 12, color: "#595959", fontSize: 13 }}>
-                    {t('retryError.retriedFailed', { count: ctx.attempt })}
+                    {ctx.isNonRetryable
+                      ? t('retryError.nonRetryableMsg')
+                      : t('retryError.retriedFailed', { count: ctx.attempt })}
                   </div>
                   <div style={{ marginBottom: 6, fontSize: 13, fontWeight: 600 }}>
                     {t('retryError.apiKeyLabel')}
@@ -896,12 +898,21 @@ export const App: React.FC = () => {
                   <div style={{ marginTop: 6, fontSize: 12, color: "#8c8c8c" }}>
                     {t('retryError.apiKeyHint')}
                   </div>
+                  <div style={{ marginTop: 12, textAlign: 'right', borderTop: '1px solid #f0f0f0', paddingTop: 8 }}>
+                    <button
+                      type="button"
+                      style={{ background: 'none', border: 'none', color: '#ff4d4f', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}
+                      onClick={() => { Modal.destroyAll(); resolve({ retry: false }); }}
+                    >
+                      🛑 {t('retryError.stopBtn')}
+                    </button>
+                  </div>
                 </div>
               ),
               okText: t('retryError.retryBtn'),
-              cancelText: t('retryError.stopBtn'),
+              cancelText: t('retryError.skipBtn'),
               onOk: () => resolve({ retry: true, newApiKey: newKey?.trim() || undefined }),
-              onCancel: () => resolve({ retry: false }),
+              onCancel: () => resolve({ retry: false, skip: true }),
             });
           }),
       );
@@ -1803,7 +1814,9 @@ export const App: React.FC = () => {
                             fontSize: 13,
                           }}
                         >
-                          {t("retryError.retriedFailed", { count: ctx.attempt })}
+                          {ctx.isNonRetryable
+                            ? t("retryError.nonRetryableMsg")
+                            : t("retryError.retriedFailed", { count: ctx.attempt })}
                         </div>
                         <div
                           style={{
@@ -1831,16 +1844,25 @@ export const App: React.FC = () => {
                         >
                           {t("retryError.apiKeyHint")}
                         </div>
+                        <div style={{ marginTop: 12, textAlign: "right", borderTop: "1px solid #f0f0f0", paddingTop: 8 }}>
+                          <button
+                            type="button"
+                            style={{ background: "none", border: "none", color: "#ff4d4f", cursor: "pointer", fontSize: 13, padding: "0 4px" }}
+                            onClick={() => { Modal.destroyAll(); resolve({ retry: false }); }}
+                          >
+                            🛑 {t("retryError.stopBtn")}
+                          </button>
+                        </div>
                       </div>
                     ),
                     okText: t("retryError.retryBtn"),
-                    cancelText: t("retryError.stopBtn"),
+                    cancelText: t("retryError.skipBtn"),
                     onOk: () =>
                       resolve({
                         retry: true,
                         newApiKey: newKey?.trim() || undefined,
                       }),
-                    onCancel: () => resolve({ retry: false }),
+                    onCancel: () => resolve({ retry: false, skip: true }),
                   });
                 });
 

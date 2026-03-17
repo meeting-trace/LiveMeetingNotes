@@ -168,10 +168,12 @@
     "title": "⚠️ Gemini AI Error — Action Required",
     "errorAt": "❌ Error at part {{current}}/{{total}}:",
     "retriedFailed": "Auto-retried {{count}} times and still failed. Would you like to try again?",
+    "nonRetryableMsg": "Gemini refused to process this part. Would you like to try again?",
     "apiKeyLabel": "API Key (you can use a different key):",
     "apiKeyPlaceholder": "Enter new API key or keep existing",
     "apiKeyHint": "💡 Leave blank to use the current API key.",
     "retryBtn": "🔄 Retry",
+    "skipBtn": "⏭️ Skip this part",
     "stopBtn": "🛑 Stop"
   },
   "missingApiKey": {

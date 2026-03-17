@@ -28,7 +28,8 @@ export type GeminiRetryCallback = (ctx: {
   attempt: number;      // number of auto-retry attempts already made
   error: string;        // last error message
   currentApiKey: string;
-}) => Promise<{ retry: boolean; newApiKey?: string }>;
+  isNonRetryable?: boolean; // true when error is not transient (e.g. RECITATION, SAFETY)
+}) => Promise<{ retry: boolean; skip?: boolean; newApiKey?: string }>;
 
 /**
  * AI Refinement Service for Gemini AI
@@ -2429,34 +2430,41 @@ JSON output (không markdown):
         const result = await fn(currentKey);
         return { result, finalApiKey: currentKey };
       } catch (err: any) {
-        if (!AIRefinementService.isTransientGeminiError(err)) throw err;
+        const isTransient = AIRefinementService.isTransientGeminiError(err);
+        // Quota/rate-limit errors are always fatal — surface immediately
+        if ((err?.message ?? String(err)).match(/429|quota/i)) throw err;
 
-        attempt++;
-        if (attempt <= MAX_AUTO) {
-          const delayMs = BASE_DELAY_MS * attempt;
-          console.warn(`[${logPrefix}] Transient error (attempt ${attempt}/${MAX_AUTO}): ${err.message}`);
-          onProgress?.(progressVal,
-            `⚠️ Phần ${chunkIdx}/${chunkTotal}: Lỗi tạm thời, tự động thử lại lần ${attempt}/${MAX_AUTO} sau ${delayMs / 1000}s...`);
-          await new Promise(r => setTimeout(r, delayMs));
-          continue;
+        if (isTransient) {
+          attempt++;
+          if (attempt <= MAX_AUTO) {
+            const delayMs = BASE_DELAY_MS * attempt;
+            console.warn(`[${logPrefix}] Transient error (attempt ${attempt}/${MAX_AUTO}): ${err.message}`);
+            onProgress?.(progressVal,
+              `⚠️ Phần ${chunkIdx}/${chunkTotal}: Lỗi tạm thời, tự động thử lại lần ${attempt}/${MAX_AUTO} sau ${delayMs / 1000}s...`);
+            await new Promise(r => setTimeout(r, delayMs));
+            continue;
+          }
         }
 
-        // Auto retries exhausted → ask user
+        // Transient (auto-retries exhausted) OR non-transient non-quota → ask user
         if (onRetryNeeded) {
-          onProgress?.(progressVal,
-            `❌ Phần ${chunkIdx}/${chunkTotal}: Đã thử ${MAX_AUTO} lần tự động — đang hỏi người dùng...`);
-          const { retry, newApiKey } = await onRetryNeeded({
+          onProgress?.(progressVal, isTransient
+            ? `❌ Phần ${chunkIdx}/${chunkTotal}: Đã thử ${MAX_AUTO} lần tự động — đang hỏi người dùng...`
+            : `❌ Phần ${chunkIdx}/${chunkTotal}: Lỗi từ Gemini — đang hỏi người dùng...`);
+          const { retry, skip, newApiKey } = await onRetryNeeded({
             chunkIndex: chunkIdx,
             chunkTotal,
             attempt,
             error: err.message,
             currentApiKey: currentKey,
+            isNonRetryable: !isTransient,
           });
           if (retry) {
             if (newApiKey && newApiKey.trim()) currentKey = newApiKey.trim();
             attempt = 0; // reset counter for user-approved round
             continue;
           }
+          if (skip) throw new Error(`CHUNK_SKIPPED: ${err.message}`);
         }
         throw err; // user gave up or no callback
       }
@@ -2574,10 +2582,12 @@ JSON output (không markdown):
         }
 
       } catch (chunkErr: any) {
-        if (chunkErr.message?.includes('RECITATION_ERROR') || chunkErr.message?.includes('SAFETY_ERROR')) {
-          console.warn(`[${logPrefix}] Chunk ${i + 1} skipped: ${chunkErr.message}`);
-          truncationWarnings.push(`Phần ${i + 1}/${chunkCount} bị bỏ qua: ${chunkErr.message}`);
-          if (onProgress) onProgress(chunkProgressBase + Math.round(progressRange / chunkCount), `⚠️ Phần ${i + 1} bị bỏ qua`);
+        if (chunkErr.message?.startsWith('CHUNK_SKIPPED:')) {
+          const originalMsg = chunkErr.message.replace(/^CHUNK_SKIPPED:\s*/, '');
+          console.warn(`[${logPrefix}] Chunk ${i + 1} skipped by user: ${originalMsg}`);
+          truncationWarnings.push(`Phần ${i + 1}/${chunkCount} bị bỏ qua: ${originalMsg}`);
+          if (onProgress) onProgress(chunkProgressBase + Math.round(progressRange / chunkCount), `⏭️ Phần ${i + 1} bị bỏ qua`);
+          continue; // finally still runs (IDB cleanup), then skip rate-limit delay
         } else if (chunkErr.message?.includes('429') || chunkErr.message?.includes('quota')) {
           await chunkStorage.deleteSession(sessionId).catch(() => {});
           throw new Error(
@@ -3074,45 +3084,19 @@ JSON output (không markdown):
           console.log(`✅ Delay completed, processing chunk ${i + 2}/${chunkBoundaries.length}`);
         }
       } catch (error: any) {
-        // Handle RECITATION errors (copyright violations) - skip chunk and continue
-        if (error.message?.includes('RECITATION_ERROR')) {
-          console.warn(`⚠️ Chunk ${i + 1}/${chunkBoundaries.length} skipped due to copyright detection`);
-          truncationWarnings.push(
-            `Phần ${i + 1}/${chunkBoundaries.length} bị bỏ qua: ` +
-            `Gemini phát hiện nội dung có thể vi phạm bản quyền (nhạc, văn bản được bảo vệ). ` +
-            `Đây là biện pháp tự động của Google để tuân thủ luật bản quyền.`
-          );
-          
+        if (error.message?.startsWith('CHUNK_SKIPPED:')) {
+          const originalMsg = error.message.replace(/^CHUNK_SKIPPED:\s*/, '');
+          console.warn(`⚠️ Chunk ${i + 1}/${chunkBoundaries.length} skipped by user: ${originalMsg}`);
+          truncationWarnings.push(`Phần ${i + 1}/${chunkBoundaries.length} bị bỏ qua: ${originalMsg}`);
           if (onProgress) {
             onProgress(
               chunkProgress + (80 / chunkBoundaries.length),
-              `⚠️ Phần ${i + 1}/${chunkBoundaries.length} bị bỏ qua (vi phạm bản quyền)`
+              `⏭️ Phần ${i + 1}/${chunkBoundaries.length} bị bỏ qua`
             );
           }
-          
-          // Continue with next chunk
           continue;
         }
-        
-        // Handle SAFETY errors - skip chunk and continue
-        if (error.message?.includes('SAFETY_ERROR')) {
-          console.warn(`⚠️ Chunk ${i + 1}/${chunkBoundaries.length} skipped due to safety concerns`);
-          truncationWarnings.push(
-            `Phần ${i + 1}/${chunkBoundaries.length} bị bỏ qua: ` +
-            `Gemini từ chối xử lý do lo ngại về an toàn nội dung.`
-          );
-          
-          if (onProgress) {
-            onProgress(
-              chunkProgress + (80 / chunkBoundaries.length),
-              `⚠️ Phần ${i + 1}/${chunkBoundaries.length} bị bỏ qua (lo ngại an toàn)`
-            );
-          }
-          
-          // Continue with next chunk
-          continue;
-        }
-        
+
         // Handle quota errors
         if (error.message.includes('429') || error.message.includes('quota')) {
           throw new Error(

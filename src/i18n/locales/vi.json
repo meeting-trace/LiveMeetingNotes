@@ -168,10 +168,12 @@
     "title": "⚠️ Lỗi Gemini AI — Cần xử lý",
     "errorAt": "❌ Lỗi tại phần {{current}}/{{total}}:",
     "retriedFailed": "Đã tự động thử lại {{count}} lần, vẫn thất bại. Bạn có muốn tiếp tục thử không?",
+    "nonRetryableMsg": "Gemini từ chối xử lý phần này. Bạn có muốn thử lại không?",
     "apiKeyLabel": "API Key (có thể đổi key khác nếu cần):",
     "apiKeyPlaceholder": "Nhập API key mới hoặc giữ nguyên key hiện tại",
     "apiKeyHint": "💡 Để trống / giữ nguyên để dùng API key hiện tại.",
     "retryBtn": "🔄 Thử lại",
+    "skipBtn": "⏭️ Bỏ qua phần này",
     "stopBtn": "🛑 Dừng lại"
   },
   "missingApiKey": {
