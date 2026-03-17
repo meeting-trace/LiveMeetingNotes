@@ -702,6 +702,7 @@
     "manualMergeSummary": "⚠️ Manual summary merge ({{count}} parts)",
     "allDone": "🎉 Complete! {{count}} segments",
     "legacyAllDone": "✅ Processing complete: {{segments}} segments from {{parts}} parts",
+    "autoRetry": "⚠️ Part {{current}}/{{total}}: Auto-retry {{attempt}}/{{maxAttempt}} in {{delay}}s...",
     "transientRetry": "⚠️ Part {{current}}/{{total}}: Transient error, auto-retry {{attempt}}/{{maxAttempt}} in {{delay}}s...",
     "askUserRetry": "❌ Part {{current}}/{{total}}: {{maxAttempt}} auto-retries failed — asking user...",
     "askUserNonRetryable": "❌ Part {{current}}/{{total}}: Gemini error — asking user...",

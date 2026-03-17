@@ -704,6 +704,7 @@
     "manualMergeSummary": "⚠️ Ghép tóm tắt thủ công ({{count}} phần)",
     "allDone": "🎉 Hoàn thành! {{count}} segments",
     "legacyAllDone": "✅ Hoàn thành xử lý: {{segments}} segments từ {{parts}} phần",
+    "autoRetry": "⚠️ Phần {{current}}/{{total}}: Tự động thử lại lần {{attempt}}/{{maxAttempt}} sau {{delay}}s...",
     "transientRetry": "⚠️ Phần {{current}}/{{total}}: Lỗi tạm thời, tự động thử lại lần {{attempt}}/{{maxAttempt}} sau {{delay}}s...",
     "askUserRetry": "❌ Phần {{current}}/{{total}}: Đã thử {{maxAttempt}} lần tự động — đang hỏi người dùng...",
     "askUserNonRetryable": "❌ Phần {{current}}/{{total}}: Lỗi từ Gemini — đang hỏi người dùng...",

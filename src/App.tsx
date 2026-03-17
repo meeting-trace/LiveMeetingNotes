@@ -889,10 +889,11 @@ export const App: React.FC = () => {
                   <div style={{ marginBottom: 6, fontSize: 13, fontWeight: 600 }}>
                     {t('retryError.apiKeyLabel')}
                   </div>
-                  <Input
+                  <Input.Password
                     defaultValue={ctx.currentApiKey}
                     onChange={(e) => { newKey = e.target.value; }}
                     placeholder={t('retryError.apiKeyPlaceholder')}
+                    autoComplete="off"
                     style={{ fontFamily: "monospace", fontSize: 12 }}
                   />
                   <div style={{ marginTop: 6, fontSize: 12, color: "#8c8c8c" }}>
@@ -1814,9 +1815,7 @@ export const App: React.FC = () => {
                             fontSize: 13,
                           }}
                         >
-                          {ctx.isNonRetryable
-                            ? t("retryError.nonRetryableMsg")
-                            : t("retryError.retriedFailed", { count: ctx.attempt })}
+                          {t("retryError.retriedFailed", { count: ctx.attempt })}
                         </div>
                         <div
                           style={{
@@ -1827,12 +1826,13 @@ export const App: React.FC = () => {
                         >
                           {t("retryError.apiKeyLabel")}
                         </div>
-                        <Input
+                        <Input.Password
                           defaultValue={ctx.currentApiKey}
                           onChange={(e) => {
                             newKey = e.target.value;
                           }}
                           placeholder={t("retryError.apiKeyPlaceholder")}
+                          autoComplete="off"
                           style={{ fontFamily: "monospace", fontSize: 12 }}
                         />
                         <div

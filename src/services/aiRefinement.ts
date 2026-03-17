@@ -1563,8 +1563,11 @@ JSON output (không markdown):
       //   console.error('Failed to save error log:', logError);
       // }
       
-      // Don't nest "Failed to transcribe audio" messages
-      if (error.message?.startsWith('Failed to transcribe audio:')) {
+      // Don't nest or wrap sentinel errors that App.tsx needs to detect by prefix
+      if (error.message?.startsWith('Failed to transcribe audio:') ||
+          error.message?.startsWith('RECITATION_ERROR:') ||
+          error.message?.startsWith('SAFETY_ERROR:') ||
+          error.message?.startsWith('CHUNK_SKIPPED:')) {
         throw error;
       }
       throw new Error(`Failed to transcribe audio: ${error.message}`);
@@ -2327,34 +2330,15 @@ JSON output (không markdown):
   // MEMORY-SAFE BINARY CHUNKED PROCESSING (IndexedDB-backed)
   // ============================================================
 
-  /** Returns true for transient server/network errors that are worth retrying. */
-  private static isTransientGeminiError(err: any): boolean {
-    const msg = (err?.message ?? String(err)).toLowerCase();
-    return (
-      msg.includes('503') ||
-      msg.includes('500') ||
-      msg.includes('502') ||
-      msg.includes('504') ||
-      msg.includes('high demand') ||
-      msg.includes('overloaded') ||
-      msg.includes('try again later') ||
-      msg.includes('service unavailable') ||
-      msg.includes('internal server error') ||
-      msg.includes('bad gateway') ||
-      msg.includes('gateway timeout') ||
-      msg.includes('failed to fetch') ||
-      msg.includes('networkerror') ||
-      msg.includes('network error') ||
-      msg.includes('load failed')   // Safari
-    );
-  }
-
   /**
-   * Calls `fn(apiKey)` and automatically retries up to 3 times on transient
-   * Gemini server errors (503, 500, network failures) with linear back-off
-   * (5 s → 10 s → 15 s).  After exhausting auto retries, delegates to
-   * `onRetryNeeded` (if provided) so the user can decide whether to continue
-   * and optionally supply a replacement API key.
+   * Calls `fn(apiKey)` and automatically retries up to 2 times on ANY error
+   * with linear back-off (5 s → 10 s).  After exhausting auto retries, delegates
+   * to `onRetryNeeded` so the user can decide whether to continue, optionally
+   * supply a replacement API key, or skip the chunk entirely.
+   *
+   * All errors are treated uniformly — no special-casing for 429, quota,
+   * transient server errors, RECITATION, SAFETY, etc.  The raw error message
+   * is always surfaced to the user so they have full context to decide.
    */
   private static async callWithGeminiRetry<T>(
     fn: (apiKey: string) => Promise<T>,
@@ -2366,7 +2350,7 @@ JSON output (không markdown):
     onRetryNeeded: GeminiRetryCallback | undefined,
     logPrefix: string
   ): Promise<{ result: T; finalApiKey: string }> {
-    const MAX_AUTO = 3;
+    const MAX_AUTO = 2;
     const BASE_DELAY_MS = 5_000;
     let currentKey = initialApiKey;
     let attempt = 0;
@@ -2376,34 +2360,27 @@ JSON output (không markdown):
         const result = await fn(currentKey);
         return { result, finalApiKey: currentKey };
       } catch (err: any) {
-        const isTransient = AIRefinementService.isTransientGeminiError(err);
-        // Quota/rate-limit errors are always fatal — surface immediately
-        if ((err?.message ?? String(err)).match(/429|quota/i)) throw err;
-
-        if (isTransient) {
-          attempt++;
-          if (attempt <= MAX_AUTO) {
-            const delayMs = BASE_DELAY_MS * attempt;
-            console.warn(`[${logPrefix}] Transient error (attempt ${attempt}/${MAX_AUTO}): ${err.message}`);
-            onProgress?.(progressVal,
-              i18n.t('geminiProgress.transientRetry', { current: chunkIdx, total: chunkTotal, attempt, maxAttempt: MAX_AUTO, delay: delayMs / 1000 }));
-            await new Promise(r => setTimeout(r, delayMs));
-            continue;
-          }
+        attempt++;
+        if (attempt <= MAX_AUTO) {
+          const delayMs = BASE_DELAY_MS * attempt;
+          console.warn(`[${logPrefix}] Chunk ${chunkIdx}/${chunkTotal} error (attempt ${attempt}/${MAX_AUTO}), retrying in ${delayMs/1000}s: ${err.message}`);
+          onProgress?.(progressVal,
+            i18n.t('geminiProgress.autoRetry', { current: chunkIdx, total: chunkTotal, attempt, maxAttempt: MAX_AUTO, delay: delayMs / 1000 }));
+          await new Promise(r => setTimeout(r, delayMs));
+          continue;
         }
 
-        // Transient (auto-retries exhausted) OR non-transient non-quota → ask user
+        // Auto-retries exhausted — ask the user
         if (onRetryNeeded) {
-          onProgress?.(progressVal, isTransient
-            ? i18n.t('geminiProgress.askUserRetry', { current: chunkIdx, total: chunkTotal, maxAttempt: MAX_AUTO })
-            : i18n.t('geminiProgress.askUserNonRetryable', { current: chunkIdx, total: chunkTotal }));
+          onProgress?.(progressVal,
+            i18n.t('geminiProgress.askUserRetry', { current: chunkIdx, total: chunkTotal, maxAttempt: MAX_AUTO }));
           const { retry, skip, newApiKey } = await onRetryNeeded({
             chunkIndex: chunkIdx,
             chunkTotal,
-            attempt,
+            attempt: MAX_AUTO, // how many auto-retries were done (not attempt+1)
             error: err.message,
             currentApiKey: currentKey,
-            isNonRetryable: !isTransient,
+            isNonRetryable: false, // no longer distinguished — user sees raw error
           });
           if (retry) {
             if (newApiKey && newApiKey.trim()) currentKey = newApiKey.trim();
@@ -2412,7 +2389,7 @@ JSON output (không markdown):
           }
           if (skip) throw new Error(`CHUNK_SKIPPED: ${err.message}`);
         }
-        throw err; // user gave up or no callback
+        throw err; // user chose Stop, or no callback provided
       }
     }
   }
