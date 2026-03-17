@@ -1556,6 +1556,7 @@ export const RecordingControls: React.FC<Props> = ({
               onClick={handleSelectFolder}
               disabled={isRecording}
               size="middle"
+              style={{ marginLeft: "auto", width: 150 }}
             >
               {t('recording.selectFolder')}
             </Button>
@@ -1568,6 +1569,7 @@ export const RecordingControls: React.FC<Props> = ({
               disabled={isRecording || !FileManagerService.isSupported()}
               size="middle"
               type="default"
+              style={{ marginLeft: "auto", width: 150 }}
             >
               {t('recording.loadProject')}
             </Button>
@@ -1579,6 +1581,7 @@ export const RecordingControls: React.FC<Props> = ({
                 icon={<SaveOutlined />}
                 onClick={handleSaveNotes}
                 size="middle"
+                style={{ marginLeft: "auto", width: 150 }}
               >
                 {t('recording.saveNotes')}
               </Button>
@@ -1592,6 +1595,7 @@ export const RecordingControls: React.FC<Props> = ({
                 onClick={handleSaveChanges}
                 size="middle"
                 className="btn-success"
+                style={{ marginLeft: "auto", width: 150 }}
               >
                 {t('recording.saveChanges')}
               </Button>
@@ -1646,7 +1650,7 @@ export const RecordingControls: React.FC<Props> = ({
                   isRecording || isPaused || isProcessing || audioBlob !== null
                 }
                 size="middle"
-                style={{ width: 200 }}
+                style={{ width: 150 }}
               >
                 <Select.Option value={"microphone" as AudioSourceType}>
                   {t('recording.mic')}
@@ -1669,6 +1673,7 @@ export const RecordingControls: React.FC<Props> = ({
                   onClick={handleStartRecording}
                   size="middle"
                   disabled={isProcessing || audioBlob !== null}
+                  style={{ marginLeft: "auto", width: 150 }}
                 >
                   {t('recording.start')}
                 </Button>
@@ -1679,6 +1684,7 @@ export const RecordingControls: React.FC<Props> = ({
                       marginLeft: "12px",
                       color: "#1890ff",
                       fontWeight: 600,
+                       width: 150,
                     }}
                   >
                     {t('recording.processing')}
@@ -1691,6 +1697,7 @@ export const RecordingControls: React.FC<Props> = ({
                       fontSize: "13px",
                       color: "#999",
                       fontStyle: "italic",
+                       width: 150 ,
                     }}
                   >
                     {t('recording.reloadHint')}
@@ -1703,8 +1710,9 @@ export const RecordingControls: React.FC<Props> = ({
                   type="primary"
                   icon={<PlayCircleOutlined />}
                   onClick={handleResumeRecording}
-                  size="large"
+                  size="middle"
                   className="btn-success"
+                  style={{ marginLeft: "auto", width: 150 }}
                 >
                   {t('recording.resume')}
                 </Button>
@@ -1712,8 +1720,9 @@ export const RecordingControls: React.FC<Props> = ({
                   type="primary"
                   icon={<StopOutlined />}
                   onClick={handleStopFromPause}
-                  size="large"
+                  size="middle"
                   danger
+                  style={{ marginLeft: "auto", width: 150 }}
                 >
                   {t('recording.stopAll')}
                 </Button>
@@ -1724,23 +1733,25 @@ export const RecordingControls: React.FC<Props> = ({
                   type="default"
                   icon={<PauseCircleOutlined />}
                   onClick={handlePauseRecording}
-                  size="large"
+                  size="middle"
+                  style={{ marginLeft: "auto", width: 150 }}
                 >
                   {t('recording.pause')}
                 </Button>
                 <Button
                   type="primary"
                   icon={<StopOutlined />}
-                  onClick={handleStopRecording}
-                  size="large"
+                  onClick={handleStopRecording} 
+                  size="middle"
                   danger
+                  style={{ marginLeft: "auto", width: 150 }}
                 >
                   {t('recording.stop')}
                 </Button>
               </>
             )}
             {isRecording && (
-              <span className="duration-display">
+              <span className="duration-display" style={{ marginLeft: "auto", width: 140, fontSize: "16px", textAlign: "center" }}>
                 ⏱ {formatDuration(duration)}
               </span>
             )}
@@ -1801,7 +1812,7 @@ export const RecordingControls: React.FC<Props> = ({
                 <Select
                   value={selectedLanguage}
                   onChange={handleLanguageChange}
-                  style={{ width: 155 }}
+                  style={{ width: 150 }}
                   size="middle"
                   disabled={false}
                   labelRender={(opt) => {
