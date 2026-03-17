@@ -59,7 +59,12 @@
     "restoredNoAudio": "Notes restored (no audio).",
     "audioInMemory": "Audio recording is still in memory. Download it to avoid data loss:",
     "notesRestoredWaveformLoading": "Notes have been restored. Waveform is taking too long to load.",
-    "downloadAudioBtn": "💾 Download audio recording"
+    "downloadAudioBtn": "💾 Download audio recording",
+    "readingData": "Reading meeting data...",
+    "restoreNotes": "Restoring notes and timestamps...",
+    "loadingAudio": "Loading audio file...",
+    "skipAudio": "Skipping audio file as requested...",
+    "finalizing": "Finalizing restore..."
   },
   "browserWarning": {
     "title": "💡 Browser & Device Recommendation",
@@ -857,7 +862,7 @@
     "s1Config2": "• Select language for Web Speech API",
     "s1Config3": "• Enter Gemini API Key (if using Gemini transcription or AI refinement)",
     "s1Config4": "• Select Gemini Model (recommended: gemini-2.5-flash)",
-    "s1Config5": "• Set limits: duration (60 min), file size (20 MB), delay (5 sec)",
+    "s1Config5": "• Set limits: duration (30 min), file size (200 MB), delay (5 sec)",
     "s1Config6": "• Toggle auto app update",
     "s1Step4Pre": "4. Enable",
     "s1Step4Post": "(row 2) + Select language",
@@ -915,13 +920,6 @@
     "notSupported": "Your browser does not support the Web Speech API.",
     "apiTimeout": "API request timed out. Please try again.",
     "speakerLabel": "Speaker {{number}}"
-  },
-  "backup": {
-    "readingData": "Reading meeting data...",
-    "restoreNotes": "Restoring notes and timestamps...",
-    "loadingAudio": "Loading audio file...",
-    "skipAudio": "Skipping audio file as requested...",
-    "finalizing": "Finalizing restore..."
   },
   "fileErrors": {
     "emptyFolder": "Empty folder - no audio file or meeting info file found"

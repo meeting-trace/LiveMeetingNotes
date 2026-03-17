@@ -2915,6 +2915,7 @@ JSON output (không markdown):
     const allSummaries: string[] = [];
     let hasTruncation = false;
     const truncationWarnings: string[] = [];
+    let hasSkippedChunk = false; // tracks any user-skipped chunk (language-agnostic)
     let currentLegacyApiKey = apiKey; // may be updated by onRetryNeeded callback
     
     // Get total duration once for progress estimation
@@ -3024,6 +3025,7 @@ JSON output (không markdown):
         if (error.message?.startsWith('CHUNK_SKIPPED:')) {
           const originalMsg = error.message.replace(/^CHUNK_SKIPPED:\s*/, '');
           console.warn(`⚠️ Chunk ${i + 1}/${chunkBoundaries.length} skipped by user: ${originalMsg}`);
+          hasSkippedChunk = true;
           truncationWarnings.push(i18n.t('apiErrors.idbChunkSkipped', { current: i + 1, total: chunkBoundaries.length, reason: originalMsg }));
           if (onProgress) {
             onProgress(
@@ -3100,10 +3102,8 @@ JSON output (không markdown):
     // Build final truncation/warning message
     let finalTruncationWarning: string | undefined = undefined;
     if (truncationWarnings.length > 0) {
-      // Check if any warnings are about copyright/safety (not just truncation)
-      const hasSkippedChunks = truncationWarnings.some(w => 
-        w.includes('bị bỏ qua') || w.includes('RECITATION') || w.includes('SAFETY')
-      );
+      // Check if any chunks were skipped by the user (language-agnostic flag)
+      const hasSkippedChunks = hasSkippedChunk;
       
       if (hasSkippedChunks) {
         finalTruncationWarning = i18n.t('apiErrors.chunksFailed', { items: truncationWarnings.join('\n\n') });

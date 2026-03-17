@@ -113,7 +113,7 @@ export const HelpButton: React.FC = () => {
                 <List.Item>{t('help.featAI3Pre')} <Tag color="orange" icon={<span>⚙️</span>}>{t('recording.configure')}</Tag> {t('help.featAI3Post')}</List.Item>
                 <List.Item>{t('help.featAI4')}</List.Item>
                 <List.Item>{t('help.featAI5')}</List.Item>
-                <List.Item>{t('help.featAI6Pre')} <Tag color="purple" icon={<span>✨</span>}>{t('transcriptionPanel.refineAI')}</Tag> {t('help.featAI6Post')}</List.Item>
+                <List.Item>{t('help.featAI6Pre')} <Tag color="purple">{t('transcriptionPanel.refineAI')}</Tag> {t('help.featAI6Post')}</List.Item>
                 <List.Item>• <strong>{t('help.featAI7Bold')}</strong> {t('help.featAI7Post')}</List.Item>
                 <List.Item>{t('help.featAI8')}</List.Item>
                 <List.Item>• <Text type="danger"><strong>{t('help.featAI9Bold')}</strong></Text> {t('help.featAI9Post')}</List.Item>
@@ -205,7 +205,7 @@ export const HelpButton: React.FC = () => {
                 <List.Item><strong>{t('help.s1Step7')}</strong>
                   <List size="small" style={{marginTop: 8}}>
                     <List.Item>{t('help.s1Step7a')}</List.Item>
-                    <List.Item>{t('help.s1Step7bPre')} <Tag color="purple">✨ {t('transcriptionPanel.refineAI')}</Tag> {t('help.s1Step7bPost')}</List.Item>
+                    <List.Item>{t('help.s1Step7bPre')} <Tag color="purple">{t('transcriptionPanel.refineAI')}</Tag> {t('help.s1Step7bPost')}</List.Item>
                   </List>
                 </List.Item>
                 <List.Item>{t('help.s1Step8Pre')} <Tag>{t('recording.stop')}</Tag> {t('help.s1Step8Post')}</List.Item>

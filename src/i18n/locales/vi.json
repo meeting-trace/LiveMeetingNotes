@@ -59,7 +59,12 @@
     "restoredNoAudio": "Đã khôi phục ghi chú (không có audio).",
     "audioInMemory": "File ghi âm vẫn còn trong bộ nhớ. Tải về máy để tránh mất dữ liệu:",
     "notesRestoredWaveformLoading": "Ghi chú đã được khôi phục. Waveform mất quá nhiều thời gian để tải.",
-    "downloadAudioBtn": "💾 Tải file ghi âm về máy"
+    "downloadAudioBtn": "💾 Tải file ghi âm về máy",
+    "readingData": "Đọc dữ liệu cuộc họp...",
+    "restoreNotes": "Khôi phục ghi chú và mốc thời gian...",
+    "loadingAudio": "Đang tải file ghi âm...",
+    "skipAudio": "Bỏ qua file ghi âm theo yêu cầu...",
+    "finalizing": "Hoàn thiện khôi phục..."
   },
   "browserWarning": {
     "title": "💡 Khuyến nghị trình duyệt & thiết bị",
@@ -859,7 +864,7 @@
     "s1Config2": "• Chọn ngôn ngữ cho Web Speech API",
     "s1Config3": "• Nhập Gemini API Key (nếu dùng Gemini transcription hoặc AI refinement)",
     "s1Config4": "• Chọn Gemini Model (khuyên dùng: gemini-2.5-flash)",
-    "s1Config5": "• Cấu hình giới hạn: thời lượng (60 phút), file size (20 MB), delay (5 giây)",
+    "s1Config5": "• Cấu hình giới hạn: thời lượng (30 phút), file size (200 MB), delay (5 giây)",
     "s1Config6": "• Bật/tắt tự động cập nhật ứng dụng",
     "s1Step4Pre": "4. Bật",
     "s1Step4Post": "(dòng 2) + Chọn ngôn ngữ",
@@ -917,13 +922,6 @@
     "notSupported": "Trình duyệt của bạn không hỗ trợ Web Speech API.",
     "apiTimeout": "Yêu cầu API hết thời gian chờ. Vui lòng thử lại.",
     "speakerLabel": "Người {{number}}"
-  },
-  "backup": {
-    "readingData": "Đọc dữ liệu cuộc họp...",
-    "restoreNotes": "Khôi phục ghi chú và mốc thời gian...",
-    "loadingAudio": "Đang tải file ghi âm...",
-    "skipAudio": "Bỏ qua file ghi âm theo yêu cầu...",
-    "finalizing": "Hoàn thiện khôi phục..."
   },
   "fileErrors": {
     "emptyFolder": "Thư mục trống - không tìm thấy file audio hoặc file thông tin cuộc họp"
