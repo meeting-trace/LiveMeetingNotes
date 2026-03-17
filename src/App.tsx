@@ -877,7 +877,9 @@ export const App: React.FC = () => {
                     }}
                   >
                     <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 14 }}>
-                      {t('retryError.errorAt', { current: ctx.chunkIndex, total: ctx.chunkTotal })}
+                      {ctx.chunkTotal === 0
+                        ? t('retryError.errorAtSummary')
+                        : t('retryError.errorAt', { current: ctx.chunkIndex, total: ctx.chunkTotal })}
                     </div>
                     <div style={{ color: "#cf1322", fontSize: 13 }}>{ctx.error}</div>
                   </div>
@@ -1802,7 +1804,9 @@ export const App: React.FC = () => {
                               fontSize: 14,
                             }}
                           >
-                            {t("retryError.errorAt", { current: ctx.chunkIndex, total: ctx.chunkTotal })}
+                            {ctx.chunkTotal === 0
+                              ? t("retryError.errorAtSummary")
+                              : t("retryError.errorAt", { current: ctx.chunkIndex, total: ctx.chunkTotal })}
                           </div>
                           <div style={{ color: "#cf1322", fontSize: 13 }}>
                             {ctx.error}

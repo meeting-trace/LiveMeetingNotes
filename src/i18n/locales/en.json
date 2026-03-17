@@ -172,6 +172,7 @@
   "retryError": {
     "title": "⚠️ Gemini AI Error — Action Required",
     "errorAt": "❌ Error at part {{current}}/{{total}}:",
+    "errorAtSummary": "❌ Error merging summaries:",
     "retriedFailed": "Auto-retried {{count}} times and still failed. Would you like to try again?",
     "nonRetryableMsg": "Gemini refused to process this part. Would you like to try again?",
     "apiKeyLabel": "API Key (you can use a different key):",
@@ -700,6 +701,7 @@
     "summaryMerged": "✅ Summary merged successfully",
     "summaryMergedChars": "✅ Summary merged ({{count}} chars)",
     "manualMergeSummary": "⚠️ Manual summary merge ({{count}} parts)",
+    "summaryPart": "Summary part {{n}}",
     "allDone": "🎉 Complete! {{count}} segments",
     "legacyAllDone": "✅ Processing complete: {{segments}} segments from {{parts}} parts",
     "autoRetry": "⚠️ Part {{current}}/{{total}}: Auto-retry {{attempt}}/{{maxAttempt}} in {{delay}}s...",

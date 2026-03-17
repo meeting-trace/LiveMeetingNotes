@@ -172,6 +172,7 @@
   "retryError": {
     "title": "⚠️ Lỗi Gemini AI — Cần xử lý",
     "errorAt": "❌ Lỗi tại phần {{current}}/{{total}}:",
+    "errorAtSummary": "❌ Lỗi khi tổng hợp tóm tắt:",
     "retriedFailed": "Đã tự động thử lại {{count}} lần, vẫn thất bại. Bạn có muốn tiếp tục thử không?",
     "nonRetryableMsg": "Gemini từ chối xử lý phần này. Bạn có muốn thử lại không?",
     "apiKeyLabel": "API Key (có thể đổi key khác nếu cần):",
@@ -702,6 +703,7 @@
     "summaryMerged": "✅ Đã tổng hợp tóm tắt hoàn chỉnh",
     "summaryMergedChars": "✅ Đã tổng hợp tóm tắt hoàn chỉnh ({{count}} ký tự)",
     "manualMergeSummary": "⚠️ Ghép tóm tắt thủ công ({{count}} phần)",
+    "summaryPart": "Tóm tắt đoạn {{n}}",
     "allDone": "🎉 Hoàn thành! {{count}} segments",
     "legacyAllDone": "✅ Hoàn thành xử lý: {{segments}} segments từ {{parts}} phần",
     "autoRetry": "⚠️ Phần {{current}}/{{total}}: Tự động thử lại lần {{attempt}}/{{maxAttempt}} sau {{delay}}s...",

@@ -2562,7 +2562,7 @@ JSON output (không markdown):
       } catch (mergeErr: any) {
         console.warn(`⚠️ [${logPrefix}] Gemini merge failed, manual concat:`, mergeErr.message);
         combinedSummary = allSummaries
-          .map((s, idx) => `📄 Tóm tắt đoạn ${idx + 1}:\n${s.replace(/^Phần \d+\/\d+:\s*/, '')}`)
+          .map((s, idx) => `📄 Part ${idx + 1}:\n${s.replace(/^Phần \d+\/\d+:\s*/, '')}`)
           .join('\n\n---\n\n');
         if (onProgress) onProgress(progressBase + progressRange + 4, i18n.t('geminiProgress.manualMergeSummary', { count: allSummaries.length }));
       }
@@ -3045,33 +3045,13 @@ JSON output (không markdown):
       combinedSummary = allSummaries[0].replace(/^Phần \d+\/\d+: /, ''); // Remove "Phần 1/1: " prefix
       console.log(`✅ Sử dụng 1 tóm tắt trực tiếp (${combinedSummary.length} ký tự)`);
     } else {
-      // Multiple summaries - try to merge with Gemini API
+      // Multiple summaries - try to merge with Gemini API (with retry + user dialog on failure)
       if (onProgress) onProgress(92, i18n.t('geminiProgress.mergingSummary', { count: allSummaries.length }));
-      
-      try {
-        // Call Gemini to merge summaries into one cohesive summary
-        combinedSummary = await this.mergeSummariesWithGemini(
-          currentLegacyApiKey,
-          modelName,
-          allSummaries,
-          summaryPrompt,
-          // fileManager,
-          languageCode
-        );
-        
-        if (onProgress) onProgress(98, i18n.t('geminiProgress.summaryMergedChars', { count: combinedSummary.length }));
-        console.log(`✅ Merged ${allSummaries.length} summaries with Gemini API`);
-      } catch (mergeError: any) {
-        // Fallback: Manual concatenation if Gemini merge fails
-        console.warn(`⚠️ Failed to merge summaries with Gemini, using manual concatenation:`, mergeError.message);
-        
-        // Manual fallback format
-        combinedSummary = allSummaries
-          .map((summary, index) => `📄 Tóm tắt đoạn ${index + 1}:\n${summary.replace(/^Phần \d+\/\d+: /, '')}`)
-          .join('\n\n---\n\n');
-        
-        if (onProgress) onProgress(98, i18n.t('geminiProgress.manualMergeSummary', { count: allSummaries.length }));
-      }
+      combinedSummary = await this.mergeSummariesWithRetry(
+        currentLegacyApiKey, modelName, allSummaries, summaryPrompt, languageCode,
+        onProgress, 92, 'Legacy', onRetryNeeded
+      );
+      if (onProgress) onProgress(98, i18n.t('geminiProgress.summaryMergedChars', { count: combinedSummary.length }));
     }
 
     if (onProgress) onProgress(100, i18n.t('geminiProgress.allDone', { count: allResults.length }));
@@ -3109,6 +3089,45 @@ JSON output (không markdown):
    * @param fileManager - Optional file manager for debug logs
    * @returns Merged summary as a single cohesive paragraph
    */
+
+  /**
+   * Merge summaries with automatic retry + user dialog on failure.
+   * Uses the same callWithGeminiRetry logic as chunk processing.
+   * If the user skips/stops, falls back to manual concatenation so the rest
+   * of the result (transcription segments) is never discarded.
+   */
+  private static async mergeSummariesWithRetry(
+    apiKey: string,
+    modelName: string,
+    summaries: string[],
+    summaryPrompt: string | undefined,
+    languageCode: string | undefined,
+    onProgress: ((p: number, msg?: string) => void) | undefined,
+    progressVal: number,
+    logPrefix: string,
+    onRetryNeeded?: GeminiRetryCallback
+  ): Promise<string> {
+    try {
+      const { result, finalApiKey: _key } = await AIRefinementService.callWithGeminiRetry(
+        (key) => AIRefinementService.mergeSummariesWithGemini(key, modelName, summaries, summaryPrompt, languageCode),
+        apiKey,
+        0, 0, // chunkIdx=0, chunkTotal=0 → dialog shows "Summary step"
+        onProgress,
+        progressVal,
+        onRetryNeeded,
+        `${logPrefix}/MergeSummary`
+      );
+      return result;
+    } catch (err: any) {
+      // User skipped or stopped → fall back to manual concatenation
+      console.warn(`⚠️ [${logPrefix}] Summary merge failed/skipped: ${err.message}`);
+      if (onProgress) onProgress(progressVal, i18n.t('geminiProgress.manualMergeSummary', { count: summaries.length }));
+      return summaries
+        .map((s, idx) => `📄 ${i18n.t('geminiProgress.summaryPart', { n: idx + 1 })}:\n${s.replace(/^Phần \d+\/\d+:\s*/, '')}`)
+        .join('\n\n---\n\n');
+    }
+  }
+
   private static async mergeSummariesWithGemini(
     apiKey: string,
     modelName: string,
