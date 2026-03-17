@@ -1,6 +1,7 @@
 import { Document, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
 import { saveAs } from 'file-saver';
 import type { MeetingInfo, TranscriptionResult } from '../types/types';
+import i18n from '../i18n';
 
 // Helper function to add timestamp prefix to filename
 function addTimestampPrefix(fileName: string): string {
@@ -46,7 +47,7 @@ export class WordExporter {
           children: [
             // Title
             new Paragraph({
-              text: 'BÁO CÁO CUỘC HỌP',
+              text: i18n.t('wordDoc.title'),
               heading: HeadingLevel.HEADING_1,
               alignment: AlignmentType.CENTER,
               spacing: { after: 400 }
@@ -54,14 +55,14 @@ export class WordExporter {
             
             // Meeting information
             new Paragraph({
-              text: 'THÔNG TIN CHUNG',
+              text: i18n.t('wordDoc.generalInfo'),
               heading: HeadingLevel.HEADING_2,
               spacing: { before: 200, after: 200 }
             }),
             
             new Paragraph({
               children: [
-                new TextRun({ text: 'Nội dung: ', bold: true, size: 24 }),
+                new TextRun({ text: i18n.t('wordDoc.fieldTitle'), bold: true, size: 24 }),
                 new TextRun({ text: meetingInfo.title, size: 24 })
               ],
               spacing: { after: 100 }
@@ -69,7 +70,7 @@ export class WordExporter {
             
             new Paragraph({
               children: [
-                new TextRun({ text: 'Ngày: ', bold: true, size: 24 }),
+                new TextRun({ text: i18n.t('wordDoc.fieldDate'), bold: true, size: 24 }),
                 new TextRun({ text: meetingInfo.date, size: 24 })
               ],
               spacing: { after: 100 }
@@ -77,7 +78,7 @@ export class WordExporter {
             
             new Paragraph({
               children: [
-                new TextRun({ text: 'Giờ: ', bold: true, size: 24 }),
+                new TextRun({ text: i18n.t('wordDoc.fieldTime'), bold: true, size: 24 }),
                 new TextRun({ text: meetingInfo.time, size: 24 })
               ],
               spacing: { after: 100 }
@@ -85,7 +86,7 @@ export class WordExporter {
             
             new Paragraph({
               children: [
-                new TextRun({ text: 'Địa điểm: ', bold: true, size: 24 }),
+                new TextRun({ text: i18n.t('wordDoc.fieldLocation'), bold: true, size: 24 }),
                 new TextRun({ text: meetingInfo.location || 'N/A', size: 24 })
               ],
               spacing: { after: 100 }
@@ -93,7 +94,7 @@ export class WordExporter {
             
             new Paragraph({
               children: [
-                new TextRun({ text: 'Chủ trì: ', bold: true, size: 24 }),
+                new TextRun({ text: i18n.t('wordDoc.fieldHost'), bold: true, size: 24 }),
                 new TextRun({ text: meetingInfo.host || 'N/A', size: 24 })
               ],
               spacing: { after: 100 }
@@ -101,7 +102,7 @@ export class WordExporter {
             
             new Paragraph({
               children: [
-                new TextRun({ text: 'Thành phần tham dự: ', bold: true, size: 24 }),
+                new TextRun({ text: i18n.t('wordDoc.fieldAttendees'), bold: true, size: 24 }),
                 new TextRun({ text: meetingInfo.attendees || 'N/A', size: 24 })
               ],
               spacing: { after: 300 }
@@ -112,7 +113,7 @@ export class WordExporter {
 
             // Notes content
             new Paragraph({
-              text: 'NỘI DUNG GHI CHÉP THỦ CÔNG',
+              text: i18n.t('wordDoc.notesSection'),
               heading: HeadingLevel.HEADING_2,
               spacing: { before: 200, after: 200 },
               alignment: AlignmentType.JUSTIFIED
@@ -225,7 +226,7 @@ export class WordExporter {
     // Add heading
     paragraphs.push(
       new Paragraph({
-        text: 'NỘI DUNG CHI TIẾT',
+        text: i18n.t('wordDoc.transcriptionSection'),
         heading: HeadingLevel.HEADING_2,
         spacing: { before: 400, after: 200 },
         alignment: AlignmentType.JUSTIFIED
@@ -272,7 +273,7 @@ export class WordExporter {
     // Add heading
     paragraphs.push(
       new Paragraph({
-        text: 'TÓM TẮT NỘI DUNG',
+        text: i18n.t('wordDoc.summarySection'),
         heading: HeadingLevel.HEADING_2,
         spacing: { before: 400, after: 200 },
         alignment: AlignmentType.JUSTIFIED

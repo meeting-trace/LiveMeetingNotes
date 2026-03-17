@@ -2,6 +2,7 @@
 // Protects against browser crashes and accidental closures
 
 import { patchWebmHeaderDuration } from './webmUtils';
+import i18n from '../i18n';
 
 // Must match the timeslice used in audioRecorder.ts → MediaRecorder.start(5000)
 const RECORDING_TIMESLICE_MS = 5000;
@@ -307,13 +308,13 @@ export const loadBackup = async (options?: {
 } | null> => {
   const { onProgress, skipAudio = false } = options ?? {};
   try {
-    onProgress?.(5, 'Đọc dữ liệu cuộc họp...');
+    onProgress?.(5, i18n.t('backup.readingData'));
     const data = localStorage.getItem(STORAGE_KEY);
     if (!data) return null;
     
     const backupData: BackupData = JSON.parse(data);
     
-    onProgress?.(20, 'Khôi phục ghi chú và mốc thời gian...');
+    onProgress?.(20, i18n.t('backup.restoreNotes'));
     // Convert array back to Map
     const timestampMap = new Map(backupData.timestampMap);
     const speakersMap = backupData.speakersMap ? new Map(backupData.speakersMap) : new Map();
@@ -321,16 +322,16 @@ export const loadBackup = async (options?: {
     // Load audio blob if it exists and user hasn't opted to skip
     let audioBlob: Blob | null = null;
     if (backupData.hasAudioBlob && !skipAudio) {
-      onProgress?.(35, 'Đang tải file ghi âm...');
+      onProgress?.(35, i18n.t('backup.loadingAudio'));
       audioBlob = await loadAudioBlobWithProgress((pct) => {
         // Map 0–100 of audio loading → overall 35–92
-        onProgress?.(35 + Math.round(pct * 0.57), 'Đang tải file ghi âm...');
+        onProgress?.(35 + Math.round(pct * 0.57), i18n.t('backup.loadingAudio'));
       });
     } else if (skipAudio) {
-      onProgress?.(92, 'Bỏ qua file ghi âm theo yêu cầu...');
+      onProgress?.(92, i18n.t('backup.skipAudio'));
     }
     
-    onProgress?.(95, 'Hoàn thiện khôi phục...');
+    onProgress?.(95, i18n.t('backup.finalizing'));
     return {
       meetingInfo: backupData.meetingInfo,
       notes: backupData.notes,

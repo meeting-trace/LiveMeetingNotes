@@ -1,4 +1,5 @@
 // Helper function to add timestamp prefix to filename
+import i18n from '../i18n';
 function addTimestampPrefix(fileName: string): string {
   const now = new Date();
   const year = now.getFullYear();
@@ -223,7 +224,7 @@ export class FileManagerService {
       // If JSON files are missing, use default values
       // Note: audioBlob is null when there are multiple audio files (handled by caller), so check audioFiles.length
       if (!meetingInfoData && !metadataData && audioFiles.length === 0) {
-        throw new Error('Thư mục trống - không tìm thấy file audio hoặc file thông tin cuộc họp');
+        throw new Error(i18n.t('fileErrors.emptyFolder'));
       }
       
       // If only audio file exists, create default metadata

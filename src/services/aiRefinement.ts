@@ -2,6 +2,7 @@ import type { TranscriptionResult } from '../types/types';
 import type { FileManagerService } from './fileManager';
 import { splitWebmIntoChunks, isLikelyWebm, splitWavIntoChunks, isLikelyWav } from './webmSplitter';
 import { chunkStorage } from './chunkStorage';
+import i18n from '../i18n';
 
 export interface RawTranscriptData {
   text: string;
@@ -216,50 +217,50 @@ export class AIRefinementService {
         if (errorMsg.includes('quota') || errorMsg.includes('250000')) {
           return {
             status: 'exceeded',
-            message: '🚫 Đã vượt hạn mức 250,000 tokens/ngày',
+            message: i18n.t('quotaStatus.exceededMsg'),
             recommendations: [
-              '🕒 Đợi 24 giờ để quota reset',
-              '💳 Nâng cấp Paid tier: ~$2/tháng, unlimited',
-              '📊 Monitor: https://ai.dev/rate-limit'
+              i18n.t('quotaStatus.exceededRec1'),
+              i18n.t('quotaStatus.exceededRec2'),
+              i18n.t('quotaStatus.exceededRec3')
             ]
           };
         } else {
           return {
             status: 'limited',
-            message: '⏱️ Vượt 15 requests/phút',
+            message: i18n.t('quotaStatus.limitedMsg'),
             recommendations: [
-              '⏰ Đợi 1-2 phút rồi thử lại',
-              '🔄 App sẽ tự động delay giữa các batch'
+              i18n.t('quotaStatus.limitedRec1'),
+              i18n.t('quotaStatus.limitedRec2')
             ]
           };
         }
       } else if (response.ok) {
         return {
           status: 'available',
-          message: '✅ API Key hoạt động bình thường',
+          message: i18n.t('quotaStatus.availableMsg'),
           recommendations: [
-            '🎯 Free tier: 250,000 tokens/ngày',
-            '📊 Mỗi 50 segments ~ 7,500 tokens',
-            '🔍 Monitor: https://ai.dev/rate-limit'
+            i18n.t('quotaStatus.availableRec1'),
+            i18n.t('quotaStatus.availableRec2'),
+            i18n.t('quotaStatus.availableRec3')
           ]
         };
       } else {
         return {
           status: 'error',
-          message: `❌ Lỗi API: ${response.status}`,
+          message: i18n.t('quotaStatus.errorMsg', { status: response.status }),
           recommendations: [
-            'Kiểm tra API Key có hợp lệ',
-            'Kiểm tra model đã chọn đúng'
+            i18n.t('quotaStatus.errorRec1'),
+            i18n.t('quotaStatus.errorRec2')
           ]
         };
       }
     } catch (error: any) {
       return {
         status: 'error',
-        message: 'Không thể kiểm tra quota',
+        message: i18n.t('quotaStatus.cannotCheck'),
         recommendations: [
-          'Kiểm tra kết nối internet',
-          'Thử lại sau vài phút'
+          i18n.t('quotaStatus.checkRec2'),
+          i18n.t('quotaStatus.checkRec3')
         ]
       };
     }
@@ -300,7 +301,7 @@ export class AIRefinementService {
       // Parse response to check for quota errors
       const recommendations: string[] = [];
       let quotaStatus = 'unknown';
-      let estimatedUsage = 'Không có thông tin chi tiết';
+      let estimatedUsage = i18n.t('quotaStatus.noDetail');
 
       if (response.status === 429) {
         quotaStatus = 'exceeded';
@@ -308,21 +309,21 @@ export class AIRefinementService {
         const errorMsg = errorData.error?.message || '';
         
         if (errorMsg.includes('quota')) {
-          estimatedUsage = 'Đã vượt hạn mức 250,000 tokens/ngày';
-          recommendations.push('Đợi 24 giờ để quota reset');
-          recommendations.push('Hoặc nâng cấp lên Paid tier (~$2/tháng)');
+          estimatedUsage = i18n.t('quotaStatus.infoUsageExceeded');
+          recommendations.push(i18n.t('quotaStatus.infoWait24h'));
+          recommendations.push(i18n.t('quotaStatus.infoUpgradePaid'));
         } else {
-          estimatedUsage = 'Đã vượt 15 requests/phút';
-          recommendations.push('Đợi 1 phút rồi thử lại');
+          estimatedUsage = i18n.t('quotaStatus.infoUsageLimited');
+          recommendations.push(i18n.t('quotaStatus.infoUsageWait1m'));
         }
       } else if (response.ok) {
         quotaStatus = 'available';
-        estimatedUsage = 'API Key hoạt động bình thường';
+        estimatedUsage = i18n.t('quotaStatus.infoUsageAvailable');
         
         // Estimate based on typical usage
-        recommendations.push('✅ Free tier: 250,000 tokens/ngày, 15 requests/phút');
-        recommendations.push('💡 Mỗi 50 segments ~ 7,500 tokens');
-        recommendations.push('📊 Monitor: https://ai.dev/rate-limit');
+        recommendations.push(i18n.t('quotaStatus.infoFreeTier'));
+        recommendations.push(i18n.t('quotaStatus.infoSegmentTokens'));
+        recommendations.push(i18n.t('quotaStatus.infoMonitor'));
       }
 
       return {
@@ -332,12 +333,12 @@ export class AIRefinementService {
       };
     } catch (error: any) {
       return {
-        estimatedUsage: 'Không thể kiểm tra quota',
+        estimatedUsage: i18n.t('quotaStatus.cannotCheck'),
         quotaStatus: 'error',
         recommendations: [
-          'Kiểm tra API Key có hợp lệ',
-          'Kiểm tra kết nối internet',
-          'Thử lại sau vài phút'
+          i18n.t('quotaStatus.checkRec1'),
+          i18n.t('quotaStatus.checkRec2'),
+          i18n.t('quotaStatus.checkRec3')
         ]
       };
     }
@@ -555,11 +556,10 @@ export class AIRefinementService {
           if (error.message.startsWith('RPM_RATE_LIMIT:')) {
             rpmRetryCount++;
             if (rpmRetryCount > MAX_RPM_RETRIES) {
-              throw new Error(
-                `⏱️ Vượt giới hạn requests/phút quá nhiều lần tại batch ${i + 1}/${batches.length}.\n` +
-                `✅ Đã xử lý: ${allRefinedSegments.length}/${transcriptions.length} segments.\n` +
-                `💡 Thử lại lần sau hoặc nâng cấp API trả phí.`
-              );
+              throw new Error(i18n.t('apiErrors.rpmExceeded', {
+                current: i + 1, total: batches.length,
+                refined: allRefinedSegments.length, totalSeg: transcriptions.length
+              }));
             }
             const retrySeconds = parseInt(error.message.split(':')[1], 10) || 60;
             const waitMs = (retrySeconds + 5) * 1000; // +5s buffer
@@ -567,7 +567,7 @@ export class AIRefinementService {
             if (onProgress) {
               onProgress(
                 batchProgress,
-                `⏱️ Rate limit — chờ ${retrySeconds + 5}s rồi thử lại batch ${i + 1}/${batches.length}...`
+                i18n.t('geminiProgress.rpmWaiting', { seconds: retrySeconds + 5, current: i + 1, total: batches.length })
               );
             }
             await new Promise(resolve => setTimeout(resolve, waitMs));
@@ -580,13 +580,12 @@ export class AIRefinementService {
             console.warn(`🚫 Daily quota hit at batch ${i + 1}. Returning ${allRefinedSegments.length} partial segments.`);
             if (onProgress) onProgress(100);
             const partialSummary = allSummaries.length > 0 ? allSummaries.join('\n\n---\n\n') : undefined;
-            const partialWarning =
-              `🚫 Hết hạn mức token/ngày tại batch ${i + 1}/${batches.length}.\n\n` +
-              `✅ Đã chuẩn hóa được: ${allRefinedSegments.length}/${transcriptions.length} segments.\n` +
-              `⏳ Còn lại: ${transcriptions.length - allRefinedSegments.length} segments chưa xử lý.\n\n` +
-              `💡 Giải pháp:\n` +
-              `• Đợi 24 giờ để quota reset rồi chạy lại (hệ thống sẽ chuẩn hóa phần còn lại)\n` +
-              `• Hoặc nâng cấp Gemini API trả phí tại console.cloud.google.com`;
+            const partialWarning = i18n.t('apiErrors.partialWarning', {
+              current: i + 1, total: batches.length,
+              refined: allRefinedSegments.length,
+              totalSeg: transcriptions.length,
+              remaining: transcriptions.length - allRefinedSegments.length
+            });
             return {
               segments: allRefinedSegments,
               summary: partialSummary,
@@ -616,7 +615,7 @@ export class AIRefinementService {
     // Build final truncation warning if any batch was truncated
     let finalTruncationWarning: string | undefined = undefined;
     if (hasTruncation && truncationWarnings.length > 0) {
-      finalTruncationWarning = `⚠️ Một số batch bị truncated:\n${truncationWarnings.join('\n')}`;
+      finalTruncationWarning = `${i18n.t('apiErrors.batchTruncated')}\n${truncationWarnings.join('\n')}`;
       console.warn(finalTruncationWarning);
     }
     
@@ -644,13 +643,7 @@ export class AIRefinementService {
 
     // Validate model name
     if (!modelName || !modelName.trim() || !modelName.startsWith('models/')) {
-      throw new Error(
-        'Vui lòng chọn Gemini Model trong Settings.\n\n' +
-        'Bước 1: Mở Settings → Nhập Gemini API Key\n' +
-        'Bước 2: Chờ hệ thống tải danh sách models\n' +
-        'Bước 3: Chọn model từ dropdown (ví dụ: Gemini Flash Latest)\n' +
-        'Bước 4: Lưu và thử lại'
-      );
+      throw new Error(i18n.t('apiErrors.noModelSelected'));
     }
 
     try {
@@ -753,7 +746,7 @@ export class AIRefinementService {
         body: JSON.stringify(requestBody)
       });
 
-      if (onProgress) onProgress(70, '📥 Đang nhận kết quả từ Gemini...');
+      if (onProgress) onProgress(70, i18n.t('geminiProgress.receiving'));
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -768,19 +761,9 @@ export class AIRefinementService {
 
           // Check if it's daily quota or rate limit
           if (errorMsg.includes('quota') || errorMsg.includes('250000')) {
-            throw new Error(
-              `🚫 Đã vượt hạn mức miễn phí của Gemini API\n\n` +
-              `📊 Hạn mức free tier: 250,000 tokens/ngày\n` +
-              `⏰ Thời gian reset: Sau ${retrySeconds}s (~ ${retryMinutes} phút)\n\n` +
-              `💡 Giải pháp:\n` +
-              `1️⃣ Đợi ${retryMinutes} phút rồi thử lại\n` +
-              `2️⃣ Xử lý ít segments hơn (chọn đoạn quan trọng để chuẩn hóa)\n` +
-              `3️⃣ Nâng cấp lên Gemini API trả phí:\n` +
-              `   • Truy cập: https://console.cloud.google.com\n` +
-              `   • Enable billing để có quota cao hơn (60 requests/phút)\n\n` +
-              `📈 Monitor usage: https://ai.dev/rate-limit\n\n` +
-              `Chi tiết: ${errorMsg}`
-            );
+            throw new Error(i18n.t('apiErrors.quotaExceededDetail', {
+              retrySeconds, retryMinutes, errorMsg
+            }));
           } else {
             // Rate limit (RPM) — throw special marker so batch loop can auto-retry
             throw new Error(`RPM_RATE_LIMIT:${retrySeconds}`);
@@ -790,23 +773,12 @@ export class AIRefinementService {
         // Provide helpful error messages for other errors
         if (response.status === 403) {
           if (errorMsg.includes('API has not been used') || errorMsg.includes('SERVICE_DISABLED')) {
-            throw new Error(
-              'API Key không hợp lệ hoặc chưa enable.\n\n' +
-              '✅ Lấy API key miễn phí tại: https://aistudio.google.com/app/apikey\n' +
-              'Sau đó paste vào Settings → Gemini API Key'
-            );
+            throw new Error(i18n.t('apiErrors.apiKeyNotEnabled'));
           } else if (errorMsg.includes('API_KEY_INVALID')) {
-            throw new Error('API Key không hợp lệ. Vui lòng kiểm tra lại trong Settings.');
+            throw new Error(i18n.t('apiErrors.apiKeyInvalid'));
           }
         } else if (response.status === 404) {
-          throw new Error(
-            `Model "${modelName}" không tồn tại hoặc không khả dụng.\n\n` +
-            'Giải pháp:\n' +
-            '1. Mở Settings → Click nút "Tải lại" bên cạnh Gemini Model\n' +
-            '2. Chọn model khác từ danh sách (khuyên dùng: Gemini Flash Latest)\n' +
-            '3. Lưu và thử lại\n\n' +
-            `Chi tiết lỗi: ${errorMsg}`
-          );
+          throw new Error(i18n.t('apiErrors.modelNotFound', { modelName, errorMsg }));
         }
         
         throw new Error(`Gemini API error (${response.status}): ${errorMsg}`);
@@ -999,14 +971,9 @@ ${hasRawData ? `=== THAM KHẢO (đối chiếu sửa lỗi) ===\n${rawDataJson}
         );
         
         if (summaryTruncated) {
-          truncationWarning = `⚠️ Kết quả bị cắt ngắn do vượt giới hạn MAX_TOKENS.\n` +
-            `• Summary: Có thể chưa đầy đủ (câu cuối chưa kết thúc)\n` +
-            `• Segments: Đã nhận được ${segments.length} segments (có thể thiếu)\n\n` +
-            `💡 Giải pháp: Chia nhỏ dữ liệu đầu vào hoặc tăng maxOutputTokens trong cấu hình.`;
+          truncationWarning = i18n.t('apiErrors.truncatedRefineWithSummary', { count: segments.length });
         } else {
-          truncationWarning = `⚠️ Kết quả có thể bị cắt ngắn do vượt giới hạn MAX_TOKENS. ` +
-            `Đã nhận được ${segments.length} segments. ` +
-            `Nếu cần đầy đủ hơn, vui lòng chia nhỏ file hoặc sử dụng batch processing.`;
+          truncationWarning = i18n.t('apiErrors.truncatedRefine', { count: segments.length });
         }
         console.warn(truncationWarning);
       }
@@ -1141,14 +1108,8 @@ ${hasRawData ? `=== THAM KHẢO (đối chiếu sửa lỗi) ===\n${rawDataJson}
       msg.includes('string too long') ||
       msg.includes('invalid string length')
     ) {
-      const sizeHint = payloadSizeMB ? ` (payload ~${payloadSizeMB.toFixed(1)} MB)` : '';
-      return (
-        `Thiết bị thiếu bộ nhớ để xử lý file audio${sizeHint}.\n` +
-        `💡 Giải pháp:\n` +
-        `  • Dùng file ngắn hơn (< 10 phút) hoặc giảm chất lượng ghi âm\n` +
-        `  • Đóng bớt tab/ứng dụng khác để giải phóng RAM\n` +
-        `  • Thử trên máy tính có RAM cao hơn`
-      );
+      const sizeHint = payloadSizeMB ? i18n.t('apiErrors.oomSizeHint', { size: payloadSizeMB.toFixed(1) }) : '';
+      return i18n.t('apiErrors.oom', { sizeHint });
     }
 
     // ── Network-level failures: Failed to fetch / Load failed / NetworkError ─
@@ -1162,18 +1123,9 @@ ${hasRawData ? `=== THAM KHẢO (đối chiếu sửa lỗi) ===\n${rawDataJson}
     ) {
       const payloadNote =
         payloadSizeMB && payloadSizeMB > 15
-          ? `\n  ⚠️ File audio lớn (~${payloadSizeMB.toFixed(1)} MB payload) – proxy/firewall có thể chặn request này`
+          ? i18n.t('apiErrors.networkPayloadNote', { size: payloadSizeMB.toFixed(1) })
           : '';
-      return (
-        `Không thể kết nối đến máy chủ Gemini AI (generativelanguage.googleapis.com).${payloadNote}\n` +
-        `💡 Nguyên nhân phổ biến và cách xử lý:\n` +
-        `  1. Firewall/Proxy mạng chặn Google AI API → Thử dùng mạng khác (4G/5G)\n` +
-        `  2. ISP hoặc VPN chặn domain googleapis.com → Tắt VPN hoặc đổi DNS (8.8.8.8)\n` +
-        `  3. Mất kết nối internet trong lúc upload → Kiểm tra wifi/ethernet\n` +
-        `  4. Certificate TLS cũ (Windows/macOS chưa update) → Cập nhật hệ điều hành\n` +
-        `  5. Corporate network policy → Liên hệ IT để whitelist generativelanguage.googleapis.com\n` +
-        `\n🔍 Debug: Mở DevTools (F12) → Network → xem request bị lỗi gì`
-      );
+      return i18n.t('apiErrors.networkFailed', { payloadNote });
     }
 
     // ── Timeout / abort ───────────────────────────────────────────────────
@@ -1183,14 +1135,8 @@ ${hasRawData ? `=== THAM KHẢO (đối chiếu sửa lỗi) ===\n${rawDataJson}
       msg.includes('aborted') ||
       msg.includes('abort')
     ) {
-      const sizeHint = payloadSizeMB ? ` (~${payloadSizeMB.toFixed(1)} MB)` : '';
-      return (
-        `Kết nối đến Gemini AI bị timeout${sizeHint}.\n` +
-        `💡 Giải pháp:\n` +
-        `  • File audio quá lớn, network chậm → thử file ngắn hơn (< 10 phút)\n` +
-        `  • Kiểm tra tốc độ mạng tại speedtest.net\n` +
-        `  • Thử lại sau vài phút nếu server Gemini đang quá tải`
-      );
+      const sizeHint = payloadSizeMB ? i18n.t('apiErrors.timeoutSizeHint', { size: payloadSizeMB.toFixed(1) }) : '';
+      return i18n.t('apiErrors.timeout', { sizeHint });
     }
 
     // ── Fallback: return original message ──────────────────────────────────
@@ -1225,7 +1171,7 @@ ${hasRawData ? `=== THAM KHẢO (đối chiếu sửa lỗi) ===\n${rawDataJson}
       throw new Error('Please select a Gemini model in Settings');
     }
 
-    if (onProgress) onProgress(5, '🔍 Đang kiểm tra định dạng file...');
+    if (onProgress) onProgress(5, i18n.t('geminiProgress.checkingFormat'));
 
     // Declare requestBody outside try block for error logging
     let requestBody: any = null;
@@ -1234,7 +1180,7 @@ ${hasRawData ? `=== THAM KHẢO (đối chiếu sửa lỗi) ===\n${rawDataJson}
       // ============================================================
       // BƯỚC 1: PHÂN TÍCH THỜI LƯỢNG AUDIO TỪ FILE GỐC
       // ============================================================
-      if (onProgress) onProgress(10, '⏱️ Đang phân tích thời lượng audio...');
+      if (onProgress) onProgress(10, i18n.t('geminiProgress.analyzingDuration'));
       
       const originalAudioSizeMB = audioBlob.size / (1024 * 1024);
       const audioType = audioBlob.type.toLowerCase();
@@ -1252,7 +1198,7 @@ ${hasRawData ? `=== THAM KHẢO (đối chiếu sửa lỗi) ===\n${rawDataJson}
         console.log(`🔄 Tự động chia nhỏ theo thời lượng - file sẽ được convert toàn bộ sang WAV một lần`);
         
         if (onProgress) {
-          onProgress(15, `📦 Audio dài (${durationMinutes}p), đang chia nhỏ...`);
+          onProgress(15, i18n.t('geminiProgress.audioTooLong', { minutes: durationMinutes }));
         }
         
         // Auto-split into chunks based on duration - pass ORIGINAL audioBlob
@@ -1302,20 +1248,20 @@ ${hasRawData ? `=== THAM KHẢO (đối chiếu sửa lỗi) ===\n${rawDataJson}
         console.log(`🔄 Bước 2: Normalizing audio → mono WAV 16kHz (${audioType}, ${originalSizeMB.toFixed(2)}MB)...`);
         
         if (onProgress) {
-          onProgress(18, `🔄 Đang chuẩn hóa audio → WAV mono 16kHz...`);
+          onProgress(18, i18n.t('geminiProgress.normalizingAudio'));
         }
         
         processedAudio = await this.convertToWav(audioBlob, 16000);
         
         const newSizeMB = processedAudio.size / (1024 * 1024);
         const reduction = ((1 - newSizeMB / originalSizeMB) * 100).toFixed(1);
-        const reductionType = newSizeMB < originalSizeMB ? 'giảm' : 'tăng';
+        const reductionType = i18n.t(newSizeMB < originalSizeMB ? 'geminiProgress.sizeReduced' : 'geminiProgress.sizeIncreased');
         
         console.log(`✅ Normalized: ${originalSizeMB.toFixed(2)}MB → ${newSizeMB.toFixed(2)}MB (${reductionType} ${Math.abs(parseFloat(reduction))}%)`);
         
         if (onProgress) {
           const sizeChange = newSizeMB > originalSizeMB ? '📈' : '📉';
-          onProgress(22, `${sizeChange} Đã chuẩn hóa: ${newSizeMB.toFixed(1)}MB (${reductionType} ${Math.abs(parseFloat(reduction))}%)`);
+          onProgress(22, i18n.t('geminiProgress.normalizedResult', { icon: sizeChange, size: newSizeMB.toFixed(1), type: reductionType, percent: Math.abs(parseFloat(reduction)) }));
         }
       }
       
@@ -1326,7 +1272,7 @@ ${hasRawData ? `=== THAM KHẢO (đối chiếu sửa lỗi) ===\n${rawDataJson}
       }
       
       if (onProgress) {
-        onProgress(25, `✅ Thời lượng: ${durationMinutes} phút`);
+        onProgress(25, i18n.t('geminiProgress.duration', { minutes: durationMinutes }));
       }
 
       // ============================================================
@@ -1382,7 +1328,7 @@ ${hasRawData ? `=== THAM KHẢO (đối chiếu sửa lỗi) ===\n${rawDataJson}
       }
 
       // Convert audio blob to base64
-      if (onProgress) onProgress(28, '💾 Đang mã hóa audio thành base64...');
+      if (onProgress) onProgress(28, i18n.t('geminiProgress.encodingBase64'));
       const base64Audio = await this.blobToBase64(processedAudio);
 
       // Debug logging before sending
@@ -1398,26 +1344,26 @@ ${hasRawData ? `=== THAM KHẢO (đối chiếu sửa lỗi) ===\n${rawDataJson}
       // Display audio info on UI before sending
       if (onProgress) {
         const format = mimeType.split('/')[1]?.toUpperCase() || 'WAV';
-        onProgress(32, `📊 Đã chuẩn bị: ${processedAudioSizeMB.toFixed(1)}MB • ${durationMinutes}p • ${format}`);
+        onProgress(32, i18n.t('geminiProgress.prepared', { size: processedAudioSizeMB.toFixed(1), minutes: durationMinutes, format }));
       }
 
       // ============================================================
       // BƯỚC 4: LẤY THÔNG TIN MODEL VÀ GIỚI HẠN TOKENS
       // ============================================================
-      if (onProgress) onProgress(35, '🔍 Đang lấy thông tin model Gemini...');
+      if (onProgress) onProgress(35, i18n.t('geminiProgress.fetchingModel'));
       const modelInfo = await this.getModelInfo(apiKey, modelName);
       console.log(`📊 Bước 4: Model info - ${modelName}`);
       console.log(`  • Output token limit: ${modelInfo.outputTokenLimit}`);
       console.log(`  • Input token limit: ${modelInfo.inputTokenLimit}`);
 
       if (onProgress) {
-        onProgress(38, `✅ Model: ${modelInfo.displayName} (${modelInfo.outputTokenLimit} tokens)`);
+        onProgress(38, i18n.t('geminiProgress.modelReady', { name: modelInfo.displayName, tokens: modelInfo.outputTokenLimit }));
       }
 
       // ============================================================
       // BƯỚC 5: GỬI REQUEST ĐẾN GEMINI AI
       // ============================================================
-      if (onProgress) onProgress(40, '🤖 Đang gửi request đến Gemini AI...');
+      if (onProgress) onProgress(40, i18n.t('geminiProgress.sendingToGemini'));
 
       // 🎯 CHIẾN LƯỢC ƯU TIÊN: Summary trước, Segments sau
       // Check if this is a chunk from a larger file
@@ -1508,7 +1454,7 @@ JSON output (không markdown):
         ]
       };
 
-      if (onProgress) onProgress(48, '📤 Đang gửi request tới Gemini AI...');
+      if (onProgress) onProgress(48, i18n.t('geminiProgress.sendingRequest'));
 
       // Estimate payload size (base64 ≈ 1.33× original) for error diagnostics
       const estimatedPayloadMB = (processedAudio.size * 1.33) / (1024 * 1024);
@@ -1536,7 +1482,7 @@ JSON output (không markdown):
         throw new Error(this.diagnoseNetworkError(fetchError, estimatedPayloadMB));
       }
 
-      if (onProgress) onProgress(70, '📥 Đã nhận response, đang xử lý...');
+      if (onProgress) onProgress(70, i18n.t('geminiProgress.processingResponse'));
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -1546,7 +1492,7 @@ JSON output (không markdown):
       }
 
       const data = await response.json();
-      if (onProgress) onProgress(85, '📝 Đang phân tích và parse kết quả...');
+      if (onProgress) onProgress(85, i18n.t('geminiProgress.parsingResult'));
 
       // Debug: Log response structure
       console.log('🔍 Response keys:', Object.keys(data));
@@ -1559,7 +1505,7 @@ JSON output (không markdown):
         console.error('❌ Bị chặn bởi Google Safety Filter:', data.promptFeedback);
         console.log('🔍 Block reason:', data.promptFeedback.blockReason);
         console.log('🔍 Safety ratings:', data.promptFeedback.safetyRatings);
-        throw new Error(`Gemini Safety Filter chặn nội dung: ${data.promptFeedback.blockReason}. Vui lòng kiểm tra file audio.`);
+        throw new Error(i18n.t('apiErrors.safetyFilter', { reason: data.promptFeedback.blockReason }));
       }
 
       // Check for API errors in response
@@ -1593,11 +1539,11 @@ JSON output (không markdown):
       if (parsed.isTruncated && parsed.truncationWarning) {
         console.warn(parsed.truncationWarning);
         if (onProgress) {
-          onProgress(100, `⚠️ Hoàn thành với cảnh báo (${parsed.results.length} segments)`);
+          onProgress(100, i18n.t('geminiProgress.completeWithWarning', { count: parsed.results.length }));
         }
       } else {
         if (onProgress) {
-          onProgress(100, `✅ Hoàn thành! ${parsed.results.length} segments${parsed.summary ? ' + tóm tắt' : ''}`);
+          onProgress(100, i18n.t(parsed.summary ? 'geminiProgress.completeWithSummary' : 'geminiProgress.complete', { count: parsed.results.length }));
         }
       }
 
@@ -2440,7 +2386,7 @@ JSON output (không markdown):
             const delayMs = BASE_DELAY_MS * attempt;
             console.warn(`[${logPrefix}] Transient error (attempt ${attempt}/${MAX_AUTO}): ${err.message}`);
             onProgress?.(progressVal,
-              `⚠️ Phần ${chunkIdx}/${chunkTotal}: Lỗi tạm thời, tự động thử lại lần ${attempt}/${MAX_AUTO} sau ${delayMs / 1000}s...`);
+              i18n.t('geminiProgress.transientRetry', { current: chunkIdx, total: chunkTotal, attempt, maxAttempt: MAX_AUTO, delay: delayMs / 1000 }));
             await new Promise(r => setTimeout(r, delayMs));
             continue;
           }
@@ -2449,8 +2395,8 @@ JSON output (không markdown):
         // Transient (auto-retries exhausted) OR non-transient non-quota → ask user
         if (onRetryNeeded) {
           onProgress?.(progressVal, isTransient
-            ? `❌ Phần ${chunkIdx}/${chunkTotal}: Đã thử ${MAX_AUTO} lần tự động — đang hỏi người dùng...`
-            : `❌ Phần ${chunkIdx}/${chunkTotal}: Lỗi từ Gemini — đang hỏi người dùng...`);
+            ? i18n.t('geminiProgress.askUserRetry', { current: chunkIdx, total: chunkTotal, maxAttempt: MAX_AUTO })
+            : i18n.t('geminiProgress.askUserNonRetryable', { current: chunkIdx, total: chunkTotal }));
           const { retry, skip, newApiKey } = await onRetryNeeded({
             chunkIndex: chunkIdx,
             chunkTotal,
@@ -2514,7 +2460,7 @@ JSON output (không markdown):
       if (onProgress) {
         onProgress(
           chunkProgressBase,
-          `📦 Phần ${i + 1}/${chunkCount}: ${(boundary.startMs / 60000).toFixed(0)}–${(boundary.endMs / 60000).toFixed(0)} phút (~${chunkDurationMin} phút)`
+          i18n.t('geminiProgress.idbChunkStart', { current: i + 1, total: chunkCount, from: (boundary.startMs / 60000).toFixed(0), to: (boundary.endMs / 60000).toFixed(0), dur: chunkDurationMin })
         );
       }
 
@@ -2531,7 +2477,7 @@ JSON output (không markdown):
 
         // Convert small chunk → WAV (safe: small decode footprint)
         if (onProgress) {
-          onProgress(chunkProgressBase + 1, `🔄 Phần ${i + 1}/${chunkCount}: Đang chuyển đổi sang WAV...`);
+          onProgress(chunkProgressBase + 1, i18n.t('geminiProgress.chunkConverting', { current: i + 1, total: chunkCount }));
         }
         const wavBlob = await this.convertToWav(chunkRecord.blob, 16000);
 
@@ -2577,7 +2523,7 @@ JSON output (không markdown):
         if (onProgress) {
           onProgress(
             chunkProgressBase + Math.round(progressRange / chunkCount),
-            `✅ Phần ${i + 1}/${chunkCount}: ${adjustedResults.length} đoạn hội thoại`
+            i18n.t('geminiProgress.chunkDone', { current: i + 1, total: chunkCount, count: adjustedResults.length })
           );
         }
 
@@ -2585,15 +2531,13 @@ JSON output (không markdown):
         if (chunkErr.message?.startsWith('CHUNK_SKIPPED:')) {
           const originalMsg = chunkErr.message.replace(/^CHUNK_SKIPPED:\s*/, '');
           console.warn(`[${logPrefix}] Chunk ${i + 1} skipped by user: ${originalMsg}`);
-          truncationWarnings.push(`Phần ${i + 1}/${chunkCount} bị bỏ qua: ${originalMsg}`);
-          if (onProgress) onProgress(chunkProgressBase + Math.round(progressRange / chunkCount), `⏭️ Phần ${i + 1} bị bỏ qua`);
+          truncationWarnings.push(i18n.t('apiErrors.idbChunkSkipped', { current: i + 1, total: chunkCount, reason: originalMsg }));
+          if (onProgress) onProgress(chunkProgressBase + Math.round(progressRange / chunkCount), i18n.t('geminiProgress.chunkSkipped', { current: i + 1 }));
           continue; // finally still runs (IDB cleanup), then skip rate-limit delay
         } else if (chunkErr.message?.includes('429') || chunkErr.message?.includes('quota')) {
           await chunkStorage.deleteSession(sessionId).catch(() => {});
           throw new Error(
-            `Vượt hạn mức API tại phần ${i + 1}/${chunkCount}.\n` +
-            `✅ Đã xử lý: ${i} phần\n❌ Lỗi: ${chunkErr.message}\n\n` +
-            `💡 Đợi 24 giờ hoặc nâng cấp Paid tier.`
+            i18n.t('apiErrors.idbChunkQuota', { current: i + 1, total: chunkCount, done: i, errorMsg: chunkErr.message })
           );
         } else {
           await chunkStorage.deleteSession(sessionId).catch(() => {});
@@ -2610,7 +2554,7 @@ JSON output (không markdown):
       if (i < chunkCount - 1) {
         if (onProgress) onProgress(
           chunkProgressBase + Math.round(progressRange / chunkCount),
-          `⏳ Đợi ${requestDelaySeconds}s (tránh vượt hạn mức API)...`
+          i18n.t('geminiProgress.waitingRateLimit', { seconds: requestDelaySeconds })
         );
         await new Promise(r => setTimeout(r, requestDelaySeconds * 1000));
       }
@@ -2622,7 +2566,7 @@ JSON output (không markdown):
     allResults.sort((a, b) => (a.audioTimeMs ?? 0) - (b.audioTimeMs ?? 0));
 
     console.log(`[${logPrefix}] Complete: ${allResults.length} segments from ${chunkCount} chunks`);
-    if (onProgress) onProgress(progressBase + progressRange, `✅ Hoàn thành: ${allResults.length} đoạn từ ${chunkCount} phần`);
+    if (onProgress) onProgress(progressBase + progressRange, i18n.t('geminiProgress.allChunksDone', { segments: allResults.length, parts: chunkCount }));
 
     // ── Tổng hợp tóm tắt (Bước cuối) ───────────────────────────────────────────
     let combinedSummary: string | undefined;
@@ -2632,22 +2576,22 @@ JSON output (không markdown):
       combinedSummary = allSummaries[0].replace(/^Phần \d+\/\d+:\s*/, '');
     } else {
       // Nhiều phần → gọi Gemini để tổng hợp thành 1 bản liền mạch
-      if (onProgress) onProgress(progressBase + progressRange + 2, `📝 Đang tổng hợp ${allSummaries.length} phần tóm tắt...`);
+      if (onProgress) onProgress(progressBase + progressRange + 2, i18n.t('geminiProgress.mergingSummary', { count: allSummaries.length }));
       try {
         combinedSummary = await this.mergeSummariesWithGemini(
           currentApiKey, modelName, allSummaries, summaryPrompt, languageCode
         );
-        if (onProgress) onProgress(progressBase + progressRange + 4, `✅ Đã tổng hợp tóm tắt hoàn chỉnh`);
+        if (onProgress) onProgress(progressBase + progressRange + 4, i18n.t('geminiProgress.summaryMerged'));
       } catch (mergeErr: any) {
         console.warn(`⚠️ [${logPrefix}] Gemini merge failed, manual concat:`, mergeErr.message);
         combinedSummary = allSummaries
           .map((s, idx) => `📄 Tóm tắt đoạn ${idx + 1}:\n${s.replace(/^Phần \d+\/\d+:\s*/, '')}`)
           .join('\n\n---\n\n');
-        if (onProgress) onProgress(progressBase + progressRange + 4, `⚠️ Ghép tóm tắt thủ công (${allSummaries.length} phần)`);
+        if (onProgress) onProgress(progressBase + progressRange + 4, i18n.t('geminiProgress.manualMergeSummary', { count: allSummaries.length }));
       }
     }
 
-    if (onProgress) onProgress(100, `🎉 Hoàn thành! ${allResults.length} segments`);
+    if (onProgress) onProgress(100, i18n.t('geminiProgress.allDone', { count: allResults.length }));
 
     return {
       results           : allResults,
@@ -2685,7 +2629,7 @@ JSON output (không markdown):
     // Pre-transcription setup errors use the 'EBML_PRE_TRANSCRIPTION_FAILED' sentinel
     // so the outer caller can fall back to the legacy path safely.
     // Gemini API errors (Phase 3) are NOT sentinels and must always propagate.
-    if (onProgress) onProgress(2, '📦 Đang phân tích cấu trúc WebM (không decode)...');
+    if (onProgress) onProgress(2, i18n.t('geminiProgress.analyzingWebm'));
 
     // ── Phase 1: EBML split (pure computation, no IDB) ───────────────────────
     let webmChunks: import('./webmSplitter').WebmChunk[];
@@ -2712,7 +2656,7 @@ JSON output (không markdown):
     return chunkStorage.withActiveSession(async () => {
       let chunkBoundaries: Array<{ startMs: number; endMs: number }>;
       try {
-        if (onProgress) onProgress(15, `💾 Đang lưu ${webmChunks.length} chunk vào IndexedDB...`);
+        if (onProgress) onProgress(15, i18n.t('geminiProgress.savingChunksWebm', { count: webmChunks.length }));
         await chunkStorage.storeChunks(sessionId, webmChunks.map(c => ({
           startMs: c.startMs, endMs: c.endMs, blob: c.blob,
         })));
@@ -2762,7 +2706,7 @@ JSON output (không markdown):
 
     // Same sentinel strategy as the WebM path: WAV_PRE_TRANSCRIPTION_FAILED for
     // setup failures (safe to fall back), direct throw for Gemini API errors.
-    if (onProgress) onProgress(2, '📦 Đang phân tích cấu trúc WAV (không decode)...');
+    if (onProgress) onProgress(2, i18n.t('geminiProgress.analyzingWav'));
 
     // ── Phase 1: WAV binary split (pure computation, no IDB) ────────────────
     let wavChunks: import('./webmSplitter').WebmChunk[];
@@ -2782,7 +2726,7 @@ JSON output (không markdown):
     return chunkStorage.withActiveSession(async () => {
       let chunkBoundaries: Array<{ startMs: number; endMs: number }>;
       try {
-        if (onProgress) onProgress(15, `💾 Đang lưu ${wavChunks.length} chunk WAV vào IndexedDB...`);
+        if (onProgress) onProgress(15, i18n.t('geminiProgress.savingChunksWav', { count: wavChunks.length }));
         await chunkStorage.storeChunks(sessionId, wavChunks.map(c => ({
           startMs: c.startMs, endMs: c.endMs, blob: c.blob,
         })));
@@ -2903,7 +2847,7 @@ JSON output (không markdown):
     // Convert entire file to WAV first, then chunk by AudioContext extraction.
     // ⚠️ Only safe for files ≤ 50 MB or unsplittable compressed formats.
     // ============================================================
-    if (onProgress) onProgress(3, '🔍 Đang kiểm tra định dạng audio...');
+    if (onProgress) onProgress(3, i18n.t('geminiProgress.checkingAudio'));
     
     let wavBlob = audioBlob;
     const audioType = audioBlob.type.toLowerCase();
@@ -2915,14 +2859,7 @@ JSON output (không markdown):
     // However, with direct WAV slicing, we can handle much larger files
     if (audioSizeMB > 1000) {
       console.error(`❌ File cực kỳ lớn: ${audioSizeMB.toFixed(0)}MB - vượt giới hạn!`);
-      throw new Error(
-        `File quá lớn (${audioSizeMB.toFixed(0)}MB) - Vượt giới hạn khả năng xử lý của browser.\n\n` +
-        `✨ Giải pháp:\n` +
-        `1. Nếu file là WAV/MP4/WebM: Đổi sang MP3 để giảm dung lượng (~70-90% nhỏ hơn)\n` +
-        `2. Chia file thành các file nhỏ hơn (khuyến nghị < 500MB mỗi file)\n` +
-        `3. Sử dụng công cụ bên ngoài để compress audio trước\n\n` +
-        `⚠️ Browser không đủ memory để xử lý file này.`
-      );
+      throw new Error(i18n.t('apiErrors.fileTooLarge', { size: audioSizeMB.toFixed(0) }));
     }
     
     // Always normalize to mono WAV 16kHz before chunking.
@@ -2936,7 +2873,7 @@ JSON output (không markdown):
     {
       const originalSizeMB = audioBlob.size / (1024 * 1024);
       if (onProgress) {
-        onProgress(5, `🔄 Đang chuẩn hóa ${audioType.split('/')[1]?.toUpperCase() || 'audio'} → WAV mono 16kHz...`);
+        onProgress(5, i18n.t('geminiProgress.normalizingType', { type: audioType.split('/')[1]?.toUpperCase() || 'audio' }));
       }
       
       console.log(`🔄 Normalizing entire file to mono WAV 16kHz (required for consistent chunking)`);
@@ -2946,12 +2883,12 @@ JSON output (không markdown):
       
       const wavSizeMB = wavBlob.size / (1024 * 1024);
       const reduction = ((1 - wavSizeMB / originalSizeMB) * 100).toFixed(1);
-      const reductionType = wavSizeMB < originalSizeMB ? 'giảm' : 'tăng';
+      const reductionType = i18n.t(wavSizeMB < originalSizeMB ? 'geminiProgress.sizeReduced' : 'geminiProgress.sizeIncreased');
       
       console.log(`✅ Normalized: ${originalSizeMB.toFixed(2)}MB → ${wavSizeMB.toFixed(2)}MB (${reductionType} ${Math.abs(parseFloat(reduction))}%)`);
       
       if (onProgress) {
-        onProgress(7, `✅ Đã chuẩn hóa: ${wavSizeMB.toFixed(1)}MB (${reductionType} ${Math.abs(parseFloat(reduction))}%)`);
+        onProgress(7, i18n.t('geminiProgress.normalizedSize', { size: wavSizeMB.toFixed(1), type: reductionType, percent: Math.abs(parseFloat(reduction)) }));
       }
     }
 
@@ -2960,7 +2897,7 @@ JSON output (không markdown):
     // ============================================================
     // Calculate boundaries will automatically handle BOTH size and duration constraints
     // It will choose the MORE RESTRICTIVE limit to ensure all chunks are safe
-    if (onProgress) onProgress(8, '📦 Đang phân tích và tính toán các phần...');
+    if (onProgress) onProgress(8, i18n.t('geminiProgress.calculatingParts'));
     
     const wavSizeMB = wavBlob.size / (1024 * 1024);
     console.log(`📦 Calculating chunk boundaries from WAV: ${wavSizeMB.toFixed(2)}MB`);
@@ -2971,7 +2908,7 @@ JSON output (không markdown):
     console.log(`✅ Calculated ${chunkBoundaries.length} chunk boundaries`);
 
     if (onProgress) {
-      onProgress(10, `✅ Đã tính toán ${chunkBoundaries.length} phần, bắt đầu xử lý...`);
+      onProgress(10, i18n.t('geminiProgress.partsCalculated', { count: chunkBoundaries.length }));
     }
 
     const allResults: TranscriptionResult[] = [];
@@ -2996,7 +2933,7 @@ JSON output (không markdown):
       if (onProgress) {
         onProgress(
           chunkProgress,
-          `📦 Phần ${i + 1}/${chunkBoundaries.length}: ~${estimatedSizeMB.toFixed(1)}MB • ${chunkDurationMin} phút`
+          i18n.t('geminiProgress.legacyChunkStart', { current: i + 1, total: chunkBoundaries.length, size: estimatedSizeMB.toFixed(1), minutes: chunkDurationMin })
         );
       }
 
@@ -3062,7 +2999,7 @@ JSON output (không markdown):
         if (onProgress) {
           onProgress(
             chunkProgress + (80 / chunkBoundaries.length) * 0.9,
-            `✅ Phần ${i + 1}/${chunkBoundaries.length}: ${adjustedResults.length} segments`
+            i18n.t('geminiProgress.legacyChunkDone', { current: i + 1, total: chunkBoundaries.length, count: adjustedResults.length })
           );
         }
 
@@ -3075,7 +3012,7 @@ JSON output (không markdown):
           if (onProgress) {
             onProgress(
               chunkProgress + (80 / chunkBoundaries.length),
-              `⏳ Đợi ${requestDelaySeconds}s (tránh vượt hạn mức API)...`
+              i18n.t('geminiProgress.waitingRateLimit', { seconds: requestDelaySeconds })
             );
           }
           
@@ -3087,11 +3024,11 @@ JSON output (không markdown):
         if (error.message?.startsWith('CHUNK_SKIPPED:')) {
           const originalMsg = error.message.replace(/^CHUNK_SKIPPED:\s*/, '');
           console.warn(`⚠️ Chunk ${i + 1}/${chunkBoundaries.length} skipped by user: ${originalMsg}`);
-          truncationWarnings.push(`Phần ${i + 1}/${chunkBoundaries.length} bị bỏ qua: ${originalMsg}`);
+          truncationWarnings.push(i18n.t('apiErrors.idbChunkSkipped', { current: i + 1, total: chunkBoundaries.length, reason: originalMsg }));
           if (onProgress) {
             onProgress(
               chunkProgress + (80 / chunkBoundaries.length),
-              `⏭️ Phần ${i + 1}/${chunkBoundaries.length} bị bỏ qua`
+              i18n.t('geminiProgress.legacyChunkSkipped', { current: i + 1, total: chunkBoundaries.length })
             );
           }
           continue;
@@ -3099,12 +3036,9 @@ JSON output (không markdown):
 
         // Handle quota errors
         if (error.message.includes('429') || error.message.includes('quota')) {
-          throw new Error(
-            `Vượt hạn mức API tại phần ${i + 1}/${chunkBoundaries.length}.\n\n` +
-            `✅ Đã xử lý: ${i}/${chunkBoundaries.length} phần\n` +
-            `❌ Lỗi: ${error.message}\n\n` +
-            `💡 Đợi 24 giờ hoặc nâng cấp Paid tier.`
-          );
+          throw new Error(i18n.t('apiErrors.legacyQuotaExceeded', {
+            current: i + 1, done: i, total: chunkBoundaries.length, errorMsg: error.message
+          }));
         }
         throw error;
       }
@@ -3116,7 +3050,7 @@ JSON output (không markdown):
     console.log(`✅ Đã xử lý toàn bộ: ${allResults.length} segments từ ${chunkBoundaries.length} chunks`);
     
     if (onProgress) {
-      onProgress(90, `✅ Hoàn thành xử lý: ${allResults.length} segments từ ${chunkBoundaries.length} phần`);
+      onProgress(90, i18n.t('geminiProgress.legacyAllDone', { segments: allResults.length, parts: chunkBoundaries.length }));
     }
 
     // ============================================================
@@ -3133,7 +3067,7 @@ JSON output (không markdown):
       console.log(`✅ Sử dụng 1 tóm tắt trực tiếp (${combinedSummary.length} ký tự)`);
     } else {
       // Multiple summaries - try to merge with Gemini API
-      if (onProgress) onProgress(92, `📝 Đang tổng hợp ${allSummaries.length} phần tóm tắt...`);
+      if (onProgress) onProgress(92, i18n.t('geminiProgress.mergingSummary', { count: allSummaries.length }));
       
       try {
         // Call Gemini to merge summaries into one cohesive summary
@@ -3146,7 +3080,7 @@ JSON output (không markdown):
           languageCode
         );
         
-        if (onProgress) onProgress(98, `✅ Đã tổng hợp tóm tắt hoàn chỉnh (${combinedSummary.length} ký tự)`);
+        if (onProgress) onProgress(98, i18n.t('geminiProgress.summaryMergedChars', { count: combinedSummary.length }));
         console.log(`✅ Merged ${allSummaries.length} summaries with Gemini API`);
       } catch (mergeError: any) {
         // Fallback: Manual concatenation if Gemini merge fails
@@ -3157,11 +3091,11 @@ JSON output (không markdown):
           .map((summary, index) => `📄 Tóm tắt đoạn ${index + 1}:\n${summary.replace(/^Phần \d+\/\d+: /, '')}`)
           .join('\n\n---\n\n');
         
-        if (onProgress) onProgress(98, `⚠️ Ghép tóm tắt thủ công (${allSummaries.length} phần)`);
+        if (onProgress) onProgress(98, i18n.t('geminiProgress.manualMergeSummary', { count: allSummaries.length }));
       }
     }
 
-    if (onProgress) onProgress(100, `🎉 Hoàn thành! ${allResults.length} segments`);
+    if (onProgress) onProgress(100, i18n.t('geminiProgress.allDone', { count: allResults.length }));
     
     // Build final truncation/warning message
     let finalTruncationWarning: string | undefined = undefined;
@@ -3172,11 +3106,9 @@ JSON output (không markdown):
       );
       
       if (hasSkippedChunks) {
-        finalTruncationWarning = `⚠️ Một số phần audio không thể xử lý:\n\n${truncationWarnings.join('\n\n')}\n\n` +
-          `✅ Kết quả hiện tại chỉ bao gồm các phần được xử lý thành công.`;
+        finalTruncationWarning = i18n.t('apiErrors.chunksFailed', { items: truncationWarnings.join('\n\n') });
       } else if (hasTruncation) {
-        finalTruncationWarning = `⚠️ Một số phần audio bị truncated do MAX_TOKENS:\n\n${truncationWarnings.join('\n\n')}\n\n` +
-          `💡 Khuyến nghị: Giảm thời lượng mỗi phần hoặc tăng maxOutputTokens trong cấu hình.`;
+        finalTruncationWarning = i18n.t('apiErrors.chunksTruncated', { items: truncationWarnings.join('\n\n') });
       }
       
       console.warn('⚠️ Final warnings:', finalTruncationWarning);
@@ -3400,31 +3332,12 @@ Hãy trả về MỘT bài tóm tắt tổng hợp có cấu trúc rõ ràng, d�
       // Handle different finish reasons
       if (finishReason === 'RECITATION') {
         console.warn('⚠️ Gemini refused to transcribe due to potential copyright violation (RECITATION)');
-        throw new Error(
-          'RECITATION_ERROR: Gemini phát hiện nội dung có thể vi phạm bản quyền.\n\n' +
-          '💡 Đây có thể là:\n' +
-          '• Audio chứa nhạc có bản quyền\n' +
-          '• Nội dung được bảo vệ bởi luật bản quyền\n' +
-          '• Đoạn văn bản từ sách/tài liệu có bản quyền\n\n' +
-          '✨ Giải pháp:\n' +
-          '• Thử với đoạn audio khác không có nhạc nền\n' +
-          '• Loại bỏ phần audio có nhạc trước khi transcribe\n' +
-          '• Sử dụng tính năng "Chọn đoạn thủ công" để bỏ qua phần có vấn đề'
-        );
+        throw new Error(i18n.t('apiErrors.recitation'));
       }
       
       if (finishReason === 'SAFETY') {
         console.warn('⚠️ Gemini refused to process due to safety concerns');
-        throw new Error(
-          'SAFETY_ERROR: Gemini từ chối xử lý do lo ngại về an toàn nội dung.\n\n' +
-          '💡 Nội dung có thể chứa:\n' +
-          '• Ngôn từ bạo lực, thù địch\n' +
-          '• Nội dung không phù hợp\n' +
-          '• Thông tin nhạy cảm\n\n' +
-          '✨ Giải pháp:\n' +
-          '• Kiểm tra lại nội dung audio\n' +
-          '• Thử với đoạn audio khác'
-        );
+        throw new Error(i18n.t('apiErrors.safety'));
       }
       
       if (finishReason === 'MAX_TOKENS') {
@@ -3585,14 +3498,9 @@ Hãy trả về MỘT bài tóm tắt tổng hợp có cấu trúc rõ ràng, d�
         );
         
         if (summaryTruncated) {
-          truncationWarning = `⚠️ Kết quả bị cắt ngắn do vượt giới hạn MAX_TOKENS.\n` +
-            `• Summary: Có thể chưa đầy đủ (câu cuối chưa kết thúc)\n` +
-            `• Segments: Đã nhận được ${results.length} segments (có thể thiếu)\n\n` +
-            `💡 Giải pháp: Giảm thời lượng audio mỗi phần hoặc tăng maxOutputTokens.`;
+          truncationWarning = i18n.t('apiErrors.truncatedAudioWithSummary', { count: results.length });
         } else {
-          truncationWarning = `⚠️ Kết quả có thể bị cắt ngắn do vượt giới hạn MAX_TOKENS. ` +
-            `Đã nhận được ${results.length} segments. ` +
-            `Nếu cần đầy đủ hơn, vui lòng giảm thời lượng audio hoặc sử dụng auto-split.`;
+          truncationWarning = i18n.t('apiErrors.truncatedAudio', { count: results.length });
         }
         console.warn(truncationWarning);
       }

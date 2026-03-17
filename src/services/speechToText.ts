@@ -1,6 +1,7 @@
 import { message } from 'antd';
 import type { SpeechToTextConfig, TranscriptionResult } from '../types/types';
 import { SmartTranscriptManager } from './smartTranscriptManager';
+import i18n from '../i18n';
 
 export class SpeechToTextService {
   private config: SpeechToTextConfig | null = null;
@@ -197,7 +198,7 @@ export class SpeechToTextService {
           
           if (canShowNotification) {
             message.warning({
-              content: 'Web Speech API gặp sự cố nhỏ trên trình duyệt này.',
+              content: i18n.t('speechErrors.networkError'),
               duration: 5,
               key: 'network-error' // Use fixed key to replace previous notification
             });
@@ -209,7 +210,7 @@ export class SpeechToTextService {
           console.error('Microphone access denied.');
           if (canShowNotification) {
             message.error({
-              content: 'Vui lòng cấp quyền truy cập micrô trong cài đặt trình duyệt.',
+              content: i18n.t('speechErrors.micDenied'),
               duration: 8
             });
             this.lastErrorNotificationTime = now;
@@ -218,7 +219,7 @@ export class SpeechToTextService {
           console.error('Unhandled speech recognition error:', event.error);
           if (canShowNotification) {
             message.warning({
-              content: `Lỗi nhận diện giọng nói: ${event.error}`,
+              content: i18n.t('speechErrors.recognitionError', { error: event.error }),
               duration: 4,
               key: 'speech-error'
             });
@@ -251,7 +252,7 @@ export class SpeechToTextService {
         console.warn('⚠️ Microphone not available for Web Speech API');
         return false; // Silently fail, don't alert user
       }
-      alert('Trình duyệt của bạn không hỗ trợ Web Speech API.');
+      alert(i18n.t('speechErrors.notSupported'));
       return false;
     }
   }
@@ -374,7 +375,7 @@ export class SpeechToTextService {
         clearTimeout(timeoutId);
         if (fetchError.name === 'AbortError') {
           console.error('⏱️ Google Cloud API request timeout (30s)');
-          message.error('Yêu cầu API hết thời gian chờ. Vui lòng thử lại.');
+          message.error(i18n.t('speechErrors.apiTimeout'));
         } else {
           throw fetchError;
         }
@@ -403,7 +404,7 @@ export class SpeechToTextService {
 
               // If multiple speakers in one segment, show all
               if (speakerTags.size > 0) {
-                const speakers = Array.from(speakerTags).sort().map(tag => `Người ${tag + 1}`);
+                const speakers = Array.from(speakerTags).sort().map(tag => i18n.t('speechErrors.speakerLabel', { number: tag + 1 }));
                 speaker = speakers.join(', ');
               }
             }

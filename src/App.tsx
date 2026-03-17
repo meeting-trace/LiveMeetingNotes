@@ -1728,7 +1728,7 @@ export const App: React.FC = () => {
                     color: "#667eea",
                   }}
                 >
-                  <span style={{ fontSize: "20px" }}>🤖</span> {t("transcriptionConfirm.progressTitle")}
+                  <span style={{ fontSize: "20px" }}></span> {t("transcriptionConfirm.progressTitle")}
                 </span>
               ),
               description: (
@@ -1888,7 +1888,7 @@ export const App: React.FC = () => {
                               progressPercent === 100 ? "#52c41a" : "#667eea",
                           }}
                         >
-                          <span style={{ fontSize: "20px" }}>🤖</span> {t("transcriptionConfirm.progressTitle")}
+                          <span style={{ fontSize: "20px" }}></span> {t("transcriptionConfirm.progressTitle")}
                         </span>
                       ),
                       description: (
