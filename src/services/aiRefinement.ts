@@ -2554,18 +2554,11 @@ JSON output (không markdown):
     } else {
       // Nhiều phần → gọi Gemini để tổng hợp thành 1 bản liền mạch
       if (onProgress) onProgress(progressBase + progressRange + 2, i18n.t('geminiProgress.mergingSummary', { count: allSummaries.length }));
-      try {
-        combinedSummary = await this.mergeSummariesWithGemini(
-          currentApiKey, modelName, allSummaries, summaryPrompt, languageCode
-        );
-        if (onProgress) onProgress(progressBase + progressRange + 4, i18n.t('geminiProgress.summaryMerged'));
-      } catch (mergeErr: any) {
-        console.warn(`⚠️ [${logPrefix}] Gemini merge failed, manual concat:`, mergeErr.message);
-        combinedSummary = allSummaries
-          .map((s, idx) => `📄 Part ${idx + 1}:\n${s.replace(/^Phần \d+\/\d+:\s*/, '')}`)
-          .join('\n\n---\n\n');
-        if (onProgress) onProgress(progressBase + progressRange + 4, i18n.t('geminiProgress.manualMergeSummary', { count: allSummaries.length }));
-      }
+      combinedSummary = await this.mergeSummariesWithRetry(
+        currentApiKey, modelName, allSummaries, summaryPrompt, languageCode,
+        onProgress, progressBase + progressRange + 2, logPrefix, onRetryNeeded
+      );
+      if (onProgress) onProgress(progressBase + progressRange + 4, i18n.t('geminiProgress.summaryMerged'));
     }
 
     if (onProgress) onProgress(100, i18n.t('geminiProgress.allDone', { count: allResults.length }));
@@ -3119,7 +3112,7 @@ JSON output (không markdown):
       );
       return result;
     } catch (err: any) {
-      // User skipped or stopped → fall back to manual concatenation
+      // User skipped or stopped — fall back to manual concatenation (segments are preserved)
       console.warn(`⚠️ [${logPrefix}] Summary merge failed/skipped: ${err.message}`);
       if (onProgress) onProgress(progressVal, i18n.t('geminiProgress.manualMergeSummary', { count: summaries.length }));
       return summaries

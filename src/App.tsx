@@ -884,9 +884,7 @@ export const App: React.FC = () => {
                     <div style={{ color: "#cf1322", fontSize: 13 }}>{ctx.error}</div>
                   </div>
                   <div style={{ marginBottom: 12, color: "#595959", fontSize: 13 }}>
-                    {ctx.isNonRetryable
-                      ? t('retryError.nonRetryableMsg')
-                      : t('retryError.retriedFailed', { count: ctx.attempt })}
+                    {t('retryError.retriedFailed', { count: ctx.attempt })}
                   </div>
                   <div style={{ marginBottom: 6, fontSize: 13, fontWeight: 600 }}>
                     {t('retryError.apiKeyLabel')}
