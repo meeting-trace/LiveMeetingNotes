@@ -98,6 +98,9 @@ export interface SpeechToTextConfig {
   maxFileSizeMB?: number; // Maximum file size in MB (default: 20)
   requestDelaySeconds?: number; // Delay between API requests in seconds (default: 5)
   summaryPrompt?: string; // Custom prompt for Gemini summary generation
+
+  // Language selector customisation
+  availableLanguages?: string[]; // BCP-47 codes shown in the RecordingControls language switcher
 }
 
 export interface TranscriptionResult {

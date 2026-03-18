@@ -34,20 +34,7 @@ import type {
   TranscriptionResult,
   AudioSourceType,
 } from "../types/types";
-
-// Speech recognition language list with ISO 3166-1 alpha-2 country codes for flag-icons
-const SPEECH_LANGUAGES = [
-  { value: 'vi-VN', fiCode: 'vn', labelKey: 'recording.langVi',   shortLabel: 'Tiếng Việt' },
-  { value: 'en-US', fiCode: 'us', labelKey: 'recording.langEnUS', shortLabel: 'English (US)' },
-  { value: 'en-GB', fiCode: 'gb', labelKey: 'recording.langEnGB', shortLabel: 'English (UK)' },
-  { value: 'ja-JP', fiCode: 'jp', labelKey: 'recording.langJa',   shortLabel: '日本語' },
-  { value: 'ko-KR', fiCode: 'kr', labelKey: 'recording.langKo',   shortLabel: '한국어' },
-  { value: 'zh-CN', fiCode: 'cn', labelKey: 'recording.langZhCN', shortLabel: '中文 (简体)' },
-  { value: 'zh-TW', fiCode: 'tw', labelKey: 'recording.langZhTW', shortLabel: '中文 (繁體)' },
-  { value: 'fr-FR', fiCode: 'fr', labelKey: 'recording.langFr',   shortLabel: 'Français' },
-  { value: 'de-DE', fiCode: 'de', labelKey: 'recording.langDe',   shortLabel: 'Deutsch' },
-  { value: 'es-ES', fiCode: 'es', labelKey: 'recording.langEs',   shortLabel: 'Español' },
-];
+import { WORLD_LANGUAGES, DEFAULT_AVAILABLE_LANGUAGES } from '../constants/worldLanguages';
 
 /**
  * Helper: Get file extension from audio blob MIME type
@@ -539,21 +526,8 @@ export const RecordingControls: React.FC<Props> = ({
     }
   };
 
-  const getLanguageName = (code: string): string => {
-    const languages: Record<string, string> = {
-      "vi-VN": "Tiếng Việt",
-      "en-US": "English (US)",
-      "en-GB": "English (UK)",
-      "ja-JP": "日本語",
-      "ko-KR": "한국어",
-      "zh-CN": "中文 (简体)",
-      "zh-TW": "中文 (繁體)",
-      "fr-FR": "Français",
-      "de-DE": "Deutsch",
-      "es-ES": "Español",
-    };
-    return languages[code] || code;
-  };
+  const getLanguageName = (code: string): string =>
+    WORLD_LANGUAGES.find(l => l.value === code)?.name ?? code;
 
   const handleStopFromPause = async () => {
     try {
@@ -1812,27 +1786,33 @@ export const RecordingControls: React.FC<Props> = ({
                 <Select
                   value={selectedLanguage}
                   onChange={handleLanguageChange}
-                  style={{ width: 150 }}
+                  style={{ width: 155 }}
                   size="middle"
                   disabled={false}
                   labelRender={(opt) => {
-                    const lang = SPEECH_LANGUAGES.find(l => l.value === opt.value);
+                    const lang = WORLD_LANGUAGES.find(l => l.value === opt.value);
                     return lang ? (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         <span className={`fi fi-${lang.fiCode}`} style={{ fontSize: 14, borderRadius: 2 }} />
-                        {lang.shortLabel}
+                        {lang.name}
                       </span>
                     ) : <span>{opt.label}</span>;
                   }}
-                  options={SPEECH_LANGUAGES.map(l => ({
-                    value: l.value,
-                    label: (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span className={`fi fi-${l.fiCode}`} style={{ fontSize: 16, borderRadius: 2, flexShrink: 0 }} />
-                        {t(l.labelKey)}
-                      </span>
-                    ),
-                  }))}
+                  options={(() => {
+                    const codes = transcriptionConfig?.availableLanguages ?? DEFAULT_AVAILABLE_LANGUAGES;
+                    const filtered = WORLD_LANGUAGES.filter(
+                      l => codes.includes(l.value) || l.value === selectedLanguage
+                    );
+                    return filtered.map(l => ({
+                      value: l.value,
+                      label: (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span className={`fi fi-${l.fiCode}`} style={{ fontSize: 16, borderRadius: 2, flexShrink: 0 }} />
+                          {l.name}
+                        </span>
+                      ),
+                    }));
+                  })()}
                 />
               </Tooltip>
             </Space>

@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import 'flag-icons/css/flag-icons.min.css';
+import { WORLD_LANGUAGES, DEFAULT_AVAILABLE_LANGUAGES } from '../constants/worldLanguages';
 import {
   Modal,
   Form,
   Input,
   InputNumber,
   Select,
+  Checkbox,
   Button,
   Space,
   App,
@@ -18,8 +21,98 @@ import {
   SaveOutlined,
   DeleteOutlined,
   ReloadOutlined,
+  SearchOutlined,
 } from "@ant-design/icons";
 import type { SpeechToTextConfig, GeminiModel } from "../types/types";
+
+// ── Inline language checkbox grid ────────────────────────────────────────────
+interface LangGridProps {
+  value?: string[];
+  onChange?: (val: string[]) => void;
+}
+const LanguageCheckGrid: React.FC<LangGridProps> = ({ value = [], onChange }) => {
+  const { t } = useTranslation();
+  const [query, setQuery] = useState('');
+  const filtered = useMemo(() => {
+    const q = query.toLowerCase();
+    if (!q) return WORLD_LANGUAGES;
+    return WORLD_LANGUAGES.filter(l =>
+      l.name.toLowerCase().includes(q) ||
+      l.englishName.toLowerCase().includes(q) ||
+      l.keywords.toLowerCase().includes(q) ||
+      l.value.toLowerCase().includes(q)
+    );
+  }, [query]);
+  const toggle = (code: string) => {
+    const next = value.includes(code)
+      ? value.filter(v => v !== code)
+      : [...value, code];
+    onChange?.(next);
+  };
+  return (
+    <div style={{ border: '1px solid #d9d9d9', borderRadius: 6, overflow: 'hidden' }}>
+      {/* Search + count bar */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '6px 10px', borderBottom: '1px solid #f0f0f0', background: '#fafafa',
+      }}>
+        <SearchOutlined style={{ color: '#8c8c8c', flexShrink: 0 }} />
+        <Input
+          size="small"
+          variant="borderless"
+          placeholder={t('config.availableLangsSearch')}
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          style={{ flex: 1, padding: 0 }}
+          allowClear
+        />
+        <span style={{ fontSize: 12, color: '#595959', flexShrink: 0 }}>
+          {t('config.availableLangsCount', { count: value.length, total: WORLD_LANGUAGES.length })}
+        </span>
+      </div>
+      {/* Grid */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+        gap: 0,
+        maxHeight: 320,
+        overflowY: 'auto',
+        padding: '4px 0',
+      }}>
+        {filtered.map(l => (
+          <label
+            key={l.value}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 7,
+              padding: '5px 12px', cursor: 'pointer',
+              borderRadius: 4,
+              background: value.includes(l.value) ? '#e6f4ff' : 'transparent',
+              transition: 'background 0.1s',
+            }}
+            onMouseEnter={e => { if (!value.includes(l.value)) (e.currentTarget as HTMLElement).style.background = '#f5f5f5'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = value.includes(l.value) ? '#e6f4ff' : 'transparent'; }}
+          >
+            <Checkbox
+              checked={value.includes(l.value)}
+              onChange={() => toggle(l.value)}
+              style={{ flexShrink: 0 }}
+            />
+            <span className={`fi fi-${l.fiCode}`} style={{ fontSize: 14, borderRadius: 2, flexShrink: 0 }} />
+            <span style={{ fontSize: 13, lineHeight: 1.3, minWidth: 0, overflow: 'hidden' }}>
+              <span style={{ fontWeight: value.includes(l.value) ? 600 : 400, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.name}</span>
+              <span style={{ fontSize: 11, color: '#8c8c8c', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.englishName}</span>
+            </span>
+          </label>
+        ))}
+        {filtered.length === 0 && (
+          <div style={{ padding: '16px', textAlign: 'center', color: '#8c8c8c', gridColumn: '1/-1' }}>
+            {t('config.availableLangsNoResult')}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 import { SpeechToTextService } from "../services/speechToText";
 import { AIRefinementService } from "../services/aiRefinement";
 import { UpdateManagerService } from "../services/updateManager";
@@ -79,6 +172,7 @@ export const TranscriptionConfig: React.FC<Props> = ({
         requestDelaySeconds: 5,
         summaryPrompt:
           t('config.summaryPromptDefault'),
+        availableLanguages: DEFAULT_AVAILABLE_LANGUAGES,
       };
 
       // Merge saved config with defaults (ensures new fields have default values)
@@ -200,6 +294,7 @@ export const TranscriptionConfig: React.FC<Props> = ({
         summaryPrompt:
           values.summaryPrompt ||
           t('config.summaryPromptDefault'),
+        availableLanguages: values.availableLanguages ?? DEFAULT_AVAILABLE_LANGUAGES,
       };
 
       // Validate: Speaker diarization requires API Key
@@ -423,22 +518,46 @@ export const TranscriptionConfig: React.FC<Props> = ({
           rules={[{ required: true, message: t('config.languageValidation') }]}
           extra={t('config.languageExtra')}
         >
-          <Select>
-            <Select.Option value="vi-VN">{t('config.langVi')}</Select.Option>
-            <Select.Option value="en-US">{t('config.langEnUS')}</Select.Option>
-            <Select.Option value="en-GB">{t('config.langEnGB')}</Select.Option>
-            <Select.Option value="ja-JP">{t('config.langJa')}</Select.Option>
-            <Select.Option value="ko-KR">{t('config.langKo')}</Select.Option>
-            <Select.Option value="zh-CN">
-              {t('config.langZhCN')}
-            </Select.Option>
-            <Select.Option value="zh-TW">
-              {t('config.langZhTW')}
-            </Select.Option>
-            <Select.Option value="fr-FR">{t('config.langFr')}</Select.Option>
-            <Select.Option value="de-DE">{t('config.langDe')}</Select.Option>
-            <Select.Option value="es-ES">{t('config.langEs')}</Select.Option>
-          </Select>
+          <Select
+            showSearch
+            placeholder={t('config.languageSearch')}
+            filterOption={(input, option) => {
+              const lang = WORLD_LANGUAGES.find(l => l.value === option?.value);
+              if (!lang) return false;
+              const q = input.toLowerCase();
+              return lang.name.toLowerCase().includes(q)
+                || lang.englishName.toLowerCase().includes(q)
+                || lang.keywords.toLowerCase().includes(q)
+                || lang.value.toLowerCase().includes(q);
+            }}
+            labelRender={(opt) => {
+              const lang = WORLD_LANGUAGES.find(l => l.value === opt.value);
+              return lang ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                  <span className={`fi fi-${lang.fiCode}`} style={{ fontSize: 15, borderRadius: 2 }} />
+                  {lang.name}
+                </span>
+              ) : <span>{opt.label}</span>;
+            }}
+            options={WORLD_LANGUAGES.map(l => ({
+              value: l.value,
+              label: (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className={`fi fi-${l.fiCode}`} style={{ fontSize: 16, borderRadius: 2, flexShrink: 0 }} />
+                  <span>{l.name}</span>
+                  <span style={{ color: '#8c8c8c', fontSize: 12 }}>{l.englishName}</span>
+                </span>
+              ),
+            }))}
+          />
+        </Form.Item>
+
+        <Form.Item
+          label={t('config.availableLangsLabel')}
+          name="availableLanguages"
+          extra={t('config.availableLangsExtra')}
+        >
+          <LanguageCheckGrid />
         </Form.Item>
 
         <Form.Item
