@@ -21,8 +21,8 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
   isOnline,
   onSeekAudio,
   onEditTranscription,
-  onAIRefine,
-  canRefineWithAI
+  // onAIRefine,
+  // canRefineWithAI
 }) => {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -277,7 +277,7 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
               </Space>
               
               {/* AI Refine Button in header */}
-              {canRefineWithAI && !isTranscribing && transcriptions.length > 0 && onAIRefine && (
+              {/* {canRefineWithAI && !isTranscribing && transcriptions.length > 0 && onAIRefine && (
                 <Tooltip title={t('transcriptionPanel.refineAITooltip')}>
                   <Button
                     type="primary"
@@ -294,7 +294,7 @@ const TranscriptionPanelComponent: React.FC<Props> = ({
                     {t('transcriptionPanel.refineAI')}
                   </Button>
                 </Tooltip>
-              )}
+              )} */}
             </div>
           ),
           children: (
