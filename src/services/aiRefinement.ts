@@ -3,6 +3,19 @@ import type { FileManagerService } from './fileManager';
 import { splitWebmIntoChunks, isLikelyWebm, splitWavIntoChunks, isLikelyWav } from './webmSplitter';
 import { chunkStorage } from './chunkStorage';
 import i18n from '../i18n';
+import { WORLD_LANGUAGES } from '../constants/worldLanguages';
+
+// Build BCP-47 → native language name map from the world languages list.
+// Also adds bare language prefix entries (e.g. 'ru' → 'Русский') for loose matching.
+const LANG_NAME_MAP: Record<string, string> = (() => {
+  const map: Record<string, string> = {};
+  for (const l of WORLD_LANGUAGES) {
+    map[l.value] = l.name;                              // full code: 'ru-RU'
+    const prefix = l.value.split('-')[0];               // prefix:    'ru'
+    if (!map[prefix]) map[prefix] = l.name;             // first match wins
+  }
+  return map;
+})();
 
 export interface RawTranscriptData {
   text: string;
@@ -1377,20 +1390,7 @@ ${hasRawData ? `=== THAM KHẢO (đối chiếu sửa lỗi) ===\n${rawDataJson}
       const endpoint = `https://generativelanguage.googleapis.com/${this.GEMINI_API_VERSION}/${modelName}:generateContent?key=${apiKey}`;
 
       // Determine output language based on languageCode config
-      const langMap: Record<string, string> = {
-        'vi': 'Tiếng Việt', 'vi-VN': 'Tiếng Việt',
-        'en': 'English', 'en-US': 'English', 'en-GB': 'English', 'en-AU': 'English',
-        'ja': '日本語', 'ja-JP': '日本語',
-        'ko': '한국어', 'ko-KR': '한국어',
-        'zh': '中文', 'zh-CN': '中文 (简体)', 'zh-TW': '中文 (繁體)',
-        'fr': 'Français', 'fr-FR': 'Français',
-        'de': 'Deutsch', 'de-DE': 'Deutsch',
-        'es': 'Español', 'es-ES': 'Español',
-        'pt': 'Português', 'pt-BR': 'Português',
-        'th': 'ภาษาไทย', 'th-TH': 'ภาษาไทย',
-        'id': 'Bahasa Indonesia', 'id-ID': 'Bahasa Indonesia',
-      };
-      const outputLanguage = languageCode ? (langMap[languageCode] || languageCode) : 'Tiếng Việt';
+      const outputLanguage = languageCode ? (LANG_NAME_MAP[languageCode] || languageCode) : 'Tiếng Việt';
       const languageInstruction = `\n🌐 NGÔN NGỮ OUTPUT: Toàn bộ kết quả (summary và segments) PHẢI viết bằng ${outputLanguage}.`;
 
       requestBody = {
