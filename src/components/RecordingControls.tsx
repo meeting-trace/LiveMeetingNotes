@@ -857,6 +857,15 @@ export const RecordingControls: React.FC<Props> = ({
 
         const downloader = new FileDownloadService();
 
+        // Download audio if it exists (e.g. recording stopped but save failed earlier)
+        if (audioBlob) {
+          const audioExtension = getAudioExtensionFromBlob(audioBlob);
+          await downloader.downloadAudioFile(
+            audioBlob,
+            `${projectName}.${audioExtension}`,
+          );
+        }
+
         await downloader.downloadMetadataFile(
           meetingInfo,
           `${projectName}_meeting_info.json`,
@@ -918,6 +927,18 @@ export const RecordingControls: React.FC<Props> = ({
       // Temporarily set dirHandle to the project directory for saving files
       fileManager.setDirHandle(projectDirHandle);
 
+      // Save audio file first if it exists (e.g. recording was stopped but save failed earlier)
+      if (audioBlob) {
+        const audioExtension = getAudioExtensionFromBlob(audioBlob);
+        const audioFileName = `${projectName}.${audioExtension}`;
+        await fileManager.saveAudioFile(
+          audioBlob,
+          audioFileName,
+          undefined,
+          true,
+        );
+      }
+
       // Save metadata files (convert to PascalCase format)
       const meetingInfoJson = {
         MeetingTitle: meetingInfo.title,
@@ -936,22 +957,38 @@ export const RecordingControls: React.FC<Props> = ({
       );
       // console.log('✓ Saved meeting_info.json');
 
-      // Create metadata using MetadataBuilder (same as recording mode)
-      const metadata = MetadataBuilder.buildMetadata(
-        meetingInfo,
-        notes,
-        timestampMap,
-        speakersMap,
-        0, // No audio duration for notes-only
-        "", // No audio file
-        recordingStartTime || Date.now(), // Use recording start time if available, otherwise current time
-      );
-
-      // Override fields for notes-only mode
-      metadata.metadata.Model = "Notes Only";
-      metadata.metadata.OriginalFileName = "";
-      metadata.metadata.AudioFileName = "";
-      metadata.metadata.Duration = "00:00:00.0000000";
+      // Create metadata using MetadataBuilder
+      let metadata;
+      if (audioBlob) {
+        // Has audio: build full metadata with audio info
+        const audioExtension = getAudioExtensionFromBlob(audioBlob);
+        const audioFileName = `${projectName}.${audioExtension}`;
+        metadata = MetadataBuilder.buildMetadata(
+          meetingInfo,
+          notes,
+          timestampMap,
+          speakersMap,
+          lastRecordingDuration,
+          audioFileName,
+          recordingStartTime || Date.now(),
+        );
+      } else {
+        // Notes-only: no audio
+        metadata = MetadataBuilder.buildMetadata(
+          meetingInfo,
+          notes,
+          timestampMap,
+          speakersMap,
+          0, // No audio duration for notes-only
+          "", // No audio file
+          recordingStartTime || Date.now(),
+        );
+        // Override fields for notes-only mode
+        metadata.metadata.Model = "Notes Only";
+        metadata.metadata.OriginalFileName = "";
+        metadata.metadata.AudioFileName = "";
+        metadata.metadata.Duration = "00:00:00.0000000";
+      }
 
       await fileManager.saveMetadataFile(
         metadata.metadata,
@@ -961,9 +998,24 @@ export const RecordingControls: React.FC<Props> = ({
       );
       // console.log('✓ Saved metadata.json');
 
+      // Save transcription data if available
+      const finalTranscriptions = transcriptions?.filter((t) => t.isFinal) || [];
+      if (finalTranscriptions.length > 0) {
+        const transcriptionData = {
+          transcriptions: finalTranscriptions,
+          totalCount: finalTranscriptions.length,
+          summary: geminiSummary || "",
+          savedAt: new Date().toISOString(),
+        };
+        await fileManager.saveMetadataFile(
+          transcriptionData,
+          `${projectName}_transcription.json`,
+          undefined,
+          true,
+        );
+      }
+
       // Export Word document
-      const finalTranscriptions =
-        transcriptions?.filter((t) => t.isFinal) || [];
       const wordBlob = await WordExporter.createWordBlob(
         meetingInfo,
         notes,
@@ -984,7 +1036,11 @@ export const RecordingControls: React.FC<Props> = ({
         fileManager.setDirHandle(originalHandle);
       }
 
-      message.success(`Notes saved to folder: ${projectName}`);
+      message.success(
+        audioBlob
+          ? `Saved to folder: ${projectName}`
+          : `Notes saved to folder: ${projectName}`,
+      );
       setLastProjectName(projectName);
       onSaveComplete();
     } catch (error: any) {
