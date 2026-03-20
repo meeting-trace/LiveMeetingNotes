@@ -24,7 +24,7 @@ export const HelpButton: React.FC = () => {
             dataSource={[
               t('help.feature1'),
               t('help.feature2'),
-              t('help.feature3'),
+              // t('help.feature3'),
               t('help.feature4'),
               t('help.feature5'),
               t('help.feature6'),
@@ -108,9 +108,9 @@ export const HelpButton: React.FC = () => {
               </List>
             </div>
 
-            <Divider style={{ margin: '12px 0' }} />
+            {/* <Divider style={{ margin: '12px 0' }} /> */}
 
-            <div>
+            {/* <div>
               <Title level={4}>{t('help.featAITitle')}</Title>
               <List size="small">
                 <List.Item>• <strong>{t('help.featAI1Bold')}</strong> {t('help.featAI1Post')}</List.Item>
@@ -123,9 +123,9 @@ export const HelpButton: React.FC = () => {
                 <List.Item>{t('help.featAI8')}</List.Item>
                 <List.Item>• <Text type="danger"><strong>{t('help.featAI9Bold')}</strong></Text> {t('help.featAI9Post')}</List.Item>
               </List>
-            </div>
+            </div> */}
 
-            <Divider style={{ margin: '12px 0' }} />
+            {/* <Divider style={{ margin: '12px 0' }} /> */}
 
             <div>
               <Title level={4}>{t('help.featSummaryTitle')}</Title>
@@ -155,7 +155,7 @@ export const HelpButton: React.FC = () => {
             <div>
               <Title level={4}>{t('help.featSaveTitle')}</Title>
               <Paragraph><strong>Chrome/Edge:</strong> {t('help.featSaveChrome')}</Paragraph>
-              <Paragraph><strong>Safari/Firefox:</strong> {t('help.featSaveSafari')}</Paragraph>
+              {/* <Paragraph><strong>Safari/Firefox:</strong> {t('help.featSaveSafari')}</Paragraph> */}
               <Paragraph><strong>{t('help.featSaveFilesTitle')}</strong></Paragraph>
               <List size="small">
                 <List.Item>📄 <Text code>[ProjectName].webm</Text> - {t('help.featSaveFile1')}</List.Item>

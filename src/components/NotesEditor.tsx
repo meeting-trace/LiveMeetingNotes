@@ -96,6 +96,9 @@ export const NotesEditor: React.FC<Props> = ({
   const speakerRefs = useRef<Map<number, TextAreaRef>>(new Map());
   const textRefs = useRef<Map<number, TextAreaRef>>(new Map());
   const syncDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  // ResizeObserver refs: sync height bidirectionally + auto-scroll container
+  const contentObserversRef = useRef<Map<number, ResizeObserver>>(new Map());
+  const speakerObserversRef = useRef<Map<number, ResizeObserver>>(new Map());
 
   // ✅ NEW CLEAN STATE: Single source of truth - array of NoteLine objects
   const [lines, setLines] = useState<NoteLine[]>(() =>
@@ -1011,8 +1014,35 @@ export const NotesEditor: React.FC<Props> = ({
                   ref={(el) => {
                     if (el) {
                       speakerRefs.current.set(index, el);
+                      const speakerTextarea = el.resizableTextArea?.textArea;
+                      if (speakerTextarea) {
+                        speakerObserversRef.current.get(index)?.disconnect();
+                        const observer = new ResizeObserver(() => {
+                          // Sync content textarea minHeight
+                          const h = speakerTextarea.offsetHeight;
+                          if (h > 0) {
+                            const textRef = textRefs.current.get(index);
+                            const contentTextarea = textRef?.resizableTextArea?.textArea;
+                            if (contentTextarea) {
+                              contentTextarea.style.minHeight = `${h}px`;
+                            }
+                          }
+                          // Auto-scroll container if this textarea is focused
+                          if (document.activeElement === speakerTextarea && containerRef.current) {
+                            const taRect = speakerTextarea.getBoundingClientRect();
+                            const ctRect = containerRef.current.getBoundingClientRect();
+                            if (taRect.bottom > ctRect.bottom) {
+                              containerRef.current.scrollTop += taRect.bottom - ctRect.bottom + 8;
+                            }
+                          }
+                        });
+                        observer.observe(speakerTextarea);
+                        speakerObserversRef.current.set(index, observer);
+                      }
                     } else {
                       speakerRefs.current.delete(index);
+                      speakerObserversRef.current.get(index)?.disconnect();
+                      speakerObserversRef.current.delete(index);
                     }
                   }}
                   value={line.speaker || ""} // ✅ Read from NoteLine object
@@ -1038,8 +1068,35 @@ export const NotesEditor: React.FC<Props> = ({
                 ref={(el) => {
                   if (el) {
                     textRefs.current.set(index, el);
+                    const textarea = el.resizableTextArea?.textArea;
+                    if (textarea) {
+                      contentObserversRef.current.get(index)?.disconnect();
+                      const observer = new ResizeObserver(() => {
+                        // Sync speaker textarea minHeight
+                        const h = textarea.offsetHeight;
+                        if (h > 0) {
+                          const speakerRef = speakerRefs.current.get(index);
+                          const speakerTextarea = speakerRef?.resizableTextArea?.textArea;
+                          if (speakerTextarea) {
+                            speakerTextarea.style.minHeight = `${h}px`;
+                          }
+                        }
+                        // Auto-scroll container if this textarea is focused
+                        if (document.activeElement === textarea && containerRef.current) {
+                          const taRect = textarea.getBoundingClientRect();
+                          const ctRect = containerRef.current.getBoundingClientRect();
+                          if (taRect.bottom > ctRect.bottom) {
+                            containerRef.current.scrollTop += taRect.bottom - ctRect.bottom + 8;
+                          }
+                        }
+                      });
+                      observer.observe(textarea);
+                      contentObserversRef.current.set(index, observer);
+                    }
                   } else {
                     textRefs.current.delete(index);
+                    contentObserversRef.current.get(index)?.disconnect();
+                    contentObserversRef.current.delete(index);
                   }
                 }}
                 value={line.content} // ✅ Read from NoteLine object

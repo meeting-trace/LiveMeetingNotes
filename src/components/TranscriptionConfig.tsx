@@ -157,7 +157,7 @@ export const TranscriptionConfig: React.FC<Props> = ({
       const defaultValues = {
         apiKey: "",
         geminiApiKey: "",
-        geminiModel: "models/gemini-2.5-flash", // Default model
+        geminiModel: "models/gemini-flash-latest", // Default model
         languageCode: "vi-VN",
         enableSpeakerDiarization: false,
         enableAutomaticPunctuation: true,
@@ -230,9 +230,9 @@ export const TranscriptionConfig: React.FC<Props> = ({
         // Auto-select first model if none selected
         const currentModel = form.getFieldValue("geminiModel");
         if (!currentModel) {
-          // Prefer gemini-2.5-flash if available
+          // Prefer gemini-flash-latest if available
           const preferredModel =
-            supportedModels.find((m) => m.name.includes("gemini-2.5-flash")) ||
+            supportedModels.find((m) => m.name.includes("gemini-flash-latest")) ||
             supportedModels[0];
           form.setFieldValue("geminiModel", preferredModel.name);
         }
@@ -276,7 +276,7 @@ export const TranscriptionConfig: React.FC<Props> = ({
       const config: SpeechToTextConfig = {
         apiKey: values.apiKey?.trim() || "",
         geminiApiKey: values.geminiApiKey?.trim() || "",
-        geminiModel: values.geminiModel || "models/gemini-2.5-flash",
+        geminiModel: values.geminiModel || "models/gemini-flash-latest",
         languageCode: values.languageCode,
         enableSpeakerDiarization: values.enableSpeakerDiarization,
         enableAutomaticPunctuation: values.enableAutomaticPunctuation,

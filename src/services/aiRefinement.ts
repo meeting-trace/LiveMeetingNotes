@@ -456,7 +456,7 @@ export class AIRefinementService {
     apiKey: string,
     transcriptions: TranscriptionResult[], // Primary data source
     rawData: RawTranscriptData[], // Optional: supplementary raw data
-    modelName: string, // REQUIRED: specific Gemini model (e.g., "models/gemini-2.5-flash")
+    modelName: string, // REQUIRED: specific Gemini model (e.g., "models/gemini-flash-latest")
     onProgress?: (progress: number, message?: string) => void,
     // fileManager?: FileManagerService // Optional: for saving debug logs to project folder
   ): Promise<{ segments: RefinedSegment[], summary?: string, isTruncated?: boolean, truncationWarning?: string, isPartial?: boolean, partialWarning?: string }> {
@@ -642,7 +642,7 @@ export class AIRefinementService {
     apiKey: string,
     transcriptions: TranscriptionResult[], // Primary data
     rawData: RawTranscriptData[], // Supplementary data
-    modelName: string, // REQUIRED: specific model like "models/gemini-2.5-flash"
+    modelName: string, // REQUIRED: specific model like "models/gemini-flash-latest"
     onProgress?: (progress: number, message?: string) => void,
     // fileManager?: FileManagerService
   ): Promise<{ segments: RefinedSegment[], summary?: string, isTruncated?: boolean, truncationWarning?: string, isPartial?: boolean, partialWarning?: string }> {

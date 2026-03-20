@@ -70,7 +70,7 @@ export interface FileSystemSupport {
 
 // Gemini Model metadata from API
 export interface GeminiModel {
-  name: string; // e.g., "models/gemini-2.5-flash"
+  name: string; // e.g., "models/gemini-flash-latest"
   displayName: string; // e.g., "Gemini Flash Latest"
   description?: string;
   inputTokenLimit: number;
@@ -82,7 +82,7 @@ export interface GeminiModel {
 export interface SpeechToTextConfig {
   apiKey: string;
   geminiApiKey?: string; // Optional: API key for Gemini AI (for AI refinement feature)
-  geminiModel?: string; // Selected Gemini model (e.g., "models/gemini-2.5-flash")
+  geminiModel?: string; // Selected Gemini model (e.g., "models/gemini-flash-latest")
   languageCode: string;
   enableSpeakerDiarization: boolean;
   enableAutomaticPunctuation: boolean;
