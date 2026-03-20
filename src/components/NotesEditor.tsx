@@ -96,9 +96,6 @@ export const NotesEditor: React.FC<Props> = ({
   const speakerRefs = useRef<Map<number, TextAreaRef>>(new Map());
   const textRefs = useRef<Map<number, TextAreaRef>>(new Map());
   const syncDebounceRef = useRef<NodeJS.Timeout | null>(null);
-  // ResizeObserver refs: sync height bidirectionally + auto-scroll container
-  const contentObserversRef = useRef<Map<number, ResizeObserver>>(new Map());
-  const speakerObserversRef = useRef<Map<number, ResizeObserver>>(new Map());
 
   // ✅ NEW CLEAN STATE: Single source of truth - array of NoteLine objects
   const [lines, setLines] = useState<NoteLine[]>(() =>
@@ -566,6 +563,26 @@ export const NotesEditor: React.FC<Props> = ({
 
     // Debounced sync to parent
     debouncedSyncToParent(newLines);
+
+    // Auto-scroll container so the active textarea stays fully visible after autoSize resize
+    requestAnimationFrame(() => {
+      const textarea = textRefs.current.get(index)?.resizableTextArea?.textArea;
+      if (textarea) {
+        if (textarea.scrollHeight > textarea.clientHeight) {
+          // Auto-scroll the internal textarea if typing near the end
+          if (textarea.selectionEnd >= textarea.value.length - 1) {
+            textarea.scrollTop = textarea.scrollHeight;
+          }
+        }
+        if (containerRef.current) {
+          const taRect = textarea.getBoundingClientRect();
+          const ctRect = containerRef.current.getBoundingClientRect();
+          if (taRect.bottom > ctRect.bottom) {
+            containerRef.current.scrollTop += taRect.bottom - ctRect.bottom + 4;
+          }
+        }
+      }
+    });
   };
 
   // ✅ Handle speaker change (SIMPLIFIED with NoteLine[])
@@ -596,6 +613,26 @@ export const NotesEditor: React.FC<Props> = ({
     }
 
     debouncedSyncToParent(newLines);
+
+    // Auto-scroll container so the active speaker textarea stays fully visible after autoSize resize
+    requestAnimationFrame(() => {
+      const textarea = speakerRefs.current.get(index)?.resizableTextArea?.textArea;
+      if (textarea) {
+        if (textarea.scrollHeight > textarea.clientHeight) {
+          // Auto-scroll the internal textarea if typing near the end
+          if (textarea.selectionEnd >= textarea.value.length - 1) {
+            textarea.scrollTop = textarea.scrollHeight;
+          }
+        }
+        if (containerRef.current) {
+          const taRect = textarea.getBoundingClientRect();
+          const ctRect = containerRef.current.getBoundingClientRect();
+          if (taRect.bottom > ctRect.bottom) {
+            containerRef.current.scrollTop += taRect.bottom - ctRect.bottom + 4;
+          }
+        }
+      }
+    });
   };
 
   // ✅ Handle speaker keyboard navigation (REFACTORED with NoteLine[])
@@ -1014,35 +1051,8 @@ export const NotesEditor: React.FC<Props> = ({
                   ref={(el) => {
                     if (el) {
                       speakerRefs.current.set(index, el);
-                      const speakerTextarea = el.resizableTextArea?.textArea;
-                      if (speakerTextarea) {
-                        speakerObserversRef.current.get(index)?.disconnect();
-                        const observer = new ResizeObserver(() => {
-                          // Sync content textarea minHeight
-                          const h = speakerTextarea.offsetHeight;
-                          if (h > 0) {
-                            const textRef = textRefs.current.get(index);
-                            const contentTextarea = textRef?.resizableTextArea?.textArea;
-                            if (contentTextarea) {
-                              contentTextarea.style.minHeight = `${h}px`;
-                            }
-                          }
-                          // Auto-scroll container if this textarea is focused
-                          if (document.activeElement === speakerTextarea && containerRef.current) {
-                            const taRect = speakerTextarea.getBoundingClientRect();
-                            const ctRect = containerRef.current.getBoundingClientRect();
-                            if (taRect.bottom > ctRect.bottom) {
-                              containerRef.current.scrollTop += taRect.bottom - ctRect.bottom + 8;
-                            }
-                          }
-                        });
-                        observer.observe(speakerTextarea);
-                        speakerObserversRef.current.set(index, observer);
-                      }
                     } else {
                       speakerRefs.current.delete(index);
-                      speakerObserversRef.current.get(index)?.disconnect();
-                      speakerObserversRef.current.delete(index);
                     }
                   }}
                   value={line.speaker || ""} // ✅ Read from NoteLine object
@@ -1063,76 +1073,62 @@ export const NotesEditor: React.FC<Props> = ({
               </div>
 
               {/* Text Input */}
-              <TextArea
-                className="sync-textarea"
-                ref={(el) => {
-                  if (el) {
-                    textRefs.current.set(index, el);
-                    const textarea = el.resizableTextArea?.textArea;
-                    if (textarea) {
-                      contentObserversRef.current.get(index)?.disconnect();
-                      const observer = new ResizeObserver(() => {
-                        // Sync speaker textarea minHeight
-                        const h = textarea.offsetHeight;
-                        if (h > 0) {
-                          const speakerRef = speakerRefs.current.get(index);
-                          const speakerTextarea = speakerRef?.resizableTextArea?.textArea;
-                          if (speakerTextarea) {
-                            speakerTextarea.style.minHeight = `${h}px`;
-                          }
-                        }
-                        // Auto-scroll container if this textarea is focused
-                        if (document.activeElement === textarea && containerRef.current) {
-                          const taRect = textarea.getBoundingClientRect();
-                          const ctRect = containerRef.current.getBoundingClientRect();
-                          if (taRect.bottom > ctRect.bottom) {
-                            containerRef.current.scrollTop += taRect.bottom - ctRect.bottom + 8;
-                          }
-                        }
-                      });
-                      observer.observe(textarea);
-                      contentObserversRef.current.set(index, observer);
-                    }
-                  } else {
-                    textRefs.current.delete(index);
-                    contentObserversRef.current.get(index)?.disconnect();
-                    contentObserversRef.current.delete(index);
-                  }
-                }}
-                value={line.content} // ✅ Read from NoteLine object
-                onChange={(e) => {
-                  let newValue = e.target.value;
-                  // Auto-capitalize first character when user starts typing in an empty field
-                  if (line.content.length === 0 && newValue.length === 1) {
-                    newValue = newValue.toUpperCase();
-                  }
-                  handleLineChange(index, newValue);
-                }}
-                onKeyDown={(e) => handleKeyDown(index, e)}
-                onMouseDown={(e) => {
-                  // If Ctrl or Shift is pressed, prevent focus and let parent handle selection
-                  if (e.ctrlKey || e.metaKey || e.shiftKey) {
-                    e.preventDefault();
-                  }
-                }}
-                onInput={(e) => {
-                  // Handle undo/redo operations
-                  const target = e.target as HTMLTextAreaElement;
-                  handleLineChange(index, target.value);
-                }}
-                placeholder={t('notes.notePlaceholder')}
-                autoSize={{ minRows: 1, maxRows: 10 }}
+              <div
                 style={{
                   flex: 1,
-                  fontFamily: "monospace",
-                  fontSize: "14px",
-                  lineHeight: "1.6",
-                  backgroundColor: "transparent",
-                  resize: "none",
-                  padding: "8px",
-                  color: "#1e293b",
+                  display: "flex",
+                  alignItems: "stretch",
+                  cursor: "text",
                 }}
-              />
+                onClick={() => {
+                  const el = textRefs.current.get(index)?.resizableTextArea?.textArea;
+                  if (el) el.focus();
+                }}
+              >
+                <TextArea
+                  className="sync-textarea"
+                  ref={(el) => {
+                    if (el) {
+                      textRefs.current.set(index, el);
+                    } else {
+                      textRefs.current.delete(index);
+                    }
+                  }}
+                  value={line.content} // ✅ Read from NoteLine object
+                  onChange={(e) => {
+                    let newValue = e.target.value;
+                    // Auto-capitalize first character when user starts typing in an empty field
+                    if (line.content.length === 0 && newValue.length === 1) {
+                      newValue = newValue.toUpperCase();
+                    }
+                    handleLineChange(index, newValue);
+                  }}
+                  onKeyDown={(e) => handleKeyDown(index, e)}
+                  onMouseDown={(e) => {
+                    // If Ctrl or Shift is pressed, prevent focus and let parent handle selection
+                    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+                      e.preventDefault();
+                    }
+                  }}
+                  onInput={(e) => {
+                    // Handle undo/redo operations
+                    const target = e.target as HTMLTextAreaElement;
+                    handleLineChange(index, target.value);
+                  }}
+                  placeholder={t('notes.notePlaceholder')}
+                  autoSize={{ minRows: 1, maxRows: 10 }}
+                  style={{
+                    fontFamily: "monospace",
+                    fontSize: "14px",
+                    lineHeight: "1.6",
+                    backgroundColor: "transparent",
+                    resize: "none",
+                    padding: "8px",
+                    color: "#1e293b",
+                    width: "100%",
+                  }}
+                />
+              </div>
             </div>
           );
         })}
