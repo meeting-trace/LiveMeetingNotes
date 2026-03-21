@@ -3927,13 +3927,6 @@ export const App: React.FC = () => {
           onTranscriptionConfigChange={setTranscriptionConfig}
         />
 
-        {/* Live Waveform - Show when recording */}
-        <LiveWaveform
-          audioStream={audioStream}
-          isRecording={isRecording}
-          audioSourceType={audioSourceType}
-        />
-
         {/* Meeting Summary Panel - Always show to allow manual input */}
         <MeetingSummaryPanel
           summary={geminiSummary || ""}
@@ -3972,13 +3965,23 @@ export const App: React.FC = () => {
           timestampDelay={transcriptionConfig?.timestampDelay || 8}
         />
 
-        <AudioPlayer
-          ref={audioPlayerRef}
-          audioBlob={audioBlob}
-          transcriptionConfig={transcriptionConfig}
-          onWaveformReady={() => onWaveformReadyRef.current?.()}
-          onWaveformError={(err) => onWaveformErrorRef.current?.(err)}
+        {/* Live Waveform - Show below notes editor when recording */}
+        <LiveWaveform
+          audioStream={audioStream}
+          isRecording={isRecording}
+          audioSourceType={audioSourceType}
         />
+
+        {/* Audio Player - Hide while recording */}
+        {!isRecording && (
+          <AudioPlayer
+            ref={audioPlayerRef}
+            audioBlob={audioBlob}
+            transcriptionConfig={transcriptionConfig}
+            onWaveformReady={() => onWaveformReadyRef.current?.()}
+            onWaveformError={(err) => onWaveformErrorRef.current?.(err)}
+          />
+        )}
 
         {/* Transcription Configuration Modal */}
         <TranscriptionConfig
