@@ -3144,20 +3144,22 @@ JSON output (không markdown):
       .join('\n\n');
 
     // Determine output language
-    const langMap: Record<string, string> = {
-      'vi': 'Tiếng Việt', 'vi-VN': 'Tiếng Việt',
-      'en': 'English', 'en-US': 'English', 'en-GB': 'English', 'en-AU': 'English',
-      'ja': '日本語', 'ja-JP': '日本語',
-      'ko': '한국어', 'ko-KR': '한국어',
-      'zh': '中文', 'zh-CN': '中文 (简体)', 'zh-TW': '中文 (繁體)',
-      'fr': 'Français', 'fr-FR': 'Français',
-      'de': 'Deutsch', 'de-DE': 'Deutsch',
-      'es': 'Español', 'es-ES': 'Español',
-      'pt': 'Português', 'pt-BR': 'Português',
-      'th': 'ภาษาไทย', 'th-TH': 'ภาษาไทย',
-      'id': 'Bahasa Indonesia', 'id-ID': 'Bahasa Indonesia',
-    };
-    const outputLanguage = languageCode ? (langMap[languageCode] || languageCode) : 'Tiếng Việt';
+    // const langMap: Record<string, string> = {
+    //   'vi': 'Tiếng Việt', 'vi-VN': 'Tiếng Việt',
+    //   'en': 'English', 'en-US': 'English', 'en-GB': 'English', 'en-AU': 'English',
+    //   'ja': '日本語', 'ja-JP': '日本語',
+    //   'ko': '한국어', 'ko-KR': '한국어',
+    //   'zh': '中文', 'zh-CN': '中文 (简体)', 'zh-TW': '中文 (繁體)',
+    //   'fr': 'Français', 'fr-FR': 'Français',
+    //   'de': 'Deutsch', 'de-DE': 'Deutsch',
+    //   'es': 'Español', 'es-ES': 'Español',
+    //   'pt': 'Português', 'pt-BR': 'Português',
+    //   'th': 'ภาษาไทย', 'th-TH': 'ภาษาไทย',
+    //   'id': 'Bahasa Indonesia', 'id-ID': 'Bahasa Indonesia',
+    // };
+    // const outputLanguage = languageCode ? (langMap[languageCode] || languageCode) : 'Tiếng Việt';
+    const outputLanguage = languageCode ? (LANG_NAME_MAP[languageCode] || languageCode) : 'Tiếng Việt';
+      
 
     const mergePrompt = `BẠN LÀ CHUYÊN GIA TÓM TẮT CUỘC HỌP.
 
