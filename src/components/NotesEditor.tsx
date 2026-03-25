@@ -1030,7 +1030,7 @@ export const NotesEditor: React.FC<Props> = ({
               {/* Speaker Name TextArea */}
               <div
                 style={{
-                  width: "160px",
+                  width: "180px",
                   backgroundColor: isSelected
                     ? "rgba(79, 70, 229, 0.12)"
                     : "#f0f4fa",
