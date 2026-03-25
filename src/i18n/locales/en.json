@@ -348,7 +348,7 @@
     "hintLoaded": "💡 Right-click waveform to insert note • Enter/Shift+Enter to break line in text",
     "timestampTooltipLive": "Click to edit • Double-click to seek audio",
     "timestampTooltipLoaded": "Double-click to seek audio",
-    "speakerPlaceholder": "Speaker",
+    "speakerPlaceholder": "Keyword",
     "notePlaceholder": "Enter note ..."
   },
   "summary": {

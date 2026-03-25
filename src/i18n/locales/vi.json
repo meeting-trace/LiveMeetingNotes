@@ -350,7 +350,7 @@
     "hintLoaded": "💡 Nhấp chuột phải vào sóng âm để chèn ghi chú • Enter/Shift+Enter để ngắt dòng trong văn bản",
     "timestampTooltipLive": "Nhấn để chỉnh sửa • Nhấp đúp để chuyển đến âm thanh",
     "timestampTooltipLoaded": "Nhấp đúp để chuyển đến âm thanh",
-    "speakerPlaceholder": "Người nói",
+    "speakerPlaceholder": "Từ khóa chính",
     "notePlaceholder": "Nhập ghi chú ..."
   },
   "summary": {
